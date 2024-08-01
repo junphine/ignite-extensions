@@ -133,10 +133,10 @@ public class TcpDiscoveryZookeeperIpFinder extends TcpDiscoveryIpFinderAdapter {
         if (!initGuard.compareAndSet(false, true))
             return;
 
-        String sysPropZkConnStr = IgniteSystemProperties.getString(PROP_ZK_CONNECTION_STRING);
+        String sysPropZkConnString = IgniteSystemProperties.getString(PROP_ZK_CONNECTION_STRING);
 
-        if (sysPropZkConnStr != null && !sysPropZkConnStr.trim().isEmpty())
-            zkConnectionString = sysPropZkConnStr;
+        if (sysPropZkConnString != null && !sysPropZkConnString.trim().isEmpty())
+            zkConnectionString = sysPropZkConnString;
 
         if (log.isInfoEnabled())
             log.info("Initializing ZooKeeper IP Finder.");
@@ -150,7 +150,7 @@ public class TcpDiscoveryZookeeperIpFinder extends TcpDiscoveryIpFinderAdapter {
         if (curator.getState() == CuratorFrameworkState.LATENT)
             curator.start();
 
-        A.ensure(curator.getState() == CuratorFrameworkState.STARTED, "CuratorFramework can't be started.");
+        A.ensure(curator.getState() == CuratorFrameworkState.STARTED, "CuratorFramework can't be started."); 
 
         discovery = ServiceDiscoveryBuilder.builder(IgniteInstanceDetails.class)
             .client(curator)
@@ -184,10 +184,10 @@ public class TcpDiscoveryZookeeperIpFinder extends TcpDiscoveryIpFinderAdapter {
         if (log.isDebugEnabled())
             log.debug("Getting registered addresses from ZooKeeper IP Finder.");
 
-        Collection<ServiceInstance<IgniteInstanceDetails>> srvcInstances;
+        Collection<ServiceInstance<IgniteInstanceDetails>> serviceInstances;
 
         try {
-            srvcInstances = discovery.queryForInstances(serviceName);
+            serviceInstances = discovery.queryForInstances(serviceName);
         }
         catch (Exception e) {
             log.warning("Error while getting registered addresses from ZooKeeper IP Finder.", e);
@@ -196,7 +196,7 @@ public class TcpDiscoveryZookeeperIpFinder extends TcpDiscoveryIpFinderAdapter {
 
         Set<InetSocketAddress> answer = new HashSet<>();
 
-        for (ServiceInstance<IgniteInstanceDetails> si : srvcInstances)
+        for (ServiceInstance<IgniteInstanceDetails> si : serviceInstances)
             answer.add(new InetSocketAddress(si.getAddress(), si.getPort()));
 
         if (log.isInfoEnabled())

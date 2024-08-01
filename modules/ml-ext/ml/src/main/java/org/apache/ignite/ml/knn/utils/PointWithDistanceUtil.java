@@ -18,6 +18,8 @@
 package org.apache.ignite.ml.knn.utils;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -42,12 +44,34 @@ public class PointWithDistanceUtil {
      */
     public static <L> List<LabeledVector<L>> transformToListOrdered(Queue<PointWithDistance<L>> points) {
         List<LabeledVector<L>> res = new ArrayList<>(points.size());
-
         while (!points.isEmpty()) {
             PointWithDistance<L> pnt = points.remove();
-            res.add(pnt.getPnt());
+            // modify@byron
+            LabeledVector<L> vec = pnt.getPnt();
+            vec.setWeight((float)pnt.getDistance());
+            res.add(vec);
         }
+        Collections.reverse(res);
+        return res;
+    }
+    
+    public static <L> List<LabeledVector<L>> transformToListOrdered(Collection<PointWithDistance<L>> points) {
+    	if(points instanceof Queue) {
+    		return transformToListOrdered((Queue<PointWithDistance<L>>)points);
+    	}
+        List<LabeledVector<L>> res = new ArrayList<>(points.size());
 
+        for (PointWithDistance<L> pnt: points) {            
+            // modify@byron
+            LabeledVector<L> vec = pnt.getPnt();
+            vec.setWeight((float)pnt.getDistance());
+            res.add(vec);
+        }
+        Collections.sort(res, (LabeledVector<L> a, LabeledVector<L> b) -> {
+        	if(a.weight()<b.weight()) return -1;
+        	if(a.weight()==b.weight()) return 0;
+        	return 1;
+        });
         return res;
     }
 
@@ -64,7 +88,7 @@ public class PointWithDistanceUtil {
     public static <L> void tryToAddIntoHeap(Queue<PointWithDistance<L>> heap, int k, LabeledVector<L> dataPnt,
         double distance) {
         if (dataPnt != null) {
-            if (heap.size() == k && heap.peek().getDistance() > distance)
+            if (heap.size() >= k && heap.peek().getDistance() > distance)
                 heap.remove();
 
             if (heap.size() < k)
@@ -72,6 +96,27 @@ public class PointWithDistanceUtil {
         }
     }
 
+    
+    /**
+     * Util method that adds data point into heap if it fits (if heap size is less than {@code k} or a distance from
+     * taget point to data point is less than a distance from target point to the most distant data point in heap).
+     *
+     * @param heap Heap with closest points.
+     * @param k Number of neighbours.
+     * @param dataPnt Data point to be added.
+     * @param distance Distance to target point.
+     * @param <L> Label type.
+     */
+    public static <L> void tryToAddIntoHeapUseSimilarity(Queue<PointWithDistance<L>> heap, int k, LabeledVector<L> dataPnt,
+        double sim) {
+        if (dataPnt != null) {
+            if (heap.size() >= k && heap.peek().getDistance() < sim)
+                heap.remove();
+
+            if (heap.size() < k)
+                heap.add(new PointWithDistance<>(dataPnt, sim));
+        }
+    }
     /**
      * Util method that adds data points into heap if they fits (if heap size is less than {@code k} or a distance from
      * taget point to data point is less than a distance from target point to the most distant data point in heap).
@@ -92,4 +137,20 @@ public class PointWithDistanceUtil {
             }
         }
     }
+    
+    public static <L> void tryToAddIntoHeap(Queue<PointWithDistance<L>> heap, int k, Vector pnt,
+    		Collection<PointWithDistance<L>> dataPnts) {
+            if (dataPnts != null) {
+                for (PointWithDistance<L> dataPnt : dataPnts) {                    
+                    if (dataPnt != null) {
+                    	double distance = dataPnt.getDistance();
+                        if (heap.size() >= k && heap.peek().getDistance() > distance)
+                            heap.remove();
+
+                        if (heap.size() < k)
+                            heap.add(dataPnt);
+                    }
+                }
+            }
+        }
 }

@@ -191,8 +191,8 @@ public class CrossValidationTest {
             new double[]{0.9745762711864406, 1.0, 0.8968253968253969, 0.8661417322834646},
             1e-6
         );
-        assertEquals(0.9343858500738256, crossValidationRes.getBestAvgScore(), 1e-6);
-        assertEquals(80, crossValidationRes.getScoringBoard().size(), 80);
+        assertEquals(crossValidationRes.getBestAvgScore(), 0.9343858500738256, 1e-6);
+        assertEquals(crossValidationRes.getScoringBoard().size(), 80);
     }
 
     /**
@@ -241,8 +241,8 @@ public class CrossValidationTest {
 
         CrossValidationResult crossValidationRes = scoreCalculator.tuneHyperParameters();
 
-        assertEquals(0.9343858500738256, crossValidationRes.getBestAvgScore(), 1e-6);
-        assertEquals(10, crossValidationRes.getScoringBoard().size());
+        assertEquals(crossValidationRes.getBestAvgScore(), 0.9343858500738256, 1e-6);
+        assertEquals(crossValidationRes.getScoringBoard().size(), 10);
     }
 
     /**
@@ -295,8 +295,8 @@ public class CrossValidationTest {
 
         CrossValidationResult crossValidationRes = scoreCalculator.tuneHyperParameters();
 
-        assertEquals(0.9343858500738256, crossValidationRes.getBestAvgScore(), 1e-6);
-        assertEquals(10, crossValidationRes.getScoringBoard().size());
+        assertEquals(crossValidationRes.getBestAvgScore(), 0.9343858500738256, 1e-6);
+        assertEquals(crossValidationRes.getScoringBoard().size(), 10);
     }
 
     /** */

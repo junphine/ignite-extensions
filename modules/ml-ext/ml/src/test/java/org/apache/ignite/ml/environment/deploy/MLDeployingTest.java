@@ -17,20 +17,12 @@
 
 package org.apache.ignite.ml.environment.deploy;
 
-import java.io.File;
 import java.lang.reflect.Constructor;
-import java.net.URI;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.ProtectionDomain;
 import java.util.Arrays;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
-import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.ml.dataset.DatasetBuilder;
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.feature.extractor.impl.DummyVectorizer;
@@ -57,8 +49,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.apache.ignite.internal.util.IgniteUtils.isWindows;
-
 /** */
 public class MLDeployingTest extends GridCommonAbstractTest {
     /** */
@@ -79,8 +69,6 @@ public class MLDeployingTest extends GridCommonAbstractTest {
     /** */
     private Ignite ignite2;
 
-    /** */
-    private Ignite ignite3;
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
@@ -188,8 +176,10 @@ public class MLDeployingTest extends GridCommonAbstractTest {
     }
 
     /** */
-    private Vectorizer<Integer, Vector, Integer, Double> createVectorizer() throws Exception {
-        ClassLoader ldr = getClassLoader();
+    private Vectorizer<Integer, Vector, Integer, Double> createVectorizer()
+        throws ClassNotFoundException, NoSuchMethodException, InstantiationException, IllegalAccessException,
+        java.lang.reflect.InvocationTargetException {
+        ClassLoader ldr = getExternalClassLoader();
         Class<?> clazz = ldr.loadClass(EXT_VECTORIZER);
 
         Constructor ctor = clazz.getConstructor();
@@ -202,7 +192,7 @@ public class MLDeployingTest extends GridCommonAbstractTest {
     /** */
     private Preprocessor<Integer, Vector> createPreprocessor(Preprocessor<Integer, Vector> basePreprocessor,
         String clsName) throws Exception {
-        ClassLoader ldr = getClassLoader();
+        ClassLoader ldr = getExternalClassLoader();
         Class<?> clazz = ldr.loadClass(clsName);
 
         Constructor ctor = clazz.getConstructor(Preprocessor.class);
@@ -240,33 +230,6 @@ public class MLDeployingTest extends GridCommonAbstractTest {
             cache.put(i, VectorUtils.of(xor[i]));
 
         return cache;
-    }
-    
-    /** */
-    private ClassLoader getClassLoader() throws Exception {
-        ProtectionDomain domain = getClass().getProtectionDomain();
-
-        URI clsUri = domain.getCodeSource().getLocation().toURI();
-
-        // Overcome UNC path problem on Windows (http://www.tomergabel.com/JavaMishandlesUNCPathsOnWindows.aspx)
-        if (isWindows() && clsUri.getAuthority() != null)
-            clsUri = new URI(clsUri.toString().replace("file://", "file:/"));
-
-        String rootPath = null;
-        for (Path cur = Paths.get(clsUri); cur != null; cur = cur.getParent()) {
-            if (!new File(cur.toFile(), "ml-ext").isDirectory())
-                continue;
-
-            rootPath = cur.toString();
-        }
-
-        assertTrue("Failed to resolve rootPath of project", rootPath != null);
-
-        URL p2pUrl = new URL("file://localhost/" + rootPath + "/ml-ext/ml/extdata/p2p/target/classes/");
-
-        log().info("Loading classes from " + p2pUrl);
-
-        return new URLClassLoader(new URL[]{p2pUrl}, U.gridClassLoader());
     }
 
     /** */

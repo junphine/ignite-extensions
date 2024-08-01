@@ -74,27 +74,27 @@ public class GaussianNaiveBayesTrainer extends SingleLabelDatasetTrainer<Gaussia
 
                     LabeledVector lv = extractor.apply(entity.getKey(), entity.getValue());
                     Vector features = lv.features();
-                    Double lbl = (Double)lv.label();
+                    Double label = (Double)lv.label();
 
                     double[] toMeans;
                     double[] sqSum;
 
-                    if (!res.featureSumsPerLbl.containsKey(lbl)) {
+                    if (!res.featureSumsPerLbl.containsKey(label)) {
                         toMeans = new double[features.size()];
                         Arrays.fill(toMeans, 0.);
-                        res.featureSumsPerLbl.put(lbl, toMeans);
+                        res.featureSumsPerLbl.put(label, toMeans);
                     }
-                    if (!res.featureSquaredSumsPerLbl.containsKey(lbl)) {
+                    if (!res.featureSquaredSumsPerLbl.containsKey(label)) {
                         sqSum = new double[features.size()];
-                        res.featureSquaredSumsPerLbl.put(lbl, sqSum);
+                        res.featureSquaredSumsPerLbl.put(label, sqSum);
                     }
-                    if (!res.featureCountersPerLbl.containsKey(lbl))
-                        res.featureCountersPerLbl.put(lbl, 0);
+                    if (!res.featureCountersPerLbl.containsKey(label))
+                        res.featureCountersPerLbl.put(label, 0);
 
-                    res.featureCountersPerLbl.put(lbl, res.featureCountersPerLbl.get(lbl) + 1);
+                    res.featureCountersPerLbl.put(label, res.featureCountersPerLbl.get(label) + 1);
 
-                    toMeans = res.featureSumsPerLbl.get(lbl);
-                    sqSum = res.featureSquaredSumsPerLbl.get(lbl);
+                    toMeans = res.featureSumsPerLbl.get(label);
+                    sqSum = res.featureSquaredSumsPerLbl.get(label);
                     for (int j = 0; j < features.size(); j++) {
                         double x = features.get(j);
                         toMeans[j] += x;
@@ -118,42 +118,42 @@ public class GaussianNaiveBayesTrainer extends SingleLabelDatasetTrainer<Gaussia
             sortedLabels.sort(Double::compareTo);
             assert !sortedLabels.isEmpty() : "The dataset should contain at least one feature";
 
-            int lblCnt = sortedLabels.size();
-            int featureCnt = sumsHolder.featureSumsPerLbl.get(sortedLabels.get(0)).length;
+            int labelCount = sortedLabels.size();
+            int featureCount = sumsHolder.featureSumsPerLbl.get(sortedLabels.get(0)).length;
 
-            double[][] means = new double[lblCnt][featureCnt];
-            double[][] variances = new double[lblCnt][featureCnt];
-            double[] clsProbabilities = new double[lblCnt];
-            double[] labels = new double[lblCnt];
+            double[][] means = new double[labelCount][featureCount];
+            double[][] variances = new double[labelCount][featureCount];
+            double[] classProbabilities = new double[labelCount];
+            double[] labels = new double[labelCount];
 
             long datasetSize = sumsHolder.featureCountersPerLbl.values().stream().mapToInt(i -> i).sum();
 
             int lbl = 0;
-            for (Double srtLbl : sortedLabels) {
-                int cnt = sumsHolder.featureCountersPerLbl.get(srtLbl);
-                double[] sum = sumsHolder.featureSumsPerLbl.get(srtLbl);
-                double[] sqSum = sumsHolder.featureSquaredSumsPerLbl.get(srtLbl);
+            for (Double label : sortedLabels) {
+                int count = sumsHolder.featureCountersPerLbl.get(label);
+                double[] sum = sumsHolder.featureSumsPerLbl.get(label);
+                double[] sqSum = sumsHolder.featureSquaredSumsPerLbl.get(label);
 
-                for (int i = 0; i < featureCnt; i++) {
-                    means[lbl][i] = sum[i] / cnt;
-                    variances[lbl][i] = (sqSum[i] - sum[i] * sum[i] / cnt) / cnt;
+                for (int i = 0; i < featureCount; i++) {
+                    means[lbl][i] = sum[i] / count;
+                    variances[lbl][i] = (sqSum[i] - sum[i] * sum[i] / count) / count;
                 }
 
                 if (equiprobableClasses)
-                    clsProbabilities[lbl] = 1. / lblCnt;
+                    classProbabilities[lbl] = 1. / labelCount;
 
                 else if (priorProbabilities != null) {
-                    assert clsProbabilities.length == priorProbabilities.length;
-                    clsProbabilities[lbl] = priorProbabilities[lbl];
+                    assert classProbabilities.length == priorProbabilities.length;
+                    classProbabilities[lbl] = priorProbabilities[lbl];
                 }
                 else
-                    clsProbabilities[lbl] = (double)cnt / datasetSize;
+                    classProbabilities[lbl] = (double)count / datasetSize;
 
-                labels[lbl] = srtLbl;
+                labels[lbl] = label;
                 ++lbl;
             }
 
-            return new GaussianNaiveBayesModel(means, variances, clsProbabilities, labels, sumsHolder);
+            return new GaussianNaiveBayesModel(means, variances, classProbabilities, labels, sumsHolder);
         }
         catch (Exception e) {
             throw new RuntimeException(e);

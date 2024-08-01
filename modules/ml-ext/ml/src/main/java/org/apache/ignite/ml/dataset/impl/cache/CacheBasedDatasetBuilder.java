@@ -140,13 +140,13 @@ public class CacheBasedDatasetBuilder<K, V> implements DatasetBuilder<K, V> {
 
         // Retrieves affinity function of the upstream Ignite Cache.
         CacheConfiguration<K, V> upstreamCacheConfiguration = upstreamCache.getConfiguration(CacheConfiguration.class);
-        AffinityFunction upstreamAff = upstreamCacheConfiguration.getAffinity();
+        AffinityFunction upstreamCacheAffinity = upstreamCacheConfiguration.getAffinity();
 
         // Creates dataset cache configuration with affinity function that mimics to affinity function of the upstream
         // cache.
         CacheConfiguration<Integer, C> datasetCacheConfiguration = new CacheConfiguration<>();
         datasetCacheConfiguration.setName(String.format(DATASET_CACHE_TEMPLATE, upstreamCache.getName(), datasetId));
-        datasetCacheConfiguration.setAffinity(new DatasetAffinityFunctionWrapper(upstreamAff));
+        datasetCacheConfiguration.setAffinity(new DatasetAffinityFunctionWrapper(upstreamCacheAffinity));
 
         IgniteCache<Integer, C> datasetCache = ignite.createCache(datasetCacheConfiguration);
 

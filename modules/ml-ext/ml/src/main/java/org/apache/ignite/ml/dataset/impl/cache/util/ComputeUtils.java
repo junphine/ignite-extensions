@@ -92,8 +92,8 @@ public final class ComputeUtils {
 
         String primaryCache = cacheNames.iterator().next();
 
-        Affinity<?> aff = ignite.affinity(primaryCache);
-        int partitions = aff.partitions();
+        Affinity<?> affinity = ignite.affinity(primaryCache);
+        int partitions = affinity.partitions();
 
         BitSet completionFlags = new BitSet(partitions);
         Collection<R> results = new ArrayList<>();

@@ -17,7 +17,9 @@
 
 package org.apache.ignite.ml.knn;
 
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
@@ -25,6 +27,7 @@ import org.apache.ignite.ml.IgniteModel;
 import org.apache.ignite.ml.dataset.Dataset;
 import org.apache.ignite.ml.dataset.primitive.context.EmptyContext;
 import org.apache.ignite.ml.knn.utils.PointWithDistance;
+import org.apache.ignite.ml.knn.utils.PointWithDistanceUtil;
 import org.apache.ignite.ml.knn.utils.indices.SpatialIndex;
 import org.apache.ignite.ml.math.distances.DistanceMeasure;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
@@ -70,15 +73,24 @@ public abstract class KNNModel<L> implements IgniteModel<Vector, L>, SpatialInde
     }
 
     /** {@inheritDoc} */
-    @Override public List<LabeledVector<L>> findKClosest(int k, Vector pnt) {
-        List<LabeledVector<L>> res = dataset.compute(spatialIdx -> spatialIdx.findKClosest(k, pnt), (a, b) -> {
-            Queue<PointWithDistance<L>> heap = new PriorityQueue<>(Collections.reverseOrder());
-            tryToAddIntoHeap(heap, k, pnt, a, distanceMeasure);
-            tryToAddIntoHeap(heap, k, pnt, b, distanceMeasure);
-            return transformToListOrdered(heap);
+    @Override public Collection<PointWithDistance<L>> findKClosest(int k, Vector pnt) {
+    	Collection<PointWithDistance<L>> res = dataset.compute(
+    			spatialIdx -> spatialIdx.findKClosest(k, pnt), 
+    			(Collection<PointWithDistance<L>> a, Collection<PointWithDistance<L>> b) -> {
+        	if(a==null || a.isEmpty()) return b;
+    		if(b==null || b.isEmpty()) return a;
+            Queue<PointWithDistance<L>> heap = null;
+            if(a instanceof PriorityQueue) {
+            	heap = (PriorityQueue<PointWithDistance<L>>)a;
+            }
+            else {
+            	heap = new PriorityQueue<PointWithDistance<L>>(a);
+            }            
+            tryToAddIntoHeap(heap, k, pnt, b);
+            return heap;
         });
-
-        return res == null ? Collections.emptyList() : res;
+    	return res;
+    	//return res == null ? Collections.emptyList() : PointWithDistanceUtil.transformToListOrdered(res);
     }
 
     /** {@inheritDoc} */

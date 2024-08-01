@@ -36,6 +36,10 @@ public class JaccardIndex implements DistanceMeasure {
             if (uniqueValues.contains(b.get(i)))
                 ++intersect;
 
-        return intersect / (a.size() + b.size() - intersect);
+        return 1.0d - intersect / (a.size() + b.size() - intersect);
     }
+    
+    @Override public boolean isSimilarity() {
+		return true;
+	}
 }

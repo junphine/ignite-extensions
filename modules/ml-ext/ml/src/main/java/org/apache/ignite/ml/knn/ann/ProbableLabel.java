@@ -23,9 +23,9 @@ import java.util.TreeMap;
  * The special class for fuzzy labels presenting the probability distribution
  * over the class labels.
  */
-public class ProbableLabel {
+public class ProbableLabel<L> {
     /** Key is label, value is probability to be this class */
-    public TreeMap<Double, Double> clsLbls;
+    public TreeMap<L, Double> clsLbls;
 
     /** */
     public ProbableLabel() {
@@ -37,7 +37,7 @@ public class ProbableLabel {
      *
      * @param clsLbls Class labels.
      */
-    public ProbableLabel(TreeMap<Double, Double> clsLbls) {
+    public ProbableLabel(TreeMap<L, Double> clsLbls) {
         this.clsLbls = clsLbls;
     }
 }

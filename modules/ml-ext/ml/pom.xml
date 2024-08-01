@@ -70,13 +70,7 @@
             <artifactId>ignite-indexing</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>it.unimi.dsi</groupId>
-            <artifactId>fastutil</artifactId>
-            <version>8.5.12</version>
-        </dependency>
-
+        
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -144,7 +138,9 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
-        </dependency>
+        </dependency>        
+
+        
     </dependencies>
 
     <build>
@@ -174,5 +170,5 @@
                 </configuration>
             </plugin>
         </plugins>
-    </build>
+    </build>     
 </project>

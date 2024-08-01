@@ -68,9 +68,9 @@ public class DistanceTest {
     public void distanceFromPointToItselfIsZero() {
         DISTANCE_MEASURES.forEach(distance -> {
             Vector vector = randomVector(3);
-            String errMsg = errorMessage(distance, vector, vector);
+            String errorMessage = errorMessage(distance, vector, vector);
 
-            assertEquals(errMsg, 0d, distance.compute(vector, vector), PRECISION);
+            assertEquals(errorMessage, 0d, distance.compute(vector, vector), PRECISION);
         });
     }
 
@@ -80,9 +80,9 @@ public class DistanceTest {
         DISTANCE_MEASURES.forEach(distance -> {
             Vector vector1 = randomVector(3);
             Vector vector2 = randomVector(3);
-            String errMsg = errorMessage(distance, vector1, vector2);
+            String errorMessage = errorMessage(distance, vector1, vector2);
 
-            assertEquals(errMsg,
+            assertEquals(errorMessage,
                 distance.compute(vector1, vector2), distance.compute(vector2, vector1), PRECISION);
         });
     }
@@ -93,9 +93,9 @@ public class DistanceTest {
         DISTANCE_MEASURES.forEach(distance -> {
             Vector vector1 = randomVector(3);
             Vector vector2 = randomVector(3);
-            String errMsg = errorMessage(distance, vector1, vector2);
+            String errorMessage = errorMessage(distance, vector1, vector2);
 
-            assertTrue(errMsg, distance.compute(vector1, vector2) > 0);
+            assertTrue(errorMessage, distance.compute(vector1, vector2) > 0);
         });
     }
 

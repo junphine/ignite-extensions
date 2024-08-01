@@ -26,7 +26,7 @@
     <parent>
         <groupId>org.apache.ignite</groupId>
         <artifactId>ignite-parent</artifactId>
-        <version>2.17.0-SNAPSHOT</version>
+        <version>2.16.999-SNAPSHOT</version>
         <relativePath /> <!-- lookup parent from repository -->
     </parent>
 
@@ -35,14 +35,15 @@
     <version>1</version>
 
     <properties>
-        <spring-boot.version>2.2.13.RELEASE</spring-boot.version>
-        <spring.data.version>2.2.13.RELEASE</spring.data.version>
-        <spring.data32.version>3.2.5</spring.data32.version>
-        <spring53.version>5.3.19</spring53.version>
+        <spring-boot.version>2.7.13</spring-boot.version>
+        <spring.data.version>2.7.13</spring.data.version>
+        <spring53.version>5.3.28</spring53.version>
         <spring61.version>6.1.6</spring61.version>
         <activemq.version>5.12.0</activemq.version>
-        <aspectj.version>1.8.13</aspectj.version>
-
+		<aspectj.version>1.8.13</aspectj.version>
+		<paho.version>1.0.2</paho.version>
+		<guava.retrying.version>2.0.0</guava.retrying.version>
+		<jms.spec.version>1.1.1</jms.spec.version>
         <!--
             NOTE: The dependency versions below must be changed in the release branch up to
             the latest released version prior to an extension release.

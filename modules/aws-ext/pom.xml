@@ -33,7 +33,7 @@
     <url>https://ignite.apache.org</url>
 
     <properties>
-        <aws.sdk.version>1.11.75</aws.sdk.version>
+        <aws.sdk.version>1.12.267</aws.sdk.version>
         <aws.encryption.sdk.version>1.3.2</aws.encryption.sdk.version>
         <bouncycastle.version>1.69</bouncycastle.version>
         <httpclient.version>4.5.1</httpclient.version>

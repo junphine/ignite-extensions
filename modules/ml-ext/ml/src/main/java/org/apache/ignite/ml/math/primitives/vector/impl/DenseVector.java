@@ -25,6 +25,8 @@ import org.apache.ignite.ml.math.primitives.matrix.impl.DenseMatrix;
 import org.apache.ignite.ml.math.primitives.vector.AbstractVector;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.VectorStorage;
+import org.apache.ignite.ml.math.primitives.vector.storage.DenseDoubleVectorStorage;
+import org.apache.ignite.ml.math.primitives.vector.storage.DenseFloatVectorStorage;
 import org.apache.ignite.ml.math.primitives.vector.storage.DenseVectorStorage;
 
 /**
@@ -35,7 +37,7 @@ import org.apache.ignite.ml.math.primitives.vector.storage.DenseVectorStorage;
  * local, non-distributed execution is satisfactory and on-heap JVM storage is enough
  * to keep the entire data set.
  */
-public class DenseVector extends AbstractVector {
+public final class DenseVector extends AbstractVector {
     /**
      * @param data Data.
      */
@@ -57,9 +59,18 @@ public class DenseVector extends AbstractVector {
      */
     private VectorStorage mkStorage(double[] arr, boolean cp) {
         assert arr != null;
-
-        return new DenseVectorStorage(cp ? arr.clone() : arr);
+        return new DenseDoubleVectorStorage(cp ? arr.clone() : arr);
     }
+    
+    /**
+     * @param arr Source array.
+     * @param cp {@code true} to clone array, reuse it otherwise.
+     */
+    private VectorStorage mkStorage(float[] arr, boolean cp) {
+        assert arr != null;
+        return new DenseFloatVectorStorage(cp ? arr.clone() : arr);
+    }
+
 
     /**
      * @param args Parameters for new Vector.
@@ -73,6 +84,13 @@ public class DenseVector extends AbstractVector {
             setStorage(mkStorage((double[])args.get("arr"), (boolean)args.get("copy")));
         else
             throw new UnsupportedOperationException("Invalid constructor argument(s).");
+    }
+    
+    /**
+     * @param size Vector cardinality.
+     */
+    public DenseVector(VectorStorage sto) {
+       super(sto);
     }
 
     /** */
@@ -101,6 +119,21 @@ public class DenseVector extends AbstractVector {
     public DenseVector(double[] arr) {
         this(arr, false);
     }
+    
+   
+    /**
+     * @param arr Source array.
+     */
+    public DenseVector(float[] arr) {    	
+        setStorage(mkStorage(arr, false));
+    }
+    
+    /**
+     * @param arr Source array.
+     */
+    public DenseVector(float[] arr, boolean shallowCp) {    	
+        setStorage(mkStorage(arr, shallowCp));
+    }
 
     /** {@inheritDoc} */
     @Override public Matrix likeMatrix(int rows, int cols) {
@@ -109,6 +142,12 @@ public class DenseVector extends AbstractVector {
 
     /** {@inheritDoc} */
     @Override public Vector like(int crd) {
+    	if(this.getStorage() instanceof DenseFloatVectorStorage) {
+    		return new DenseVector(new float[crd],false);
+    	}
+    	if(this.getStorage() instanceof DenseDoubleVectorStorage) {
+    		return new DenseVector(new double[crd],false);
+    	}
         return new DenseVector(crd);
     }
 }

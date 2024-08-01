@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.Spliterator;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.ml.math.Blas;
@@ -71,10 +72,8 @@ public abstract class AbstractMatrix implements Matrix {
     private MatrixStorage sto;
 
     /** Meta attributes storage. */
-    private Map<String, Object> meta = new HashMap<>();
-
-    /** Matrix's GUID. */
-    private IgniteUuid guid = IgniteUuid.randomUuid();
+    private Map<String, Object> meta = null;
+  
 
     /**
      * @param sto Backing {@link MatrixStorage}.
@@ -297,12 +296,12 @@ public abstract class AbstractMatrix implements Matrix {
     /** {@inheritDoc} */
     @Override public void writeExternal(ObjectOutput out) throws IOException {
         out.writeObject(sto);
-        out.writeObject(meta);
-        out.writeObject(guid);
+        out.writeObject(meta);        
     }
 
     /** {@inheritDoc} */
     @Override public Map<String, Object> getMetaStorage() {
+    	if(meta==null) meta = new TreeMap<>();
         return meta;
     }
 
@@ -310,8 +309,7 @@ public abstract class AbstractMatrix implements Matrix {
     @SuppressWarnings("unchecked")
     @Override public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
         sto = (MatrixStorage)in.readObject();
-        meta = (Map<String, Object>)in.readObject();
-        guid = (IgniteUuid)in.readObject();
+        meta = (Map<String, Object>)in.readObject();        
     }
 
     /** {@inheritDoc} */
@@ -631,11 +629,7 @@ public abstract class AbstractMatrix implements Matrix {
         return res;
 
     }
-
-    /** {@inheritDoc} */
-    @Override public IgniteUuid guid() {
-        return guid;
-    }
+   
 
     /** {@inheritDoc} */
     @Override public Matrix set(int row, int col, double val) {
@@ -866,12 +860,10 @@ public abstract class AbstractMatrix implements Matrix {
 
     /** {@inheritDoc} */
     @Override public int hashCode() {
-        int res = 1;
-
-        res = res * 37 + guid.hashCode();
+        int res = 1;        
         res = res * 37 + sto.hashCode();
-        res = res * 37 + meta.hashCode();
-
+        // remove@byron
+        //-res = res * 37 + meta.hashCode();
         return res;
     }
 
