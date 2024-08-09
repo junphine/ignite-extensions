@@ -30,36 +30,35 @@ import java.util.Arrays;
 
 public class AbstractEntryBuilder {
 
-	public String KEY = "KEY";
+	public static String KEY = "KEY";
 
-	public String HASH_KEY_START = "HASH_KEY_START";
-	public String HASH_KEY_END   = "HASH_KEY_END";
+	public static String HASH_KEY_START = "HASH_KEY_START";
+	public static String HASH_KEY_END   = "HASH_KEY_END";
 	
-	public String HASH_KEY = "HASH_KEY";
-	public String DEFAULT_HASH_KEY = "hk";
+	public static String HASH_KEY = "HASH_KEY";
+	public static String DEFAULT_HASH_KEY = "hk";
 	
-	public String RANGE_KEY = "RANGE_KEY";
-	public String DEFAULT_RANGE_KEY = "rk";
+	public static String RANGE_KEY = "RANGE_KEY";
+	public static String DEFAULT_RANGE_KEY = "rk";
 	
-	public String RANGE_KEY_START = "RANGE_KEY_START";
-	public String RANGE_KEY_END = "RANGE_KEY_END";
+	public static String RANGE_KEY_START = "RANGE_KEY_START";
+	public static String RANGE_KEY_END = "RANGE_KEY_END";
 	
-	public String DATA_TYPE = "DATA_TYPE";
-	public String DATA_VALUE = "DATA_VALUE";
+	public static String DATA_TYPE = "DATA_TYPE";
+	public static String DATA_VALUE = "DATA_VALUE";
 	
-	public String BYTE_BUFFER = "BYTE_BUFFER";
+	public static String BYTE_BUFFER = "BYTE_BUFFER";
 	
-	public String EMPTY_VALUE = "null";
+	public static String EMPTY_VALUE = "null";
 
-	static IgniteSerializer serializer = new IgniteSerializer();
 	
 	/********** KEY SUPPORT *********/
 
-	public IgniteValue encodeRowKeyAsIgniteValue(final StaticBuffer input) {
+	public static IgniteValue encodeRowKeyAsIgniteValue(final StaticBuffer input) {
         return new IgniteValue(encodeKeyBufferAsHexString(input, DEFAULT_HASH_KEY));
     }
     
-    public IgniteValue encodeRangeKeyAsIgniteValue(final StaticBuffer input) {
+    public static IgniteValue encodeRangeKeyAsIgniteValue(final StaticBuffer input) {
         return new IgniteValue(encodeKeyBufferAsHexString(input, DEFAULT_RANGE_KEY));
     }
 
@@ -86,28 +85,28 @@ public class AbstractEntryBuilder {
  
     /********** VALUE SUPPORT **********/
  
-    public IgniteValue encodeValueAsIgniteValue(final StaticBuffer value) {
+    public static IgniteValue encodeValueAsIgniteValue(final StaticBuffer value) {
         return new IgniteValue(value.asByteBuffer());
     }
 
-    public StaticBuffer decodeValue(final ByteBuffer val) {
+    public static StaticBuffer decodeValue(final ByteBuffer val) {
 		if (null == val) return null;
 		return StaticArrayBuffer.of(val);
     	
     }
     
-    public StaticBuffer decodeValue(final byte[] val) {
+    public static StaticBuffer decodeValue(final byte[] val) {
 		if (null == val) return null;
 		return StaticArrayBuffer.of(val);    	
     }
     
-    public StaticBuffer decodeValue(final IgniteValue val) {
+    public static StaticBuffer decodeValue(final IgniteValue val) {
     	if (null == val) return null;
     	return StaticArrayBuffer.of(val.data());
     
     }
 
-    public StaticBuffer decodeHashKey(IgniteValue key) { 
+    public static StaticBuffer decodeHashKey(IgniteValue key) { 
         final String value = key.getS();
         //not modfiy@byron
         return decodeKeyFromHexString(value);
@@ -125,13 +124,13 @@ public class AbstractEntryBuilder {
     	return new StaticArrayBuffer(name.getBytes(StandardCharsets.UTF_8));    
     }	
 
-    public StaticBuffer decodeRangeKey(IgniteValue key) { 
+    public static StaticBuffer decodeRangeKey(IgniteValue key) { 
         final String value = key.getS();
         //not modfiy@byron
         return decodeKeyFromHexString(value);       
     }
   
-    public StaticBuffer decodeRangeKey(String value) {
+    public static StaticBuffer decodeRangeKey(String value) {
     	//not modfiy@byron
         return decodeKeyFromHexString(value);        
   

@@ -6,6 +6,8 @@ import de.kp.works.ignite.IgniteContext;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.transactions.Transaction;
+import org.apache.ignite.transactions.TransactionConcurrency;
+import org.apache.ignite.transactions.TransactionIsolation;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.StoreMetaData.Container;
@@ -84,9 +86,14 @@ public class IgniteStoreManager implements KeyColumnValueStoreManager {
 
 	}
 
+	@Override
 	public StoreTransaction beginTransaction(BaseTransactionConfig config) {
-		Transaction t = ignite.transactions().txStart();
-		return new IgniteStoreTransaction(t, config);
+		Transaction t = ignite.transactions().tx();
+		if(t==null) {	
+			t = ignite.transactions().txStart(TransactionConcurrency.OPTIMISTIC,TransactionIsolation.READ_COMMITTED);
+			return new IgniteStoreTransaction(t, true, config);
+		}
+		return new IgniteStoreTransaction(t, false, config);
 	}
 
 	public void close() {

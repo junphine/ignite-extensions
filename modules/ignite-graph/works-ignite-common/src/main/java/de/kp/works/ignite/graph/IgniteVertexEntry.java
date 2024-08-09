@@ -18,9 +18,7 @@ package de.kp.works.ignite.graph;
  *
  */
 
-public class IgniteVertexEntry {
-
-    public final String cacheKey;
+public class IgniteVertexEntry {    
 
     public String id;
     public String idType;
@@ -40,8 +38,7 @@ public class IgniteVertexEntry {
             String propKey,
             String propType,
             Object propValue) {
-    	// String cacheKey = UUID.randomUUID().toString();
-    	this.cacheKey =  id + ':' + propKey;
+    	
         this.id = id;
         this.idType = idType;
 
@@ -53,30 +50,11 @@ public class IgniteVertexEntry {
         this.propKey   = propKey;
         this.propType  = propType;
         this.propValue = propValue;
-    }
+    }    
     
-    public IgniteVertexEntry(
-    		String cacheKey,
-            String id,
-            String idType,
-            String label,
-            Long createdAt,
-            Long updatedAt,
-            String propKey,
-            String propType,
-            Object propValue) {    	
-    	this.cacheKey =  cacheKey;
-        this.id = id;
-        this.idType = idType;
-
-        this.label = label;
-
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-
-        this.propKey   = propKey;
-        this.propType  = propType;
-        this.propValue = propValue;
+    public final String getCacheKey() {
+    	// String cacheKey = UUID.randomUUID().toString();
+    	return id + ':' + propKey;
     }
 
 }

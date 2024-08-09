@@ -27,6 +27,7 @@ import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.plugin.CachePluginContext;
 import org.apache.ignite.plugin.CachePluginProvider;
 import org.apache.ignite.plugin.ExtensionRegistry;
@@ -36,7 +37,10 @@ import org.apache.ignite.plugin.PluginProvider;
 import org.apache.ignite.plugin.PluginValidationException;
 import org.apache.tinkerpop.gremlin.server.GremlinServer;
 import org.apache.tinkerpop.gremlin.server.Settings;
+import org.apache.tinkerpop.gremlin.server.util.DefaultGraphManager;
 import org.apache.tinkerpop.gremlin.server.util.ServerGremlinExecutor;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.util.GraphFactory;
 import org.jetbrains.annotations.Nullable;
 
 import de.kp.works.ignite.IgniteConnect;
@@ -119,11 +123,12 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 			try {
 				databaseName = igniteCfg.getIgniteInstanceName();
 				gremlin.databaseName = databaseName;
-				if(settings==null) {
-					settings = Settings.read(cfg.getGremlinServerCfg());
-				}
 				
-				String configBase = ctx.igniteConfiguration().getIgniteHome() + "/config/gremlin-server";
+				String configBase = U.getIgniteHome() + "/config/gremlin-server/";
+				
+				if(settings==null) {
+					settings = Settings.read(configBase + cfg.getGremlinServerCfg());
+				}
 
 				File graphFile = new File(configBase, "ignite-" + databaseName + ".properties");
 				if (graphFile.exists()) {
@@ -133,7 +138,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 					graphFile = new File(configBase, "ignite-default.properties");
 					log.info(databaseName + "::load default gremlim graph config file " + graphFile.getAbsolutePath());
 					gremlin.graphConfigFile = graphFile.getAbsolutePath();
-				}	
+				}
 				
 				settings.graphs.put(databaseName, gremlin.graphConfigFile);
 				
@@ -194,7 +199,31 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 				//-throw new RuntimeException(e);
 				gremlinServer = null;
 			}
-		}		
+		}
+		
+		if (cfg != null && gremlinServer!=null) {
+			gremlin.graphManager = gremlinServer.getServerGremlinExecutor().getGraphManager();			
+			if(gremlin.graphManager.getGraph(databaseName)==null) {
+				// Open a {@link JanusGraph} using a previously created Configuration				
+				if(!settings.graphs.containsKey(databaseName)) {
+					String configBase = U.getIgniteHome() + "/config/gremlin-server";
+	
+					File graphFile = new File(configBase, "janus-" + databaseName + ".properties");
+					if (graphFile.exists()) {
+						log.info(databaseName + "::load gremlim graph config file " + graphFile.getAbsolutePath());
+						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
+					} else {
+						graphFile = new File(configBase, "janus-default.properties");
+						log.info(databaseName + "::load default gremlim graph config file " + graphFile.getAbsolutePath());
+						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
+					}
+				}
+				
+				String graphConfig = settings.graphs.get(databaseName);
+				Graph g = GraphFactory.open(graphConfig);
+				gremlin.graphManager.putGraph(gremlin.databaseName, g);
+			}
+		}
 		
 	}
 
@@ -209,6 +238,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		
 		if(gremlin.graphManager!=null) {			
 			try {
+				gremlin.graphManager.commitAll();
 				gremlin.graphManager.removeGraph(gremlin.databaseName);
 			} 
 			catch (Exception e) {				

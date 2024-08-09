@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -138,7 +139,7 @@ public class IgniteAdmin {
              * edge must be deleted.
              */
             cacheKeys = edge.stream()
-                    .map(entry -> entry.cacheKey).collect(Collectors.toList());
+                    .map(entry -> entry.getCacheKey()).collect(Collectors.toList());
         }
         else {
             /*
@@ -156,7 +157,7 @@ public class IgniteAdmin {
                      * to the provided property keys
                      */
                     .filter(entry -> propKeys.contains(entry.propKey))
-                    .map(entry -> entry.cacheKey).collect(Collectors.toList());
+                    .map(entry -> entry.getCacheKey()).collect(Collectors.toList());
 
         }
 
@@ -207,13 +208,12 @@ public class IgniteAdmin {
             }
             valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
 
-            String cacheKey = entry.cacheKey;
+            String cacheKey = entry.getCacheKey();
             BinaryObject cacheValue = valueBuilder.build();
 
             row.put(cacheKey, cacheValue);
         }
-        cache.putAll(row);
-        
+        cache.putAll(row);        
     }
 
     /**
@@ -228,7 +228,7 @@ public class IgniteAdmin {
         Ignite ignite = connect.getIgnite();
         IgniteCache<String, BinaryObject> cache = ignite.cache(cacheName);
 
-        List<String> cacheKeys;
+        Set<String> cacheKeys;
 
         List<IgniteColumn> columns = igniteDelete.getColumns();
         /*
@@ -245,7 +245,7 @@ public class IgniteAdmin {
                 throw new Exception("The vertex '" + id.toString() + "' is referenced by at least one edge.");
 
             cacheKeys = vertex.stream()
-                    .map(entry -> entry.cacheKey).collect(Collectors.toList());
+                    .map(entry -> entry.getCacheKey()).collect(Collectors.toSet());
         }
         else {
             /*
@@ -262,11 +262,11 @@ public class IgniteAdmin {
                      * to the provided property keys
                      */
                     .filter(entry -> propKeys.contains(entry.propKey))
-                    .map(entry -> entry.cacheKey).collect(Collectors.toList());
+                    .map(entry -> entry.getCacheKey()).collect(Collectors.toSet());
 
         }
 
-        cache.removeAll(new HashSet<>(cacheKeys));
+        cache.removeAll(cacheKeys);
     }
     
     /**
@@ -362,7 +362,7 @@ public class IgniteAdmin {
             	for(Object item: list) {
             		valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, item.toString());
 
-                    String cacheKey = entry.cacheKey+'.'+i;
+                    String cacheKey = entry.getCacheKey()+'.'+i;
                     BinaryObject cacheValue = valueBuilder.build();
 
                     row.put(cacheKey, cacheValue);
@@ -375,7 +375,7 @@ public class IgniteAdmin {
             }
             valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
 
-            String cacheKey = entry.cacheKey;
+            String cacheKey = entry.getCacheKey();
             BinaryObject cacheValue = valueBuilder.build();
 
             row.put(cacheKey, cacheValue);
@@ -471,8 +471,7 @@ public class IgniteAdmin {
         	queryEntity = cfg.getQueryEntities().iterator().next();
         	indexes = new ArrayList<>(queryEntity.getIndexes());
         	
-        }
-		
+        }		
 		else {
         	indexes = new ArrayList<>();
         	queryEntity = new QueryEntity();
@@ -499,13 +498,13 @@ public class IgniteAdmin {
         
         IndexMetadata.State state = (IndexMetadata.State)properties.get("state");
 		if(state==null) {      			
-			state = IndexMetadata.State.BUILDING;
+			state = IndexMetadata.State.CREATED;
 		}
-		if(state==IndexMetadata.State.BUILDING) {
+		if(state==IndexMetadata.State.CREATED) {
 			queryEntity.addQueryField(indexField, fieldType, null);
 			queryEntity.setIndexes(indexes);
 		}
-		else if(state==IndexMetadata.State.INACTIVE) {
+		else if(state==IndexMetadata.State.DROPPED) {
 			queryEntity.getFields().remove(indexField);    			
 		}
     	cfg.setQueryEntity(queryEntity);

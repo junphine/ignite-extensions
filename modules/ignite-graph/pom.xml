@@ -11,10 +11,7 @@
     <modules>
         <module>works-ignite-common</module>
         <module>works-ignite-graph</module>
-        <module>works-ignite-gremlin-server</module>
-        <!--         
-        <module>works-ignite-spark</module> 
-        -->
+        <module>works-ignite-gremlin-server</module>        
     </modules>
 
     <properties>
@@ -46,7 +43,12 @@
 		    <version>${ignite.version}</version>
 		    <scope>provided</scope>
 		</dependency>
-        
+        <dependency>
+		    <groupId>org.apache.ignite</groupId>
+		    <artifactId>ignite-json</artifactId>
+		    <version>${ignite.version}</version>
+		    <scope>provided</scope>
+		</dependency>
 
         <!-- GREMLIN CORE
         -->

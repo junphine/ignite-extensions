@@ -26,8 +26,8 @@ public class GremlinPluginConfiguration implements PluginConfiguration {
     private boolean isWithBinaryStorage  = true;
     private boolean isPersistenceEnabled = false;
     
-    /** cfg file. */
-    private String gremlinServerCfg = "config/gremlin-server/gremlin-server-ignite.yaml";
+    /** cfg file. location at config/gremlin-server */
+    private String gremlinServerCfg = "gremlin-server-ignite.yaml";
 
 	public boolean isWithBinaryStorage() {
 		return isWithBinaryStorage;

@@ -26,6 +26,8 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import de.kp.works.janus.AbstractEntryBuilder;
@@ -43,6 +45,7 @@ import org.apache.ignite.cache.CacheAtomicityMode;
 import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.QueryEntity;
 import org.apache.ignite.cache.QueryIndex;
+import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
 import org.apache.ignite.cluster.ClusterState;
 import org.apache.ignite.configuration.CacheConfiguration;
@@ -63,6 +66,7 @@ public class IgniteClient extends AbstractEntryBuilder {
 
 	public IgniteClient(Ignite ignite) {
 		this.ignite = ignite;
+		
 		log.info("wait for ignite active ...");
 		while(ignite.cluster().state()==ClusterState.INACTIVE) {
 			try {				
@@ -71,7 +75,7 @@ public class IgniteClient extends AbstractEntryBuilder {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-		}
+		}		
 	}
 
 	/*
@@ -83,83 +87,49 @@ public class IgniteClient extends AbstractEntryBuilder {
 	 * 
 	 */
 	public KeyIterator getKeySlice(IgniteCache<String, BinaryObject> cache, SliceQuery query, Map<String, IgniteValue> items) {
+		
 
-		Transaction tx = ignite.transactions().txStart();
-
-		try {
-
-			String cacheName = cache.getName();
+		String cacheName = cache.getName();
+		/*
+		 * Retrieve columns (or range keys) in their hexadecimal [String] representation
+		 */
+		String rangeKeyStart = items.get(RANGE_KEY_START).getS();
+		String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
+		/*
+		 * Build the initial Apache Ignite SQL statement to specify the return fields
+		 * and the associated cache
+		 */
+		String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName;
+		/*
+		 * Check whether a single range key is provided with the respect
+		 */
+		if (rangeKeyStart.compareTo(rangeKeyEnd) >= 0) {
 			/*
-			 * Retrieve columns (or range keys) in their hexadecimal [String] representation
+			 * This is a request that does not provide a range key slice but focuses on a
+			 * single column value
 			 */
-			String rangeKeyStart = items.get(RANGE_KEY_START).getS();
-			String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
-			/*
-			 * Build the initial Apache Ignite SQL statement to specify the return fields
-			 * and the associated cache
-			 */
-			String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName;
-			/*
-			 * Check whether a single range key is provided with the respect
-			 */
-			if (rangeKeyStart.compareTo(rangeKeyEnd) >= 0) {
-				/*
-				 * This is a request that does not provide a range key slice but focuses on a
-				 * single column value
-				 */
-				sql += " where RANGE_KEY = '" + rangeKeyStart + "'";
+			sql += " where RANGE_KEY = '" + rangeKeyStart + "'";
 
-			} else {
-				sql += " where RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
-
-			}
-			/*
-			 * EXPERIENCE: JanusGraph offers a variety of features from ordered keys to
-			 * ordered and unordered scans; but, even for unordered scans, and, limited to a
-			 * single result, JanusGraph requires the largest row key
-			 */
-			sql += " order by HASH_KEY ASC";
-			SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
-
-			/*
-			 * The result contains all rows that the provided column values; note,
-			 * JanusGraph leverages the column name as its value and the associated byte
-			 * buffer is not relevant in this case
-			 */
-			List<List<?>> results = cache.query(sqlQuery).getAll();
-
-			tx.commit();
-
-			/* HASH_KEY (0), RANGE_KEY (1), BYTE_BUFFER (2) */
-
-			List<Entry> entries = results.stream().map(result -> {
-
-				String rowKey = (String) result.get(0);
-				StaticBuffer hashKey = decodeKeyFromHexString(rowKey);
-
-				byte[] byteBuffer = (byte[]) result.get(2);
-				StaticBuffer value = decodeValue(byteBuffer);
-
-				if (value == null)
-					return StaticArrayEntry.of(hashKey);
-
-				else
-					return StaticArrayEntry.of(hashKey, value);
-
-			}).collect(Collectors.toList());
-
-			return new IgniteKeyIterator(entries);
-
-		} catch (Exception e) {
-
-			log.error(String.format("[IgniteClient] getKeySlice failed with: %s", e.getLocalizedMessage()));
-
-			tx.rollback();
-
-			List<Entry> entries = Collections.emptyList();
-			return new IgniteKeyIterator(entries);
+		} else {
+			sql += " where RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
 
 		}
+		/*
+		 * EXPERIENCE: JanusGraph offers a variety of features from ordered keys to
+		 * ordered and unordered scans; but, even for unordered scans, and, limited to a
+		 * single result, JanusGraph requires the largest row key
+		 */
+		sql += " order by HASH_KEY ASC";
+		SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
+
+		/*
+		 * The result contains all rows that the provided column values; note,
+		 * JanusGraph leverages the column name as its value and the associated byte
+		 * buffer is not relevant in this case
+		 */
+		FieldsQueryCursor<List<?>> cursor = cache.query(sqlQuery);
+
+		return new IgniteKeyIterator(cursor);
 
 	}
 	
@@ -172,173 +142,122 @@ public class IgniteClient extends AbstractEntryBuilder {
 	 * supported and will be used within this key query mechanism
 	 * 
 	 */
-	public KeyIterator getKeyRangeSlice(IgniteCache<String, BinaryObject> cache, KeyRangeQuery query,
-			Map<String, IgniteValue> items) {
-
-		Transaction tx = ignite.transactions().txStart();
-
-		try {
-
-			String cacheName = cache.getName();
+	public KeyIterator getKeyRangeSlice(IgniteCache<String, BinaryObject> cache, KeyRangeQuery query,Map<String, IgniteValue> items) {
+		String cacheName = cache.getName();
+		/*
+		 * Retrieve columns (or range keys) in their hexadecimal [String] representation
+		 */
+		String rangeKeyStart = items.get(RANGE_KEY_START).getS();
+		String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
+		
+		String hashKeyStart = items.get(HASH_KEY_START).getS();
+		String hashKeyEnd = items.get(HASH_KEY_END).getS();
+		
+		/*
+		 * Build the initial Apache Ignite SQL statement to specify the return fields
+		 * and the associated cache
+		 */
+		String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName+ " where ";
+		
+		/*
+		 * Check whether a single range key is provided with the respect
+		 */
+		if (hashKeyStart.compareTo(hashKeyEnd) >= 0) {
 			/*
-			 * Retrieve columns (or range keys) in their hexadecimal [String] representation
+			 * This is a request that does not provide a range key slice but focuses on a
+			 * single column value
 			 */
-			String rangeKeyStart = items.get(RANGE_KEY_START).getS();
-			String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
-			
-			String hashKeyStart = items.get(HASH_KEY_START).getS();
-			String hashKeyEnd = items.get(HASH_KEY_END).getS();
-			
-			/*
-			 * Build the initial Apache Ignite SQL statement to specify the return fields
-			 * and the associated cache
-			 */
-			String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName+ " where ";
-			
-			/*
-			 * Check whether a single range key is provided with the respect
-			 */
-			if (hashKeyStart.compareTo(hashKeyEnd) >= 0) {
-				/*
-				 * This is a request that does not provide a range key slice but focuses on a
-				 * single column value
-				 */
-				sql += " HASH_KEY = '" + hashKeyStart + "'";
+			sql += " HASH_KEY = '" + hashKeyStart + "'";
 
-			} else {
-				sql += " HASH_KEY >= '" + hashKeyStart + "' and HASH_KEY < '" + hashKeyEnd + "'";
-
-			}
-			
-			/*
-			 * Check whether a single range key is provided with the respect
-			 */
-			if (rangeKeyStart.compareTo(rangeKeyEnd) >= 0) {
-				/*
-				 * This is a request that does not provide a range key slice but focuses on a
-				 * single column value
-				 */
-				sql += " and RANGE_KEY = '" + rangeKeyStart + "'";
-
-			} else {
-				sql += " and RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
-
-			}
-			/*
-			 * EXPERIENCE: JanusGraph offers a variety of features from ordered keys to
-			 * ordered and unordered scans; but, even for unordered scans, and, limited to a
-			 * single result, JanusGraph requires the largest row key
-			 */
-			sql += " order by HASH_KEY ASC";
-			SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
-
-			/*
-			 * The result contains all rows that the provided column values; note,
-			 * JanusGraph leverages the column name as its value and the associated byte
-			 * buffer is not relevant in this case
-			 */
-			List<List<?>> results = cache.query(sqlQuery).getAll();
-
-			tx.commit();
-
-			/* HASH_KEY (0), RANGE_KEY (1), BYTE_BUFFER (2) */
-
-			List<Entry> entries = results.stream().map(result -> {
-
-				String rowKey = (String) result.get(0);
-				StaticBuffer hashKey = decodeKeyFromHexString(rowKey);
-
-				byte[] byteBuffer = (byte[]) result.get(2);
-				StaticBuffer value = decodeValue(byteBuffer);
-
-				if (value == null)
-					return StaticArrayEntry.of(hashKey);
-
-				else
-					return StaticArrayEntry.of(hashKey, value);
-
-			}).collect(Collectors.toList());
-
-			return new IgniteKeyIterator(entries);
-
-		} catch (Exception e) {
-
-			log.error(String.format("[IgniteClient] getKeySlice failed with: %s", e.getLocalizedMessage()));
-
-			tx.rollback();
-
-			List<Entry> entries = Collections.emptyList();
-			return new IgniteKeyIterator(entries);
+		} else {
+			sql += " HASH_KEY >= '" + hashKeyStart + "' and HASH_KEY < '" + hashKeyEnd + "'";
 
 		}
+		
+		/*
+		 * Check whether a single range key is provided with the respect
+		 */
+		if (rangeKeyStart.compareTo(rangeKeyEnd) >= 0) {
+			/*
+			 * This is a request that does not provide a range key slice but focuses on a
+			 * single column value
+			 */
+			sql += " and RANGE_KEY = '" + rangeKeyStart + "'";
+
+		} else {
+			sql += " and RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
+		}
+		/*
+		 * EXPERIENCE: JanusGraph offers a variety of features from ordered keys to
+		 * ordered and unordered scans; but, even for unordered scans, and, limited to a
+		 * single result, JanusGraph requires the largest row key
+		 */
+		sql += " order by HASH_KEY ASC";
+		SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
+
+		/*
+		 * The result contains all rows that the provided column values; note,
+		 * JanusGraph leverages the column name as its value and the associated byte
+		 * buffer is not relevant in this case
+		 */
+		FieldsQueryCursor<List<?>> cursor = cache.query(sqlQuery);
+		return new IgniteKeyIterator(cursor);
+		
+		//List<List<?>> results = cursor.getAll();
+		// cursor.close()
+		//return new IgniteKeyIterator(results);		
 
 	}
 
 
-	public List<Entry> getColumnRange(IgniteCache<String, BinaryObject> cache, KeySliceQuery query,
-			Map<String, IgniteValue> items) {
+	public List<Entry> getColumnRange(IgniteCache<String, BinaryObject> cache, KeySliceQuery query,	Map<String, IgniteValue> items) {		
 
-		Transaction tx = ignite.transactions().txStart();
+		String cacheName = cache.getName();
+		String rowKey = items.get(HASH_KEY).getS();
 
-		try {
+		String rangeKeyStart = items.get(RANGE_KEY_START).getS();
+		String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
 
-			String cacheName = cache.getName();
-			String rowKey = items.get(HASH_KEY).getS();
+		String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName + " WHERE HASH_KEY = '" + rowKey
+				+ "'";
+		sql += " and RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
 
-			String rangeKeyStart = items.get(RANGE_KEY_START).getS();
-			String rangeKeyEnd = items.get(RANGE_KEY_END).getS();
+		sql += " order by RANGE_KEY ASC";
+		SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
+		/*
+		 * The result contains all columns that refer to the provided row key
+		 */
+		List<List<?>> results = cache.query(sqlQuery).getAll();		
 
-			String sql = "select HASH_KEY, RANGE_KEY, BYTE_BUFFER from " + cacheName + " WHERE HASH_KEY = '" + rowKey
-					+ "'";
-			sql += " and RANGE_KEY >= '" + rangeKeyStart + "' and RANGE_KEY < '" + rangeKeyEnd + "'";
-
-			sql += " order by RANGE_KEY ASC";
-			SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sql);
-			/*
-			 * The result contains all columns that refer to the provided row key
-			 */
-			List<List<?>> results = cache.query(sqlQuery).getAll();
-			tx.commit();
-
-			if (results.isEmpty())
-				return Collections.emptyList();
-			/*
-			 * Extract columns and start
-			 */
-			return results.stream().map(result -> {
-
-				String colName = (String) result.get(1);
-				StaticBuffer rangeKey = decodeRangeKey(colName);
-
-				byte[] colValu = (byte[]) result.get(2);
-				StaticBuffer value = decodeValue(colValu);
-				/*
-				 * There are stores (e.g. janusgraph_ids) that use the column name also as its
-				 * value; this implies that the value = null
-				 */
-				if (value == null)
-					return StaticArrayEntry.of(rangeKey);
-
-				else
-					return StaticArrayEntry.of(rangeKey, value);
-
-			}).collect(Collectors.toList());
-
-		} catch (Exception e) {
-
-			log.error(String.format("[IgniteClient] getColumnRange failed with: %s", e.getLocalizedMessage()));
-			tx.rollback();
-
+		if (results.isEmpty())
 			return Collections.emptyList();
+		/*
+		 * Extract columns and start
+		 */
+		List<Entry> list = results.stream().map(result -> {
 
-		}
+			String colName = (String) result.get(1);
+			StaticBuffer rangeKey = decodeRangeKey(colName);
+
+			byte[] colValu = (byte[]) result.get(2);
+			StaticBuffer value = decodeValue(colValu);
+			/*
+			 * There are stores (e.g. janusgraph_ids) that use the column name also as its
+			 * value; this implies that the value = null
+			 */
+			if (value == null)
+				return StaticArrayEntry.of(rangeKey);
+
+			else
+				return StaticArrayEntry.of(rangeKey, value);
+
+		}).collect(Collectors.toList());
+
+		return list;
 
 	}
 
 	public void put(IgniteCache<String, BinaryObject> cache, IgniteCacheEntry entry) {
-
-		if (ignite == null)
-			return;
 
 		String cacheKey = entry.getCacheKey();
 		cache.put(cacheKey, buildObject(cache.getName(), entry));
@@ -346,73 +265,70 @@ public class IgniteClient extends AbstractEntryBuilder {
 	}
 
 	public void putAll(IgniteCache<String, BinaryObject> cache, List<IgniteCacheEntry> entries) {
-
-		if (ignite == null)
-			return;
-
-		Transaction tx = ignite.transactions().txStart();
-
-		try {
-
-			for (IgniteCacheEntry entry : entries) {
-				put(cache, entry);
-			}
-
-			tx.commit();
-
-		} catch (Exception e) {
-
-			log.error(String.format("[IgniteClient] putAll failed with: %s", e.getLocalizedMessage()));
-			tx.rollback();
-
+		TreeMap<String,BinaryObject> datas = new TreeMap<>();
+		for (IgniteCacheEntry entry : entries) {
+			datas.put(entry.getCacheKey(), buildObject(cache.getName(), entry));
 		}
-
+		cache.putAll(datas);
 	}
 
+	public void removeAllUsingSQL(IgniteCache<String, BinaryObject> cache, List<IgniteCacheEntry> entries) {
+
+		if (entries.isEmpty())
+			return;
+		/*
+		 * The entries specify a single hash key (row) and a list of range keys (column
+		 * names); to delete the respective cache entries, we have to retrieve their
+		 * keys and after that remove the entries
+		 *
+		 * The hash key is extracted from the first entry as is it always the same for
+		 * all entries
+		 *
+		 */
+		String hashKey = entries.get(0).getHashKey();
+
+		List<String> rangeKeys = entries.stream()
+				.map(entry -> "'" + entry.getRangeKey() + "'").collect(Collectors.toList());
+
+		String inExpr = String.join(",", rangeKeys);
+		String sql = "select _key from " + cache.getName() + " where HASH_KEY = '" + hashKey + "' and RANGE_KEY in ("
+				+ inExpr + ")";
+
+		SqlFieldsQuery query = new SqlFieldsQuery(sql);
+		List<List<?>> results = cache.query(query).getAll();
+
+		if (results.isEmpty())
+			return;
+
+		List<String> keys = results.stream()
+				.map(items -> (String) items.get(0)).collect(Collectors.toList());
+
+		cache.removeAll(new HashSet<>(keys));
+
+	}
+	
 	public void removeAll(IgniteCache<String, BinaryObject> cache, List<IgniteCacheEntry> entries) {
 
 		if (entries.isEmpty())
 			return;
+		/*
+		 * The entries specify a single hash key (row) and a list of range keys (column
+		 * names); to delete the respective cache entries, we have to retrieve their
+		 * keys and after that remove the entries
+		 *
+		 * The hash key is extracted from the first entry as is it always the same for
+		 * all entries
+		 *
+		 */		
 
-		Transaction tx = ignite.transactions().txStart();
+		Set<String> keys = entries.stream()
+				.map(entry -> entry.getCacheKey()).collect(Collectors.toSet());
 
-		try {
-			/*
-			 * The entries specify a single hash key (row) and a list of range keys (column
-			 * names); to delete the respective cache entries, we have to retrieve their
-			 * keys and after that remove the entries
-			 *
-			 * The hash key is extracted from the first entry as is it always the same for
-			 * all entries
-			 *
-			 */
-			String hashKey = entries.get(0).getHashKey();
+		
+		if (keys.isEmpty())
+			return;
 
-			List<String> rangeKeys = entries.stream()
-					.map(entry -> "'" + entry.getRangeKey() + "'").collect(Collectors.toList());
-
-			String inExpr = String.join(",", rangeKeys);
-			String sql = "select _key from " + cache.getName() + " where HASH_KEY = '" + hashKey + "' and RANGE_KEY in ("
-					+ inExpr + ")";
-
-			SqlFieldsQuery query = new SqlFieldsQuery(sql);
-			List<List<?>> results = cache.query(query).getAll();
-
-			if (results.isEmpty())
-				return;
-
-			List<String> keys = results.stream()
-					.map(items -> (String) items.get(0)).collect(Collectors.toList());
-
-			cache.removeAll(new HashSet<>(keys));
-			tx.commit();
-
-		} catch (Exception e) {
-
-			log.error(String.format("[IgniteClient] removeAll failed with: %s", e.getLocalizedMessage()));
-			tx.rollback();
-
-		}
+		cache.removeAll(keys);
 
 	}
 
@@ -455,7 +371,7 @@ public class IgniteClient extends AbstractEntryBuilder {
 	private IgniteCache<String, BinaryObject> createCache(String cacheName, CacheMode cacheMode) {
 
 		CacheConfiguration<String, BinaryObject> cfg = createCacheCfg(cacheName, cacheMode);
-		return ignite.createCache(cfg);// ;.withKeepBinary();
+		return ignite.createCache(cfg).withKeepBinary();
 
 	}
 
@@ -475,8 +391,7 @@ public class IgniteClient extends AbstractEntryBuilder {
 		CacheConfiguration<String, BinaryObject> cfg = new CacheConfiguration<>();
 		cfg.setName(table);
 
-		cfg.setStoreKeepBinary(false);
-		cfg.setIndexedTypes(String.class, BinaryObject.class);
+		cfg.setStoreKeepBinary(false);		
 
 		cfg.setCacheMode(cacheMode);
 		cfg.setAtomicityMode(CacheAtomicityMode.TRANSACTIONAL);

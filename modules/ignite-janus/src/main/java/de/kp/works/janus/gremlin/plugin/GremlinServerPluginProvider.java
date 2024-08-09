@@ -25,11 +25,13 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
+import org.apache.commons.configuration2.builder.fluent.Configurations;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.plugin.CachePluginContext;
 import org.apache.ignite.plugin.CachePluginProvider;
 import org.apache.ignite.plugin.ExtensionRegistry;
@@ -44,8 +46,10 @@ import org.apache.tinkerpop.gremlin.server.Settings;
 import org.apache.tinkerpop.gremlin.server.util.ServerGremlinExecutor;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.jetbrains.annotations.Nullable;
+import org.janusgraph.core.ConfiguredGraphFactory;
 import org.janusgraph.core.JanusGraph;
 import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.graphdb.management.JanusGraphManager;
 import org.janusgraph.graphdb.server.JanusGraphServer;
 
 
@@ -113,6 +117,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 				}
 			}
 		}
+		
 		if (cfg == null && "janus_backend".equals(ctx.grid().name()) && !ignite.configuration().isClientMode()) {
 			// if node name == 'janus-backend' auto enable create gremlin server
 			cfg = new GremlinPluginConfiguration();
@@ -124,33 +129,10 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		}
 
 		if (cfg != null) {
-			try {
-				databaseName = igniteCfg.getIgniteInstanceName();
-				gremlin.databaseName = databaseName;
-				
-				// only read first settings
-				if(settings==null) {
-					settings = Settings.read(cfg.getGremlinServerCfg());
-				}
-				
-				if(!settings.graphs.containsKey(databaseName)) {
-					String configBase = ctx.igniteConfiguration().getIgniteHome() + "/config/gremlin-server";
-	
-					File graphFile = new File(configBase, "janus-" + databaseName + ".properties");
-					if (graphFile.exists()) {
-						log.info(databaseName + "::load gremlim graph config file " + graphFile.getAbsolutePath());
-						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
-					} else {
-						graphFile = new File(configBase, "janus-default.properties");
-						log.info(databaseName + "::load default gremlim graph config file " + graphFile.getAbsolutePath());
-						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
-					}				
-				}
-				counter++;
-				
-			} catch (Exception e) {
-				log.error(e.getMessage(), e);
-			}
+			
+			databaseName = igniteCfg.getIgniteInstanceName();
+			gremlin.databaseName = databaseName;				
+			counter++;
 		}
 
 	}
@@ -184,25 +166,51 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 	@Override
 	public void onIgniteStart() {
 		// start gremlin server singerton when janus-backend grid start
-		if (janusGraphServer == null && settings != null) {
+		if (janusGraphServer == null && cfg != null) {
 			try {
-				janusGraphServer = new JanusGraphServer(cfg.getGremlinServerCfg());
+				JanusGraphManager.resetInstance();
+				String configBase = U.getIgniteHome() + "/config/gremlin-server/";
+				janusGraphServer = new JanusGraphServer(configBase + cfg.getGremlinServerCfg());
 		        janusGraphServer.start().exceptionally(t -> {
 		        	
 		        	log.error("JanusGraph Server was unable to start and will now begin shutdown", t);
 		            janusGraphServer.stop().join();
 		            return null;
 		            
-		        }).join();
+		        }).join();				
 				
-				gremlin.graphManager = janusGraphServer.getGremlinServer().getServerGremlinExecutor().getGraphManager();
-				
+		        settings = janusGraphServer.getJanusGraphSettings();
+		        
 				log.info("JanaGremlinServer", "listern on " + settings.host + ":" + settings.port);
 
 			} catch (Exception e) {
 				log.error("JanaGremlinServer bind fail.", e);
 				// throw new RuntimeException(e);
 				janusGraphServer = null;
+			}
+		}
+		
+		if (cfg != null && janusGraphServer!=null) {
+			gremlin.graphManager = janusGraphServer.getGremlinServer().getServerGremlinExecutor().getGraphManager();
+			if(gremlin.graphManager.getGraph(databaseName)==null) {
+				// Open a {@link JanusGraph} using a previously created Configuration				
+				if(!settings.graphs.containsKey(databaseName)) {
+					String configBase = U.getIgniteHome() + "/config/gremlin-server";
+	
+					File graphFile = new File(configBase, "janus-" + databaseName + ".properties");
+					if (graphFile.exists()) {
+						log.info(databaseName + "::load gremlim graph config file " + graphFile.getAbsolutePath());
+						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
+					} else {
+						graphFile = new File(configBase, "janus-default.properties");
+						log.info(databaseName + "::load default gremlim graph config file " + graphFile.getAbsolutePath());
+						settings.graphs.put(databaseName, graphFile.getAbsolutePath());
+					}
+				}
+				
+				String graphConfig = settings.graphs.get(databaseName);
+				JanusGraph g = JanusGraphFactory.open(graphConfig);
+				gremlin.graphManager.putGraph(gremlin.databaseName, g);
 			}
 		}
 	}
@@ -215,10 +223,10 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		
 		if(gremlin.graphManager!=null) {			
 			try {
-				gremlin.graphManager.removeGraph(gremlin.databaseName);
+				ConfiguredGraphFactory.drop(gremlin.databaseName);
 			} 
 			catch (Exception e) {	
-				
+				log.error("JanaGremlinServer close fail.", e);
 			}
 			gremlin.graphManager = null;			
 		}

@@ -18,6 +18,7 @@ import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.graphdb.database.serialize.DataOutput;
+import org.janusgraph.graphdb.database.serialize.StandardSerializer;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,7 +29,7 @@ import java.nio.charset.StandardCharsets;
 
 public class KeyValueUtil {
 
-    static IgniteSerializer serializer = new IgniteSerializer();
+    static StandardSerializer serializer = new StandardSerializer();
 
     public static String serialize(Object obj) {
 

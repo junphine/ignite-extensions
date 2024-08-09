@@ -4,11 +4,13 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import software.amazon.awssdk.services.s3.model.AccessControlPolicy;
+import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.Grant;
 import software.amazon.awssdk.services.s3.model.Grantee;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.Type;
 import software.amazon.awssdk.utils.StringInputStream;
+import software.amazon.awssdk.utils.StringUtils;
 
 import org.apache.commons.io.FilenameUtils;
 import org.shaofan.s3.config.SystemConfig;
@@ -85,7 +87,7 @@ public class FileManagerController  {
 		   webjarsResourceURI = webjarsResourceURI.substring(1);
 	   }
 	   if(webjarsResourceURI.startsWith(systemConfig.getS3BucketName())) {
-		   webjarsResourceURI = webjarsResourceURI.substring(systemConfig.getS3BucketName().length()+1);
+		  // webjarsResourceURI = webjarsResourceURI.substring(systemConfig.getS3BucketName().length()+1);
 	   }
        String[] tokens = webjarsResourceURI.split("/",2);
        if(tokens.length==1) {
@@ -108,22 +110,45 @@ public class FileManagerController  {
             List<JSONObject> fileItems = new ArrayList<>();
             String[] tokens = getFileToken(json.getString("path"));
             String bucketName = tokens[0];
-            String path = tokens[1];            
+            String path = tokens[1];
+            
+            if(StringUtils.isBlank(bucketName)) {
+            	List<Bucket> list = s3Util.getBucketList();
+
+                String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
+                SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
+                for (Bucket pathObj : list) {
+                	String fname = pathObj.name();            	             
+
+                    // 封装返回JSON数据
+                    JSONObject fileItem = new JSONObject();
+                    fileItem.put("name", fname);
+                    fileItem.put("date", dt.format(new Date(pathObj.creationDate().getEpochSecond()*1000)));
+                    fileItem.put("size", 0);
+                    fileItem.put("etag", null);
+                    fileItem.put("type", "dir");
+                    fileItems.add(fileItem);
+                }
+                
+                JSONObject jsonObject = new JSONObject();
+                jsonObject.put("result", fileItems);
+                return jsonObject;
+            }
 
             List<S3Object> list = s3Util.getObjectList(bucketName, path);
 
             String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
             SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
             for (S3Object pathObj : list) {
-            	String fname = pathObj.key();            	             
-
+            	String[] fnames = pathObj.key().split("/");            	             
+            	String fname = fnames[fnames.length-1];
                 // 封装返回JSON数据
                 JSONObject fileItem = new JSONObject();
                 fileItem.put("name", fname);
                 fileItem.put("date", dt.format(new Date(pathObj.lastModified().toEpochMilli())));
                 fileItem.put("size", pathObj.size());
                 fileItem.put("etag", pathObj.eTag());
-                fileItem.put("type", fname.endsWith("/")?"dir":"file");
+                fileItem.put("type", pathObj.key().endsWith("/")?"dir":"file");
                 fileItems.add(fileItem);
             }
             

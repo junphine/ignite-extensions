@@ -19,7 +19,7 @@ import de.bwaldvogel.mongo.backend.Utils;
 import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.bson.ObjectId;
 import de.bwaldvogel.mongo.exception.MongoServerException;
-
+import io.netty.channel.Channel;
 
 public class IgniteBackend extends AbstractMongoBackend {
 

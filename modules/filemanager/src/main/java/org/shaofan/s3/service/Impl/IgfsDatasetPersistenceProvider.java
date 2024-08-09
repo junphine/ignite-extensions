@@ -42,6 +42,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import com.alibaba.fastjson.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
@@ -51,10 +52,13 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.StandardCopyOption;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -65,6 +69,7 @@ public class IgfsDatasetPersistenceProvider{
 
     private static final Logger LOGGER = LoggerFactory.getLogger(IgfsDatasetPersistenceProvider.class);
 
+    private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)
     
     public static final String BUCKET_NAME_PROP = "Bucket Name";
     public static final String KEY_PREFIX_PROP = "Key Prefix";
@@ -78,11 +83,8 @@ public class IgfsDatasetPersistenceProvider{
         DEFAULT_CHAIN
     }
 
-    private volatile Ignite ignite;
-    private volatile IgniteFileSystem igfs;
-     
-    
-    private URI endpointOverride;
+    private Map<String,IgniteFileSystem> fsMap = new HashMap<>();
+    private IgniteFileSystem igfs;
     
     private String s3BucketName = "igfs";
     
@@ -97,34 +99,69 @@ public class IgfsDatasetPersistenceProvider{
      * @return
      */
     IgniteFileSystem fs(String bucketName) {
+    	IgniteFileSystem globalIgfs = allFS().get(bucketName);    	
+    	if(globalIgfs!=null) {
+    		return globalIgfs;
+    	}
+    	
     	if(igfs!=null) {
     		return igfs;
     	}
-    	if(ignite==null) {
-    		ignite = FileManagerInitializer.ignite;
-    	}
-    	s3BucketName = systemConfig.getS3BucketName();
-        if (StringUtils.isEmpty(s3BucketName)) {
-            throw new IllegalArgumentException("The property '" + BUCKET_NAME_PROP + "' must be provided");
-        }        
-        
-        if(!StringUtils.isEmpty(systemConfig.getEndpointOverride()))
-    		endpointOverride = URI.create(systemConfig.getEndpointOverride());
+    	
+    	Ignite ignite = FileManagerInitializer.ignite();    	
         
 		igfs = ignite.fileSystem(s3BucketName);
         return igfs;
     }
+    
+    protected Map<String,IgniteFileSystem> allFS(){
+    	if(fsMap.isEmpty()) {
+    		s3BucketName = systemConfig.getS3BucketName();
+            if (StringUtils.isEmpty(s3BucketName)) {
+                throw new IllegalArgumentException("The property '" + BUCKET_NAME_PROP + "' must be provided");
+            }
+            
+    		Ignite defaltIgnite = FileManagerInitializer.ignite();
+    		String instanceName = defaltIgnite.name();
+    		for(Ignite ignite: Ignition.allGrids()) {
+    			for(IgniteFileSystem fs:ignite.fileSystems()) {
+    				String prefix = StringUtils.isEmpty(ignite.name()) || StringUtils.pathEquals(instanceName, ignite.name()) ? fs.name(): ignite.name()+"-"+fs.name();
+    				if(!prefix.isBlank()) {
+    					fsMap.put(prefix, fs);
+    				}
+    			}
+    		}
+    	}
+    	return fsMap;
+    }
    
     public List<Bucket> getBuckets() {
 		List<Bucket> buckets = new ArrayList<>();
-		IgniteFileSystem fs = fs("/");
+		// 系统保留的bucket
+		SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
+        for(Map.Entry<String,IgniteFileSystem> fsEnt : allFS().entrySet()) {
+            try {
+            	IgniteFileSystem fs = fsEnt.getValue();
+            	String fsName = fsEnt.getKey();
+                Bucket bucket = new Bucket();
+				bucket.setName(fsName);
+				bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date(FileManagerInitializer.cpuStartTime)));
+				bucket.setAuthor(fs.name());
+                buckets.add(bucket);
+            } catch (Exception ex) {
+            	ex.printStackTrace();
+            }
+        }
+        // 用户新建的bucket
+        IgniteFileSystem fs = fs("/");
 		IgfsPath root = new IgfsPath("/");
 		Collection<IgfsFile> list = fs.listFiles(root);
 		for(IgfsFile b: list) {
 			if(b.isDirectory()) {
 				Bucket bucket = new Bucket();
-				bucket.setName(b.path().toString());
-				bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date(b.modificationTime())));				
+				bucket.setName(b.path().toString().substring(1));
+				bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date(b.modificationTime())));
+				bucket.setAuthor(fs.name());
 				buckets.add(bucket);
 			}
 		}
@@ -325,11 +362,18 @@ public class IgfsDatasetPersistenceProvider{
     }
 
     private String getDatasetPath(final String bucketId, final String pathName,final String fileName) {
-        final String sanitizedBucketId = FileUtil.sanitizeFilename(bucketId);
-        final String sanitizedGroup = FileUtil.sanitizePathname(pathName);
+        String sanitizedBucketId = FileUtil.sanitizeFilename(bucketId);
+        String sanitizedGroup = FileUtil.sanitizePathname(pathName);
+        if(sanitizedBucketId.isEmpty() || this.allFS().containsKey(bucketId)) {
+        	if(fileName!=null) {
+            	final String santizedFileName = FileUtil.sanitizeFilename(fileName);
+            	return "/" + sanitizedGroup + '/' + santizedFileName;
+            }
+            return "/" + sanitizedGroup;
+        }
         if(fileName!=null) {
         	final String santizedFileName = FileUtil.sanitizeFilename(fileName);
-        	return sanitizedBucketId + "/" + sanitizedGroup + '/' + santizedFileName;
+        	return "/"+ sanitizedBucketId + "/" + sanitizedGroup + '/' + santizedFileName;
         }
         return "/"+sanitizedBucketId + "/" + sanitizedGroup;
     }    
@@ -342,10 +386,12 @@ public class IgfsDatasetPersistenceProvider{
 		metadata.setContentEncoding(file.property("contentEncoding",null));
 		metadata.setLastModified(new Date(file.modificationTime()));
 		metadata.setUserMetadata(file.properties());
-		if(endpointOverride!=null) {
-			String url = endpointOverride.toString()+"/"+s3BucketName+"/"+file.path().name();
+		
+		if(!StringUtils.isEmpty(systemConfig.getEndpointOverride())) {
+			URI endpointOverride = URI.create(systemConfig.getEndpointOverride());
+    		String url = endpointOverride.toString()+"/"+s3BucketName+"/"+file.path().name();
 			metadata.getUserMetadata().put("endpointURL",url);
-		}
+		}		
 		return metadata;
     }
 	

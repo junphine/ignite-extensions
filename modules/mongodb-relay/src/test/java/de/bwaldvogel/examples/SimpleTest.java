@@ -32,7 +32,7 @@ import de.bwaldvogel.mongo.backend.ignite.IgniteBackend;
 import static de.bwaldvogel.mongo.backend.TestUtils.json;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
-
+import org.apache.ignite.internal.processors.query.h2.sys.SystemViewH2Adapter;
 
 public class SimpleTest {
 

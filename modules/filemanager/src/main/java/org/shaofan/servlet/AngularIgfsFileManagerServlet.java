@@ -48,9 +48,11 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.igfs.IgfsFile;
 import org.apache.ignite.igfs.IgfsPath;
 import org.apache.ignite.internal.GridKernalContext;
+import org.shaofan.s3.FileManagerInitializer;
 import org.shaofan.utils.IgfsUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StringUtils;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
@@ -60,6 +62,7 @@ import jakarta.fileupload.FileItem;
 import jakarta.fileupload.FileUploadException;
 import jakarta.fileupload.disk.DiskFileItemFactory;
 import jakarta.fileupload.servlet.ServletFileUpload;
+
 
 
 /**
@@ -125,10 +128,10 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
 
     private String REPOSITORY_BASE_PATH = "/tmp";
     private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)
-    //private String DATE_FORMAT = "EEE, d MMM yyyy HH:mm:ss z"; // (Wed, 4 Jul 2001 12:08:56)
-
-    private Ignite ignite;    
-    
+    private String WEEK_DATE_FORMAT = "EEE, d MMM yyyy HH:mm:ss z"; // (Wed, 4 Jul 2001 12:08:56)
+   
+    private Map<String,IgniteFileSystem> fsMap = new HashMap<>();
+    private String instanceName;
 
     @Override
     public void init() throws ServletException {
@@ -162,21 +165,7 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
             enabledAction.put(Mode.upload, enabledActions.contains("upload"));
         }
         
-        GridKernalContext ctx = (GridKernalContext) this.getServletContext().getAttribute("gridKernalContext");
-        if(ctx==null) {
-        	String configFile = this.getServletContext().getInitParameter("ignite.cfg.path");
-        	if(configFile==null) {
-        		throw new ServletException("Must set ignite.cfg.path on contenx parameter");
-        	}
-        	String instanceName = this.getServletContext().getInitParameter("ignite.igfs.instanceName");
-        	ignite = Ignition.start(configFile);
-        	if(instanceName !=null && Ignition.allGrids().size()>0) {
-        		ignite = Ignition.ignite(instanceName);
-        	}
-        }
-        else {
-        	ignite = ctx.grid();
-        }
+        this.instanceName = this.getServletContext().getInitParameter("ignite.igfs.instanceName");
     }
     
     /**
@@ -185,10 +174,24 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
      * @return
      */
     protected IgniteFileSystem fs(String bucketName) {    		
-    	IgniteFileSystem igfs = ignite.fileSystem(bucketName);
+    	IgniteFileSystem igfs = allFS().get(bucketName);
         return igfs;
 
-    }    
+    }
+    
+    protected Map<String,IgniteFileSystem> allFS(){
+    	if(fsMap.isEmpty()) {
+    		for(Ignite ignite: Ignition.allGrids()) {
+    			for(IgniteFileSystem fs:ignite.fileSystems()) {
+    				String prefix = StringUtils.isEmpty(ignite.name()) || StringUtils.pathEquals(this.instanceName, ignite.name()) ? fs.name(): ignite.name()+"-"+fs.name();
+    				if(!prefix.isBlank()) {
+    					fsMap.put(prefix, fs);
+    				}
+    			}
+    		}
+    	}
+    	return fsMap;
+    }
 
     /**
     *
@@ -491,15 +494,16 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
             String[] tokens = getFileToken(path);
             Collection<IgniteFileSystem> fsList = new ArrayList<>();
             if(tokens[0].isEmpty()) {
-            	fsList = ignite.fileSystems();            	
+            	
             	SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
-                for(IgniteFileSystem fs : fsList) {
+                for(Map.Entry<String,IgniteFileSystem> fsEnt : allFS().entrySet()) {
     	            try {
-    	            	String fsName = fs.name();    	                
+    	            	IgniteFileSystem fs = fsEnt.getValue();
+    	            	String fsName = fsEnt.getKey();    	                
     	                JSONObject el = new JSONObject();
 	                    el.put("name", fsName);
 	                    el.put("rights", getPermissions(null));
-	                    el.put("date", dt.format(new Date(ignite.version().revisionTimestamp())));
+	                    el.put("date", dt.format(new Date(FileManagerInitializer.cpuStartTime)));
 	                    el.put("size", fs.metrics().filesCount());
 	                    el.put("type", "dir");
 	                    resultList.add(el);

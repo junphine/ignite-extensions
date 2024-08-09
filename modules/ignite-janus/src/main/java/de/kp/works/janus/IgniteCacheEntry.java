@@ -18,8 +18,6 @@ package de.kp.works.janus;
  * 
  */
 
-import de.kp.works.janus.AbstractEntryBuilder;
-import de.kp.works.janus.IgniteValue;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

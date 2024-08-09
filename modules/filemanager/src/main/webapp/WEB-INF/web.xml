@@ -20,12 +20,7 @@
 	xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd"
 	version="3.0">
 
- <display-name>s3-filemanager-web</display-name>
- 
- 	<context-param>  
-		<param-name>ignite.cfg.path</param-name>  
-		<param-value>config/igfs-ignite.xml</param-value>  
-	</context-param>
+ 	<display-name>igfs-filemanager-web</display-name>
 	
 	<context-param>  
 		<param-name>ignite.igfs.instanceName</param-name>  
@@ -35,7 +30,28 @@
 	<context-param>  
 		<param-name>repository.base.path</param-name>  
 		<param-value>./work/log</param-value>  
-	</context-param> 
+	</context-param>
+	
+	<!-- 配置前端控制器DispatcherServlet -->
+	 <servlet>
+	      <servlet-name>springmvc</servlet-name>
+	      <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>	      
+	      <init-param>	     
+		      <param-name>contextConfigLocation</param-name>
+		      <param-value>classpath:META-INF/springmvc-servlet.xml</param-value>
+	      </init-param>
+	      <load-on-startup>1</load-on-startup>
+	  </servlet>
+	
+	
+	  <servlet-mapping>
+	      <servlet-name>springmvc</servlet-name>
+	      <url-pattern>/</url-pattern>
+	  </servlet-mapping>
+	
+	<listener>  
+        <listener-class>org.shaofan.s3.FileManagerInitializer</listener-class>  
+    </listener>  
    
     
     <servlet>
@@ -51,6 +67,7 @@
         </init-param>
         <load-on-startup>1</load-on-startup>
     </servlet>
+    
     <servlet-mapping>
         <servlet-name>AngularFileManagerServlet</servlet-name>
         <url-pattern>/logs/*</url-pattern>

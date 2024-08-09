@@ -5,6 +5,7 @@ import org.apache.ignite.configuration.*;
 import org.apache.ignite.internal.processors.cache.GridCacheDefaultAffinityKeyMapper;
 import org.apache.ignite.binary.*;
 import org.apache.ignite.*;
+import org.apache.ignite.affinity.KeyPrefixAffinityKeyMapper;
 
 import de.kp.works.ignite.graph.*;
 import org.apache.ignite.cache.*;

@@ -28,22 +28,29 @@ import org.janusgraph.diskstorage.common.AbstractStoreTransaction;
 public class IgniteStoreTransaction extends AbstractStoreTransaction {
 	
 	final Transaction t;
+	final boolean topLeverl;
 
-	public IgniteStoreTransaction(Transaction t, BaseTransactionConfig config) {
+	public IgniteStoreTransaction(Transaction t, boolean isCreate, BaseTransactionConfig config) {
 		super(config);
 		this.t = t;
+		this.topLeverl = isCreate;
 	}
 
 	@Override
 	public void commit() throws BackendException {
-		t.commit();
-		super.commit();
+		if(topLeverl) {
+			t.commit();
+		}		
 	}
 
 	@Override
 	public void rollback() throws BackendException {
-		t.rollback();
-		super.rollback();		
+		if(topLeverl) {
+			t.rollback();
+		}
+		else {
+			t.setRollbackOnly();
+		}
 	}
 
 }

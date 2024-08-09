@@ -18,20 +18,30 @@ package de.kp.works.janus;
  * 
  */
 
+import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyIterator;
 import org.janusgraph.diskstorage.util.RecordIterator;
+import org.janusgraph.diskstorage.util.StaticArrayEntry;
 
 import java.util.Iterator;
 import java.util.List;
 
 public class IgniteKeyIterator implements KeyIterator {
 
-	final Iterator<Entry> iterator;
+	/* HASH_KEY (0), RANGE_KEY (1), BYTE_BUFFER (2) */
+	final Iterator<List<?>> iterator;
+	private FieldsQueryCursor<List<?>> curser;
 
-	public IgniteKeyIterator(List<Entry> entries) {
+	public IgniteKeyIterator(List<List<?>> entries) {
+		this.curser = null;
 		this.iterator = entries.iterator();
+	}
+
+	public IgniteKeyIterator(FieldsQueryCursor<List<?>> curser) {
+		this.curser = curser;
+		this.iterator = curser.iterator();
 	}
 
 	@Override
@@ -45,13 +55,26 @@ public class IgniteKeyIterator implements KeyIterator {
 		 * The key iterator provides hash keys that
 		 * are from a column slice request
 		 */
-		Entry entry = iterator.next();
-		return entry.getColumn();
+		List<?> result = iterator.next();
+		String rowKey = (String) result.get(0);
+		StaticBuffer hashKey = AbstractEntryBuilder.decodeKeyFromHexString(rowKey);
 
+		byte[] byteBuffer = (byte[]) result.get(2);
+		StaticBuffer value = AbstractEntryBuilder.decodeValue(byteBuffer);
+
+		if (value == null)
+			return StaticArrayEntry.of(hashKey).getColumn();
+		else
+			return StaticArrayEntry.of(hashKey, value).getColumn();
+		
 	}
 
 	@Override
 	public void close() {
+		if(this.curser!=null) {
+			this.curser.close();
+			this.curser = null;
+		}
 	}
 
 	@Override
@@ -65,11 +88,22 @@ public class IgniteKeyIterator implements KeyIterator {
 
 			@Override
 			public Entry next() {
-				return iterator.next();
+				List<?> result = iterator.next();
+				String rowKey = (String) result.get(0);
+				StaticBuffer hashKey = AbstractEntryBuilder.decodeKeyFromHexString(rowKey);
+
+				byte[] byteBuffer = (byte[]) result.get(2);
+				StaticBuffer value = AbstractEntryBuilder.decodeValue(byteBuffer);
+
+				if (value == null)
+					return StaticArrayEntry.of(hashKey);
+				else
+					return StaticArrayEntry.of(hashKey, value);
 			}
 
 			@Override
 			public void close() {
+				IgniteKeyIterator.this.close();
 			}
 		};
 	}

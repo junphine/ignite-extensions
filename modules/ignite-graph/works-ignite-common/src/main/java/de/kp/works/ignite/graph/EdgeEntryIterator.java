@@ -117,8 +117,7 @@ public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,Aut
         	propValue = ValueUtils.parseValue(propValue.toString(), ValueType.valueOf(propType));
         }
 
-        return new IgniteEdgeEntry(
-                cacheKey,
+        return new IgniteEdgeEntry(                
                 id,
                 idType,
                 label,

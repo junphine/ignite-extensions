@@ -19,7 +19,7 @@ import de.kp.works.ignite.graph.IgniteVertexEntry;
 
 public class VertexEntryIterator implements CloseableIterator<IgniteVertexEntry>,AutoCloseable {
 	private Iterator<List<?>> sqlResult;
-	private FieldsQueryCursor cursor;
+	private FieldsQueryCursor<List<?>> cursor;
 	
 	public VertexEntryIterator(FieldsQueryCursor<List<?>> curser) {
 		this.cursor = curser;
@@ -110,8 +110,7 @@ public class VertexEntryIterator implements CloseableIterator<IgniteVertexEntry>
          	propValue = ValueUtils.parseValue(propValue.toString(), ValueType.valueOf(propType));
          }
 
-         return new IgniteVertexEntry(
-                 cacheKey,
+         return new IgniteVertexEntry(         
                  id,
                  idType,
                  label,

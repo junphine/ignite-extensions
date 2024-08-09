@@ -22,12 +22,16 @@ import org.apache.ignite.IgniteException;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.binary.BinaryObjectException;
 import org.apache.ignite.cache.QueryEntity;
+import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
+import org.apache.ignite.cache.query.SqlFieldsQuery;
+import org.apache.ignite.cache.query.SqlQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.util.typedef.T2;
 import org.apache.ignite.internal.util.typedef.T3;
 import org.apache.ignite.lang.IgniteBiPredicate;
+import org.apache.ignite.predicate.FieldEqualsMatch;
 
 import com.google.common.collect.Sets;
 
@@ -48,6 +52,7 @@ import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.exception.BadValueException;
 import de.bwaldvogel.mongo.exception.DuplicateKeyError;
 import de.bwaldvogel.mongo.exception.IllegalOperationException;
+import de.bwaldvogel.mongo.exception.InvalidOptionsException;
 import de.bwaldvogel.mongo.exception.TypeMismatchException;
 
 
@@ -293,14 +298,65 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 	}
     
     protected CloseableIterator<Document> matchDocuments(Document query, Document orderBy, int numberToSkip, int numberToReturn) {       
-        
-        IgniteBiPredicate<Object, Object> filter = new BinaryObjectMatch(query,this.idField);
-        
-        ScanQuery<Object, Object> scan = new ScanQuery<>(query.isEmpty()? null: filter);
-	 
-		QueryCursor<Cache.Entry<Object, Object>>  cursor = dataMap.query(scan);		  
-	    
-	    return TransformerUtil.map(cursor,this.idField);
+        boolean isSysDB = this.getDatabaseName().equals(IgniteDatabase.SYS_DB_NAME);
+        if(query.containsKey("$sql")) {
+        	Object sqlQuery = query.get("$sql");
+        	SqlFieldsQuery sqlQ;
+        	if(sqlQuery instanceof String) {
+        		sqlQ = new SqlFieldsQuery(sqlQuery.toString());
+        	}
+        	else if(sqlQuery instanceof Document) {        		
+        		Document sqlInfo = (Document)sqlQuery;
+        		String sql = (String)sqlInfo.get("query");
+        		sqlQ = new SqlFieldsQuery(sql);
+        		if(sqlInfo.containsKey("args")) {
+        			Object args = sqlInfo.get("args");
+        			if(args instanceof List) {
+        				sqlQ.setArgs(((List)args).toArray());
+        			}
+        			else {
+        				sqlQ.setArgs(args);
+        			}
+        		}
+        		if(sqlInfo.containsKey("schema")) {
+        			sqlQ.setSchema(sqlInfo.get("schema").toString());
+        		}
+        		if(sqlInfo.containsKey("local")) {
+        			sqlQ.setLocal(sqlInfo.get("local").equals(true));
+        		}
+        		if(sqlInfo.containsKey("distributedJoins")) {
+        			sqlQ.setDistributedJoins(sqlInfo.get("distributedJoins").equals(true));
+        		}
+        		if(sqlInfo.containsKey("collocated")) {
+        			sqlQ.setCollocated(sqlInfo.get("collocated").equals(true));
+        		}
+        	}
+        	else {
+        		throw new InvalidOptionsException("$sql value must be String or Document!");
+        	}
+       	 
+        	FieldsQueryCursor<List<?>>  cursor = dataMap.query(sqlQ);
+    		
+    		return TransformerUtil.mapListField(cursor,this.idField);
+        }
+        else {
+	        IgniteBiPredicate<Object, Object> filter = null;
+	        if(isSysDB && !query.isEmpty()) {
+	        	final String ns = (String)query.get("ns");
+	        	if(ns!=null) {
+		        	filter = new FieldEqualsMatch("ns",ns);
+	        	}
+	        }
+	        else {
+	        	filter = new BinaryObjectMatch(query,this.idField);
+	        }
+	        
+	        ScanQuery<Object, Object> scan = new ScanQuery<>(query.isEmpty() ? null : filter);
+		 
+			QueryCursor<Cache.Entry<Object, Object>>  cursor = dataMap.query(scan);		  
+		    
+		    return TransformerUtil.map(cursor,this.idField);
+        }
     }
 
     
