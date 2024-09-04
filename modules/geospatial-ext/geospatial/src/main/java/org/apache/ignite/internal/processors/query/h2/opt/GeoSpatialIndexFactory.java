@@ -52,8 +52,14 @@ public class GeoSpatialIndexFactory implements IndexFactory {
             if (keyDefs.get(0).order().nullsOrder() != null)
                 throw DbException.getUnsupportedException("cannot do nulls ordering");
 
-            if (keyDefs.get(0).idxType() != IndexKeyType.GEOMETRY)
-                throw DbException.getUnsupportedException("spatial index on non-geometry column");
+            if (keyDefs.get(0).idxType() != IndexKeyType.GEOMETRY) {
+            	if(keyDefs.get(0).idxType() == IndexKeyType.JAVA_OBJECT) {
+            		
+            	}
+            	else {
+            		throw DbException.getUnsupportedException("spatial index on non-geometry column");
+            	}
+            }
 
             return new GeoSpatialIndexImpl(cctx, def);
         }

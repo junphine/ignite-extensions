@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.processors.query.h2.opt;
 
+import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexKeyType;
 import org.apache.ignite.internal.cache.query.index.sorted.keys.IndexKey;
 import org.h2.value.ValueGeometry;
@@ -28,8 +29,16 @@ public class GeometryIndexKey implements IndexKey {
     private final ValueGeometry geometry;
 
     /** */
-    public GeometryIndexKey(Geometry g) {
-        geometry = ValueGeometry.getFromGeometry(g);
+    public GeometryIndexKey(Object g) {
+    	if(g instanceof BinaryObject) {
+    		g = ((BinaryObject)g).deserialize();
+    	}
+    	
+    	if(g instanceof Geometry)        	
+    		geometry = ValueGeometry.getFromGeometry(g);
+    	else {
+    		throw new java.lang.IllegalStateException(g.getClass().toString());
+    	}
     }
 
     /** {@inheritDoc} */

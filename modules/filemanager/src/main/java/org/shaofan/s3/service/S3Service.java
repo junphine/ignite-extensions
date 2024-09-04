@@ -14,10 +14,12 @@ public interface S3Service {
     List<Bucket> listBuckets();
 
     boolean headBucket(String bucketName);
+    
+    Boolean objectIsFolder(String bucketName, String prefix);
 
     List<S3Object> listObjects(String bucketName, String prefix);
 
-    HashMap<String, String> headObject(String bucketName, String objectKey);
+    ObjectMetadata headObject(String bucketName, String objectKey);
 
     S3ObjectInputStream getObject(String bucketName, String objectKey);
 

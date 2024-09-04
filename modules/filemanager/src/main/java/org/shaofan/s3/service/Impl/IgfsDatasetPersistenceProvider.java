@@ -32,6 +32,7 @@ import org.shaofan.s3.model.ObjectMetadata;
 import org.shaofan.s3.model.S3Object;
 import org.shaofan.s3.service.DatasetPersistenceException;
 import org.shaofan.s3.util.DateUtil;
+import org.shaofan.s3.util.EncryptUtil;
 import org.shaofan.s3.util.FileUtil;
 import org.shaofan.utils.FileUtils;
 import org.shaofan.utils.IgfsUtils;
@@ -39,10 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
-import com.alibaba.fastjson.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
@@ -65,11 +65,9 @@ import java.util.Map;
  * An {@link DatasetPersistenceProvider} that uses AWS Igfs for storage.
  */
 @Service
-public class IgfsDatasetPersistenceProvider{
+public class IgfsDatasetPersistenceProvider {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(IgfsDatasetPersistenceProvider.class);
-
-    private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)
     
     public static final String BUCKET_NAME_PROP = "Bucket Name";
     public static final String KEY_PREFIX_PROP = "Key Prefix";
@@ -86,6 +84,7 @@ public class IgfsDatasetPersistenceProvider{
     private Map<String,IgniteFileSystem> fsMap = new HashMap<>();
     private IgniteFileSystem igfs;
     
+    // default bucket container
     private String s3BucketName = "igfs";
     
     @Autowired
@@ -98,7 +97,7 @@ public class IgfsDatasetPersistenceProvider{
      * @param bucketName
      * @return
      */
-    IgniteFileSystem fs(String bucketName) {
+    protected IgniteFileSystem fs(String bucketName) {
     	IgniteFileSystem globalIgfs = allFS().get(bucketName);    	
     	if(globalIgfs!=null) {
     		return globalIgfs;
@@ -121,10 +120,10 @@ public class IgfsDatasetPersistenceProvider{
                 throw new IllegalArgumentException("The property '" + BUCKET_NAME_PROP + "' must be provided");
             }
             
-    		Ignite defaltIgnite = FileManagerInitializer.ignite();
-    		String instanceName = defaltIgnite.name();
+    		Ignite defaultIgnite = FileManagerInitializer.ignite();
+    		String instanceName = defaultIgnite.name();
     		for(Ignite ignite: Ignition.allGrids()) {
-    			for(IgniteFileSystem fs:ignite.fileSystems()) {
+    			for(IgniteFileSystem fs: ignite.fileSystems()) {
     				String prefix = StringUtils.isEmpty(ignite.name()) || StringUtils.pathEquals(instanceName, ignite.name()) ? fs.name(): ignite.name()+"-"+fs.name();
     				if(!prefix.isBlank()) {
     					fsMap.put(prefix, fs);
@@ -137,15 +136,14 @@ public class IgfsDatasetPersistenceProvider{
    
     public List<Bucket> getBuckets() {
 		List<Bucket> buckets = new ArrayList<>();
-		// 系统保留的bucket
-		SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
+		// 系统保留的bucket		
         for(Map.Entry<String,IgniteFileSystem> fsEnt : allFS().entrySet()) {
             try {
             	IgniteFileSystem fs = fsEnt.getValue();
             	String fsName = fsEnt.getKey();
                 Bucket bucket = new Bucket();
 				bucket.setName(fsName);
-				bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date(FileManagerInitializer.cpuStartTime)));
+				bucket.setCreationDate(DateUtil.getDateIso8601Format(new Date(FileManagerInitializer.cpuStartTime)));
 				bucket.setAuthor(fs.name());
                 buckets.add(bucket);
             } catch (Exception ex) {
@@ -157,10 +155,10 @@ public class IgfsDatasetPersistenceProvider{
 		IgfsPath root = new IgfsPath("/");
 		Collection<IgfsFile> list = fs.listFiles(root);
 		for(IgfsFile b: list) {
-			if(b.isDirectory()) {
+			if(b.isDirectory() && !allFS().containsKey(b.path().toString().substring(1))) {
 				Bucket bucket = new Bucket();
 				bucket.setName(b.path().toString().substring(1));
-				bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date(b.modificationTime())));
+				bucket.setCreationDate(DateUtil.getDateIso8601Format(new Date(b.modificationTime())));
 				bucket.setAuthor(fs.name());
 				buckets.add(bucket);
 			}
@@ -168,7 +166,10 @@ public class IgfsDatasetPersistenceProvider{
 		return buckets;
 	}
     
-    public Bucket createBucket(Bucket bucket,String path) {
+    public Bucket createBucket(Bucket bucket,String path) {    	
+    	if(allFS().containsKey(bucket.getName())){
+    		return bucket;
+    	}
     	IgniteFileSystem fs = fs(bucket.getName());
         IgfsPath dir = new IgfsPath("/"+bucket.getName());
         try {
@@ -211,23 +212,25 @@ public class IgfsDatasetPersistenceProvider{
         }
     }
     
-    public void createOrUpdateDatasetVersion(final DatasetSnapshotContext context, InputStream contentStream)
+    public String createOrUpdateDatasetVersion(final DatasetSnapshotContext context, InputStream contentStream)
             throws DatasetPersistenceException {
         final String key = getKey(context);
         final String dir = getKeyPrefix(context.getBucketName(),context.getDatasetName());
         LOGGER.debug("Saving dataset version to igfs in bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
         IgniteFileSystem fs = fs(context.getBucketName());
         IgfsPath datasetFile = new IgfsPath(key);
+        String md5 = null;
         try {
         	IgfsUtils.mkdirs(fs,new IgfsPath(dir));
-        	IgfsUtils.create(fs,datasetFile, contentStream);
+        	md5 = IgfsUtils.createWithMd5(fs, datasetFile, contentStream);
             LOGGER.debug("Successfully saved dataset version to Igfs bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
         } catch (Exception e) {
             throw new DatasetPersistenceException("Error saving dataset version to Igfs due to: " + e.getMessage(), e);
         }
+        return md5;
     }
     
-    public void appendDatasetVersion(final DatasetSnapshotContext context, InputStream contentStream)
+    public long appendDatasetVersion(final DatasetSnapshotContext context, InputStream contentStream)
             throws DatasetPersistenceException {
         final String key = getKey(context);
         final String dir = getKeyPrefix(context.getBucketName(),context.getDatasetName());
@@ -235,8 +238,7 @@ public class IgfsDatasetPersistenceProvider{
         IgniteFileSystem fs = fs(context.getBucketName());
         IgfsPath datasetFile = new IgfsPath(key);
         try {        	
-        	IgfsUtils.append(fs,datasetFile, contentStream);
-            LOGGER.debug("Successfully saved dataset version to Igfs bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
+        	return IgfsUtils.append(fs, datasetFile, contentStream);            
         } catch (Exception e) {
             throw new DatasetPersistenceException("Error saving dataset version to Igfs due to: " + e.getMessage(), e);
         }
@@ -355,10 +357,13 @@ public class IgfsDatasetPersistenceProvider{
     }
     
     private String getObjectKey(final IgfsPath path, final String bucket) {
+    	if(this.allFS().containsKey(bucket)) {
+    		return path.toString().substring(1);
+    	}
         if(path.toString().startsWith("/"+bucket)) {
         	return path.toString().substring(bucket.length()+2);
         }
-        return path.toString();
+        throw new DatasetPersistenceException("invalide path:" + path.toString());
     }
 
     private String getDatasetPath(final String bucketId, final String pathName,final String fileName) {
@@ -378,22 +383,65 @@ public class IgfsDatasetPersistenceProvider{
         return "/"+sanitizedBucketId + "/" + sanitizedGroup;
     }    
     
-    public ObjectMetadata getObjectMetadata(IgfsFile file) {
+    public ObjectMetadata getObjectMetadata(IgfsFile file,String bucketName) {
     	ObjectMetadata metadata = new ObjectMetadata();
 		metadata.setFileName(file.path().name());
 		metadata.setContentLength(file.length());
 		metadata.setContentType(FileUtil.getContentType(metadata.getFileName()));
 		metadata.setContentEncoding(file.property("contentEncoding",null));
 		metadata.setLastModified(new Date(file.modificationTime()));
-		metadata.setUserMetadata(file.properties());
+		metadata.setUserMetadata(file.properties());		
+		metadata.setETag(file.property("etag",null));
 		
-		if(!StringUtils.isEmpty(systemConfig.getEndpointOverride())) {
-			URI endpointOverride = URI.create(systemConfig.getEndpointOverride());
-    		String url = endpointOverride.toString()+"/"+s3BucketName+"/"+file.path().name();
-			metadata.getUserMetadata().put("endpointURL",url);
-		}		
+		if(metadata.getETag()==null) {
+			String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+file.path().name());
+			metadata.setETag(eTag+'-'+0);
+		}
+		
+		String expirationTime = file.property("expirationTime",null);
+		if(expirationTime!=null) {
+			metadata.setExpirationTime(new Date(Long.valueOf(expirationTime)));
+		}
+		
 		return metadata;
     }
+    
+    public ObjectMetadata getFolderMetadata(IgfsFile file,String bucketName) {
+    	ObjectMetadata metadata = new ObjectMetadata();
+		metadata.setFileName(file.path().name()+"/");
+		metadata.setContentLength(0);
+		metadata.setContentType(MediaType.APPLICATION_XML.toString());
+		
+		metadata.setLastModified(new Date(file.modificationTime()));
+		metadata.setUserMetadata(file.properties());
+		
+		metadata.setETag(file.property("etag",null));
+		if(metadata.getETag()==null) {
+			String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+metadata.getFileName());
+			metadata.setETag(eTag+'-'+0);
+		}
+		
+		String expirationTime = file.property("expirationTime",null);
+		if(expirationTime!=null) {
+			metadata.setExpirationTime(new Date(Long.valueOf(expirationTime)));
+		}
+	
+		return metadata;
+    }
+    
+    public ObjectMetadata getObjectMetadata(String bucketName, String objectKey) {		
+		IgniteFileSystem fs = fs(bucketName);
+		String key = getDatasetPath(bucketName,objectKey,null);
+		IgfsPath path = new IgfsPath(key);
+		IgfsFile file = fs.info(path);
+		if(file==null) {
+			return null;
+		}	
+		if(file.isDirectory()) {
+			return getFolderMetadata(file,bucketName);
+		}
+		return getObjectMetadata(file,bucketName);
+	}
 	
 	public List<S3Object> getObjectsAndMetadata(String bucketName, String s3KeyPrefix) {		
 		IgniteFileSystem fs = fs(bucketName);
@@ -410,14 +458,37 @@ public class IgfsDatasetPersistenceProvider{
 			flow.setBucketName(bucketName);
 			if(dataset.isFile()) {
 				flow.setKey(getObjectKey(dataset.path(),bucketName));
-				flow.setMetadata(getObjectMetadata(dataset));
+				flow.setMetadata(getObjectMetadata(dataset,bucketName));
 			}
 			else {
 				flow.setKey(getObjectKey(dataset.path(),bucketName)+"/");
-				flow.setMetadata(getObjectMetadata(dataset));
+				flow.setMetadata(getFolderMetadata(dataset,bucketName));
 			}
 			flows.add(flow);
 		}		
 		return flows;
+	}
+	
+	public boolean setObjectMetadata(String bucketName, String s3KeyPrefix,Map<String,String> props) {		
+		IgniteFileSystem fs = fs(bucketName);
+		String key = getDatasetPath(bucketName,s3KeyPrefix,null);
+		IgfsPath path = new IgfsPath(key);
+		IgfsFile file = fs.update(path, props);
+		if(file==null) {
+			return false;
+		}
+		return true;
+		
+	}
+	
+	public Boolean objectIsFolder(String bucketName, String s3KeyPrefix) {		
+		IgniteFileSystem fs = fs(bucketName);
+		String key = getDatasetPath(bucketName,s3KeyPrefix,null);
+		IgfsPath path = new IgfsPath(key);
+		IgfsFile file = fs.info(path);
+		if(file==null) {
+			return null;
+		}
+		return file.isDirectory();
 	}
 }

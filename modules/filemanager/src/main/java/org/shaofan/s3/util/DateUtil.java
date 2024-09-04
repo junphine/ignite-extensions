@@ -10,6 +10,8 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.Locale;
+
 import software.amazon.awssdk.utils.DateUtils;
 
 public class DateUtil {
@@ -21,11 +23,15 @@ public class DateUtil {
         return tag;
     }
     
-    public static String getDateGMTFormat(Date date) {
-    	DateFormat df = new SimpleDateFormat("ddd, DD MMM YYYY HH:mm:ss ZZ");
-        String tag = df.format(date);
-        
+    public static String getDateIso8601Format(Date date) {    	
         String str = DateUtils.formatIso8601Date(Instant.ofEpochMilli(date.getTime()));
+        return str;
+    }
+    
+    public static String getDateGMTFormat(Date date) {
+    	//DateFormat df = new SimpleDateFormat("EEE MMM ddHH:mm:ss 'GMT' yyyy",Locale.US);
+        //String tag = df.format(date);
+        String str = DateUtils.formatRfc1123Date(Instant.ofEpochMilli(date.getTime()));
         return str;
     }
 

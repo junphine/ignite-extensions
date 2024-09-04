@@ -31,6 +31,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * api参考地址 https://docs.aws.amazon.com/AmazonS3/latest/API/
@@ -52,8 +54,12 @@ public class S3Controller {
     @PutMapping("/{bucketName}")
     public ResponseEntity<String> createBucket(@PathVariable String bucketName) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
+        if (s3Service.headBucket(bucketName)) {
+            return ResponseEntity.status(409).body("BucketAlreadyExists");
+        }
         s3Service.createBucket(bucketName);
-        return ResponseEntity.ok().build();
+        String lacation = systemConfig.getEndpointOverride()+bucketName+"/";
+        return ResponseEntity.ok().location(new URI(lacation)).build();
     }
 
     @GetMapping("/")
@@ -66,12 +72,13 @@ public class S3Controller {
         Element id = owner.addElement("ID");
         id.setText(systemConfig.getAccessKey());
         Element displayName = owner.addElement("DisplayName");
-        displayName.setText("admin");
+        
         Element buckets = root.addElement("Buckets");
         for (Bucket item : result.getBuckets()) {
             Element bucket = buckets.addElement("Bucket");
             Element name = bucket.addElement("Name");
             name.setText(item.getName());
+            displayName.setText(item.getAuthor());
             Element creationDate = bucket.addElement("CreationDate");
             creationDate.setText(item.getCreationDate());
         }
@@ -88,7 +95,7 @@ public class S3Controller {
     }
 
     @RequestMapping(value = "/{bucketName}", method = RequestMethod.HEAD)
-    public ResponseEntity<Object> headBucket(@PathVariable(value = "bucketName") String bucketName) throws Exception {
+    public ResponseEntity<Object> headBucket(@PathVariable(value = "bucketName") String bucketName,HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         if (s3Service.headBucket(bucketName)) {
             return ResponseEntity.ok().build();
@@ -104,63 +111,118 @@ public class S3Controller {
         return ResponseEntity.noContent().build();
     }
 
-    // Object相关接口
+    // List Object相关接口
     @GetMapping("/{bucketName}")
-    public ResponseEntity<String> listObjects(@PathVariable String bucketName, HttpServletRequest request) throws Exception {
-        bucketName = URLDecoder.decode(bucketName, "utf-8");
-        String xml = "";
+    public void listObjects(@PathVariable String bucketName, HttpServletRequest request,HttpServletResponse response) throws Exception {
+        bucketName = URLDecoder.decode(bucketName, "utf-8");        
         String prefix = ConvertOp.convert2String(request.getParameter("prefix"));
+        boolean delimiter = request.getParameter("delimiter")!=null;
+        _listObjects(bucketName,prefix,delimiter,response);
+    }
+    
+    private void _listObjects(@PathVariable String bucketName, String prefix,boolean delimiter,HttpServletResponse response) throws Exception {
+        bucketName = URLDecoder.decode(bucketName, "utf-8");        
+        
         List<S3Object> s3ObjectList = s3Service.listObjects(bucketName, prefix);
         Document doc = DocumentHelper.createDocument();
-        Element root = doc.addElement("ListObjectsResult");
+        Element root = doc.addElement("ListBucketResult");
         Element name = root.addElement("Name");
         name.setText(bucketName);
         Element prefixElement = root.addElement("Prefix");
         prefixElement.setText(prefix);
+        if(delimiter) {
+        	Element delimiterElement = root.addElement("Delimiter");
+        	delimiterElement.setText("/");     	
+        }
         Element isTruncated = root.addElement("IsTruncated");
         isTruncated.setText("false");
         Element maxKeys = root.addElement("MaxKeys");
-        maxKeys.setText("100000");
+        maxKeys.setText("5000");
+        Element countKeys = root.addElement("KeyCount");
+        countKeys.setText(""+s3ObjectList.size());
+        Set<String> prefixs = new TreeSet<>();
         for (S3Object s3Object : s3ObjectList) {
+        	if(delimiter) {
+        		if(prefix==null || prefix.isEmpty()) {
+        			if(s3Object.getKey().endsWith("/")) {
+        				prefixs.add(s3Object.getKey());
+        				continue;
+        			}
+        		}
+        		else if(s3Object.getKey().endsWith("/")) {        			
+        			prefixs.add(s3Object.getKey());
+        			continue;
+        		}
+        		else if(s3Object.getKey().startsWith(prefix)) {
+        			String[] filePathList = s3Object.getKey().split("/");
+        	        StringBuilder result = new StringBuilder();
+        	        for (int i = 0; i < filePathList.length - 1; i++) {
+        	            result.append(filePathList[i]).append("/");
+        	        }
+        			prefixs.add(result.toString());   			
+        		}
+        		
+        	}
             Element contents = root.addElement("Contents");
             Element key = contents.addElement("Key");
             key.setText(s3Object.getKey());
             if (!StringUtils.isEmpty(s3Object.getMetadata().getLastModified())) {
                 Element lastModified = contents.addElement("LastModified");
-                lastModified.setText(DateUtil.getDateGMTFormat(s3Object.getMetadata().getLastModified()));
-                Element size = contents.addElement("Size");
-                size.setText(s3Object.getMetadata().getContentLength() + "");
+                lastModified.setText(DateUtil.getDateIso8601Format(s3Object.getMetadata().getLastModified()));                
             }
+            Element size = contents.addElement("Size");
+            size.setText(s3Object.getMetadata().getContentLength() + "");
+            
+            Element ETag = contents.addElement("ETag");
+            ETag.setText(s3Object.getMetadata().getETag());
+            
+            Element StorageClass = contents.addElement("StorageClass");
+            StorageClass.setText("STANDARD");
+            
         }
-
+        if(delimiter) {
+        	Element prefixesElement = root.addElement("CommonPrefixes");
+        	for(String p : prefixs) {
+	        	Element Prefix = prefixesElement.addElement("Prefix");
+	        	Prefix.setText(p);
+        	}
+        }
+        response.setHeader("ContentType", MediaType.APPLICATION_XML.toString());
+        response.setCharacterEncoding("UTF-8");
         OutputFormat format = OutputFormat.createPrettyPrint();
-        format.setEncoding("utf-8");
-        StringWriter out;
-        out = new StringWriter();
-        XMLWriter writer = new XMLWriter(out, format);
+        format.setEncoding("utf-8");        
+        XMLWriter writer = new XMLWriter(response.getWriter(), format);
         writer.write(doc);
         writer.close();
-        xml = out.toString();
-        out.close();
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_XML).body(xml);
     }
 
+
     @RequestMapping(value = "/{bucketName}/**", method = RequestMethod.HEAD)
-    public ResponseEntity<Object> headObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void headObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
         if (pageUrl.indexOf("\\?") >= 0) {
             pageUrl = pageUrl.split("\\?")[0];
         }
-        String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "").replace("/metadata", "");
-        HashMap<String, String> headInfo = s3Service.headObject(bucketName, objectKey);
-        if (headInfo.containsKey("NoExist")) {
-            return ResponseEntity.notFound().build();
+        String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
+        ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
+        if (metadata==null) {
+        	response.setStatus(404);
         } else {
+        	HashMap<String, String> headInfo = new HashMap<>();
+        	
+            if(metadata.getContentLength()>0 && !metadata.getFileName().endsWith("/")) {
+            	headInfo.put("Content-Disposition", "filename=" + URLEncoder.encode(metadata.getFileName(), "utf-8"));
+            	headInfo.put("Content-Length", ""+metadata.getContentLength());
+            }
+            headInfo.put("Content-Type", metadata.getContentType());
+            headInfo.put("Last-Modified", DateUtil.getDateGMTFormat(metadata.getLastModified()));                
+            headInfo.put("ETag",metadata.getETag());
+            
             for (String key : headInfo.keySet()) {
                 response.addHeader(key, headInfo.get(key));
             }
-            return ResponseEntity.ok().build();
+
         }
     }
 
@@ -182,6 +244,9 @@ public class S3Controller {
         } else {
             if (copySource.indexOf("\\?") >= 0) {
                 copySource = copySource.split("\\?")[0];
+            }
+            if(copySource.startsWith("/")) {
+            	copySource = copySource.substring(1);
             }
             String[] copyList = copySource.split("\\/");
             String sourceBucketName = "";
@@ -220,39 +285,55 @@ public class S3Controller {
     }
 
     @GetMapping("/{bucketName}/**")
-    public void getObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void getOrListObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
         if (pageUrl.indexOf("\\?") >= 0) {
             pageUrl = pageUrl.split("\\?")[0];
         }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
-        S3ObjectInputStream objectStream = s3Service.getObject(bucketName, objectKey);
-        response.setContentType(objectStream.getMetadata().getContentType());
-        response.setHeader("Content-Disposition", "filename=" + URLEncoder.encode(objectStream.getMetadata().getFileName(), "utf-8"));
-        response.setCharacterEncoding("utf-8");
-        response.setContentLength(ConvertOp.convert2Int(objectStream.getMetadata().getContentLength()));
-        byte[] buff = new byte[1024*16];
-        BufferedInputStream bufferedInputStream = null;
-        OutputStream outputStream = null;
-        try {
-            outputStream = response.getOutputStream();
-            bufferedInputStream = new BufferedInputStream(objectStream);
-            int i = 0;
-            while ((i = bufferedInputStream.read(buff)) != -1) {
-                outputStream.write(buff, 0, i);
-                outputStream.flush();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-
+        ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
+        if (metadata == null ) {
+        	response.setStatus(404);
+        } 
+        else if(metadata.getContentLength()==0 && metadata.getFileName().endsWith("/")) {
+        	boolean delimiter = request.getParameter("delimiter")!=null;
+        	_listObjects(bucketName,objectKey,delimiter,response);
+        }
+        else {
+        	S3ObjectInputStream objectStream = s3Service.getObject(bucketName, objectKey);        	
+        	
+        	response.addHeader("Content-Disposition", "filename=" + URLEncoder.encode(metadata.getFileName(), "utf-8"));            
+            response.addHeader("Last-Modified", DateUtil.getDateGMTFormat(metadata.getLastModified()));                
+            response.addHeader("ETag",metadata.getETag());
+            response.setContentType(metadata.getContentType());          
+            response.setContentLengthLong(metadata.getContentLength());
+            response.setCharacterEncoding(metadata.getContentEncoding());
+            
+            byte[] buff = new byte[1024*16];
+            BufferedInputStream bufferedInputStream = null;
+            OutputStream outputStream = null;
             try {
-                bufferedInputStream.close();
+                outputStream = response.getOutputStream();
+                bufferedInputStream = new BufferedInputStream(objectStream);
+                int i = 0;
+                while ((i = bufferedInputStream.read(buff)) != -1) {
+                    outputStream.write(buff, 0, i);                    
+                }
+                outputStream.flush();
             } catch (IOException e) {
                 e.printStackTrace();
+                response.setStatus(404);
+            } finally {
+                try {
+                    bufferedInputStream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
-        }
+        }        
+        
     }
 
     @DeleteMapping("/{bucketName}/**")

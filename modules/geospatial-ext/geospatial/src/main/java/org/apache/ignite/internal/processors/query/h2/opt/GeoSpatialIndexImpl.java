@@ -29,6 +29,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.internal.cache.query.index.AbstractIndex;
+import org.apache.ignite.internal.cache.query.index.IndexDefinition;
 import org.apache.ignite.internal.cache.query.index.SingleCursor;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexRow;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexRowImpl;
@@ -377,4 +378,9 @@ public class GeoSpatialIndexImpl extends AbstractIndex implements GeoSpatialInde
     public int segmentForRow(CacheDataRow row) {
         return segments.length == 1 ? 0 : (def.rowHandler().partition(row) % segments.length);
     }
+
+	@Override
+	public IndexDefinition indexDefinition() {
+		return def;
+	}
 }

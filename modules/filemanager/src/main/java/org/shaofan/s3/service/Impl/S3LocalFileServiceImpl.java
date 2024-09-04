@@ -27,7 +27,7 @@ public class S3LocalFileServiceImpl implements S3Service {
         }
         Bucket bucket = new Bucket();
         bucket.setName(bucketName);
-        bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date()));
+        bucket.setCreationDate(DateUtil.getDateIso8601Format(new Date()));
         return bucket;
     }
 
@@ -61,6 +61,16 @@ public class S3LocalFileServiceImpl implements S3Service {
         String dirPath = systemConfig.getDataPath() + bucketName;
         File dir = new File(dirPath);
         return dir.exists();
+    }
+    
+    @Override
+    public Boolean objectIsFolder(String bucketName, String objectKey) {
+    	String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;    	
+        File dir = new File(filePath);
+        if(dir.exists()) {
+        	return dir.isDirectory();
+        }
+        return null;
     }
 
     @Override
@@ -96,21 +106,26 @@ public class S3LocalFileServiceImpl implements S3Service {
     }
 
     @Override
-    public HashMap<String, String> headObject(String bucketName, String objectKey) {
-        HashMap<String, String> headInfo = new HashMap();
+    public ObjectMetadata headObject(String bucketName, String objectKey) {
+    	ObjectMetadata headInfo = new ObjectMetadata();
         String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
         File file = new File(filePath);
         if (file.exists()) {
-            try {
-                headInfo.put("Content-Disposition", "filename=" + URLEncoder.encode(file.getName(), "utf-8"));
-                headInfo.put("Content-Length", FileUtil.getFileSize(file) + "");
-                headInfo.put("Content-Type", FileUtil.getContentType(file.getName()));
-                headInfo.put("Last-Modified", FileUtil.getLastModifyTimeGMT(file));
+            try {               
+                
+                headInfo.setFileName(file.getName());
+                headInfo.setContentLength(FileUtil.getFileSize(file));
+                headInfo.setContentType(FileUtil.getContentType(file.getName()));
+                headInfo.setLastModified(FileUtil.getLastModifyTime(file));
+                
+                String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+objectKey);
+                headInfo.setETag(eTag+'-'+0);    			
+                
             } catch (Exception e) {
                 e.printStackTrace();
             }
         } else {
-            headInfo.put("NoExist", "1");
+            return null;
         }
         return headInfo;
     }

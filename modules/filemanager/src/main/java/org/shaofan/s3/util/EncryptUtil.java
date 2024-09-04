@@ -14,32 +14,50 @@ import java.util.Base64;
 import java.util.Base64.Decoder;
 
 public class EncryptUtil {
-    public static String encryptByMD5(String str) throws NoSuchAlgorithmException, UnsupportedEncodingException {
-        //生成md5加密算法
-        MessageDigest md5 = MessageDigest.getInstance("MD5");
-        md5.update(str.getBytes("UTF-8"));
-        byte b[] = md5.digest();
-        int i;
-        StringBuffer buf = new StringBuffer("");
-        for (int j = 0; j < b.length; j++) {
-            i = b[j];
-            if (i < 0)
-                i += 256;
-            if (i < 16)
-                buf.append("0");
-            buf.append(Integer.toHexString(i));
-        }
-        String md5_32 = buf.toString();
-        return md5_32;
-    }
-
-    private final static String DES = "DES";
+	private final static String DES = "DES";
     private final static String ENCODE = "UTF-8";
     private final static String defaultKey = "LocalS3X";
 
+    
+    public static String encryptByMD5(String str) {
+        //生成md5加密算法       
+        return encryptByMD5(str.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    public static String encryptByMD5(byte[] bytea){
+        //生成md5加密算法
+        MessageDigest md5;
+		try {
+			md5 = MessageDigest.getInstance("MD5");
+			md5.update(bytea);
+	        byte b[] = md5.digest();
+	        int i;
+	        StringBuffer buf = new StringBuffer("");
+	        for (int j = 0; j < b.length; j++) {
+	            i = b[j];
+	            if (i < 0)
+	                i += 256;
+	            if (i < 16)
+	                buf.append("0");
+	            buf.append(Integer.toHexString(i));
+	        }
+	        String md5_32 = buf.toString();
+	        return md5_32;
+		} catch (NoSuchAlgorithmException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+			return null;
+		}        
+    }
 
     public static String encryptByDES(String data) throws Exception {
         byte[] bt = encrypt(data.getBytes(ENCODE), defaultKey.getBytes(ENCODE));
+        String strs = Base64.getEncoder().encodeToString(bt);
+        return strs;
+    }
+    
+    public static String encryptByDES(byte[] data) throws Exception {
+        byte[] bt = encrypt(data, defaultKey.getBytes(ENCODE));
         String strs = Base64.getEncoder().encodeToString(bt);
         return strs;
     }

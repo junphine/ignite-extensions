@@ -35,10 +35,9 @@ public class S3Util {
     	if(s3!=null ) {
     		return s3;
     	}
+    	
     	String endpoint = systemConfig.getEndpointOverride();
-    	if(endpoint==null || endpoint.isBlank()) {
-    		endpoint = CommonUtil.getApiPath() + "s3/";
-    	}
+    	
         s3 = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(systemConfig.getAccessKey(), systemConfig.getSecretAccessKey())))
                 .endpointOverride(URI.create(endpoint))
@@ -49,10 +48,7 @@ public class S3Util {
     }
 
     private S3Presigner getPresigner() {
-    	String endpoint = systemConfig.getEndpointOverride();
-    	if(endpoint==null || endpoint.isBlank()) {
-    		endpoint = CommonUtil.getApiPath() + "s3/";
-    	}
+    	String endpoint = systemConfig.getEndpointOverride();    	
     	
         S3Presigner s3Presigner = S3Presigner.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(systemConfig.getAccessKey(), systemConfig.getSecretAccessKey())))

@@ -1,5 +1,6 @@
 package org.shaofan.s3.util;
 
+import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -29,4 +30,13 @@ public class CommonUtil {
         String rootPageURL = scheme + ":" + "//" + servaerName + ":" + port + contextPath+"/";
         return rootPageURL;
     }
+    
+    
+    public static String getCurrentUser() {
+        ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        Object user = requestAttributes.getAttribute("username", RequestAttributes.SCOPE_SESSION);        
+        
+        return user!=null? user.toString(): "Anonymous";
+    }
+    
 }

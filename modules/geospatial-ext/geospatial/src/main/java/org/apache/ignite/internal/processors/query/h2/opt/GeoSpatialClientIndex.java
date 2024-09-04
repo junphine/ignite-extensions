@@ -18,6 +18,8 @@
 package org.apache.ignite.internal.processors.query.h2.opt;
 
 import java.util.UUID;
+
+import org.apache.ignite.internal.cache.query.index.IndexDefinition;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexRow;
 import org.apache.ignite.internal.cache.query.index.sorted.client.AbstractClientIndex;
 import org.apache.ignite.internal.util.lang.GridCursor;
@@ -70,4 +72,9 @@ public class GeoSpatialClientIndex extends AbstractClientIndex implements GeoSpa
     @Override public GridCursor<IndexRow> findByGeometry(int seg, TableFilter filter, Geometry intersection) {
         throw unsupported();
     }
+
+	@Override
+	public IndexDefinition indexDefinition() {		
+		return def;
+	}
 }

@@ -1,5 +1,6 @@
 package org.shaofan.s3.config;
 
+import org.shaofan.s3.util.CommonUtil;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -9,12 +10,15 @@ public class SystemConfig {
     private String s3BucketName = "igfs";
     private String endpointOverride = null;
     private String accessKey = "root";
-    private String secretAccessKey = "123456";
-    
+    private String secretAccessKey = "123456";   
         
 
     public String getEndpointOverride() {
-		return endpointOverride;
+    	String endpoint = endpointOverride;
+    	if(endpoint==null || endpoint.isBlank()) {
+    		endpoint = CommonUtil.getApiPath() + "s3/";
+    	}
+		return endpoint;
 	}
 
 	public void setEndpointOverride(String endpointOverride) {

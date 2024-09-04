@@ -33,7 +33,7 @@ import org.locationtech.jts.geom.Geometry;
 public class GeoSpatialUtils {
     static {
         SchemaManager.registerIndexDescriptorFactory(QueryIndexType.GEOSPATIAL, GeoSpatialIndexDescriptorFactory.INSTANCE);
-        IndexKeyFactory.register(IndexKeyType.GEOMETRY, k -> new GeometryIndexKey((Geometry)k));
+        IndexKeyFactory.register(IndexKeyType.GEOMETRY, k -> new GeometryIndexKey(k));
     }
 
     /** */

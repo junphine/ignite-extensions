@@ -18,6 +18,8 @@
 package org.apache.ignite.internal.processors.query.h2.opt;
 
 import java.util.List;
+
+import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexRow;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexValueCursor;
 import org.apache.ignite.internal.processors.query.h2.H2Cursor;
@@ -31,8 +33,10 @@ import org.h2.index.IndexType;
 import org.h2.result.SearchRow;
 import org.h2.table.IndexColumn;
 import org.h2.table.TableFilter;
+import org.h2.util.JdbcUtils;
 import org.h2.value.Value;
 import org.h2.value.ValueGeometry;
+import org.h2.value.ValueJavaObject;
 import org.locationtech.jts.geom.Geometry;
 
 /**
@@ -121,7 +125,21 @@ public class GridH2SpatialIndex extends GridH2SpatialBaseIndex {
         SearchRow intersection) {
 
         Value v = intersection.getValue(columnIds[0]);
-        Geometry g = ((ValueGeometry)v.convertTo(Value.GEOMETRY)).getGeometry();
+        Geometry g = null;
+        if(v instanceof ValueJavaObject) {
+        	ValueJavaObject obj = (ValueJavaObject)v;
+        	byte[] data = obj.getBytesNoCopy();
+        	Object javaObject = JdbcUtils.deserialize(data, null);
+        	if(javaObject instanceof BinaryObject) {
+        		javaObject = ((BinaryObject)javaObject).deserialize();
+        	}
+        	if(javaObject instanceof Geometry) {
+        		g = (Geometry) javaObject;
+        	}
+        }
+        if(g==null) {
+        	g = ((ValueGeometry)v.convertTo(Value.GEOMETRY)).getGeometry();
+        }
 
         int seg = segmentsCount() == 1 ? 0 : H2Utils.context(filter.getSession()).segment();
 

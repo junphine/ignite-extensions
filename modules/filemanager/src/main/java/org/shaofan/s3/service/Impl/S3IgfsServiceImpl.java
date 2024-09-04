@@ -1,6 +1,8 @@
 package org.shaofan.s3.service.Impl;
 
 
+import org.apache.commons.io.input.ReaderInputStream;
+import org.shaofan.s3.FileManagerInitializer;
 import org.shaofan.s3.config.SystemConfig;
 import org.shaofan.s3.model.*;
 import org.shaofan.s3.service.DatasetPersistenceException;
@@ -11,6 +13,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 
 import java.io.*;
 import java.net.URLEncoder;
@@ -32,9 +37,9 @@ public class S3IgfsServiceImpl implements S3Service {
     public Bucket createBucket(String bucketName) {       
         Bucket bucket = new Bucket();
         bucket.setName(bucketName);
-        bucket.setCreationDate(DateUtil.getDateGMTFormat(new Date()));
+        bucket.setCreationDate(DateUtil.getDateIso8601Format(new Date()));
         
-        return provider.createBucket(bucket, null);        
+        return provider.createBucket(bucket, null);      
     }
 
     @Override
@@ -58,6 +63,11 @@ public class S3IgfsServiceImpl implements S3Service {
     	List<Bucket> bucketList = provider.getBuckets();
         return bucketList.contains(bucket);
     }
+    
+    @Override
+    public Boolean objectIsFolder(String bucketName, String key) {
+    	return provider.objectIsFolder(bucketName, key);
+    }
 
     @Override
     public List<S3Object> listObjects(String bucketName, String prefix) {
@@ -68,28 +78,14 @@ public class S3IgfsServiceImpl implements S3Service {
                 prefix = prefix.substring(1);
             }
         }
-        List<S3Object> s3ObjectList = provider.getObjectsAndMetadata(bucketName,prefix);        
+        List<S3Object> s3ObjectList = provider.getObjectsAndMetadata(bucketName,prefix);     
         return s3ObjectList;
     }
 
     @Override
-    public HashMap<String, String> headObject(String bucketName, String objectKey) {
-        HashMap<String, String> headInfo = new HashMap<>();
-        List<S3Object> s3ObjectList = listObjects(bucketName,objectKey);        
-        if (s3ObjectList.size()>0) {
-            try {
-            	ObjectMetadata file = s3ObjectList.get(0).getMetadata();
-                headInfo.put("Content-Disposition", "filename=" + URLEncoder.encode(file.getFileName(), "utf-8"));
-                headInfo.put("Content-Length", file.getContentLength() + "");
-                headInfo.put("Content-Type", file.getContentType());
-                headInfo.put("Last-Modified", DateUtil.getDateGMTFormat(file.getLastModified()));
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        } else {
-            headInfo.put("NoExist", "1");
-        }
-        return headInfo;
+    public ObjectMetadata headObject(String bucketName, String objectKey) {        
+        ObjectMetadata metadata = provider.getObjectMetadata(bucketName, objectKey);
+        return metadata;
     }
 
     @Override
@@ -100,10 +96,16 @@ public class S3IgfsServiceImpl implements S3Service {
         		.datasetName(objectKey)
         		.build();
         
-        if (objectKey.endsWith("/")) {
+        if (objectKey.endsWith("/")) { // create folder
         	provider.createBucket(bucket, objectKey);
         } else {
-        	provider.createOrUpdateDatasetVersion(context, inputStream);
+        	String md5 = provider.createOrUpdateDatasetVersion(context, inputStream);
+        	if(md5!=null && !md5.isEmpty()) {
+        		Map<String,String> props = new HashMap<>();
+        		props.put("eTag", md5);
+        		props.put("usrName", CommonUtil.getCurrentUser());
+                provider.setObjectMetadata(bucketName, objectKey, props);
+        	}
         }
     }
 
@@ -140,18 +142,18 @@ public class S3IgfsServiceImpl implements S3Service {
     @Override
     public S3ObjectInputStream getObject(String bucketName, String objectKey) {
     	Bucket bucket = new Bucket();
-    	bucket.setName(bucketName);
-        DatasetSnapshotContext context = new StandardDatasetSnapshotContext.Builder(bucket)
-        		.datasetId(objectKey)
-        		.datasetName(objectKey)
-        		.build();
+    	bucket.setName(bucketName);        
         
-        List<S3Object> metadatas = provider.getObjectsAndMetadata(bucketName, objectKey);
-        
-        if (metadatas.size()>0) {           
+    	ObjectMetadata metadata = provider.getObjectMetadata(bucketName, objectKey);
+       
+        if (metadata!=null) {
+        	DatasetSnapshotContext context = new StandardDatasetSnapshotContext.Builder(bucket)
+            		.datasetId(objectKey)
+            		.datasetName(objectKey)
+            		.build();
             InputStream inputStream = provider.getDatasetInputStream(context);            
             
-            return new S3ObjectInputStream(metadatas.get(0).getMetadata(), inputStream);
+            return new S3ObjectInputStream(metadata, inputStream);
         }
         throw new DatasetPersistenceException("Error retrieving dataset from Igfs due to: file not existed");
     }
@@ -187,7 +189,7 @@ public class S3IgfsServiceImpl implements S3Service {
 
     @Override
     public PartETag uploadPart(String bucketName, String objectKey, int partNumber, String uploadId, InputStream inputStream) {
-        String tempPartFilePath = systemConfig.getTempPath() + "/" + uploadId + "/" + partNumber + ".temp";
+        String tempPartFilePath = systemConfig.getTempPath() + "/" + uploadId + "/" + partNumber + ".md5";
         File file = new File(tempPartFilePath);
         if (!file.exists()) {            
         	String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
@@ -198,9 +200,10 @@ public class S3IgfsServiceImpl implements S3Service {
             }
             String fileDirPath = result.toString();
             String partFilePath = fileDirPath + partNumber + ".part";
-            FileUtil.saveFile(partFilePath, inputStream);
+            
             try {
-                FileUtil.writeFile(tempPartFilePath, EncryptUtil.encryptByDES(partFilePath));
+            	String md5 = FileUtil.saveFileWithMd5(partFilePath, inputStream);
+                FileUtil.writeFile(tempPartFilePath, md5);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -211,20 +214,22 @@ public class S3IgfsServiceImpl implements S3Service {
     }
 
     @Override
-    public CompleteMultipartUploadResult completeMultipartUpload(String bucketName, String objectKey, String uploadId, CompleteMultipartUpload compMPU) {
-       
-        
+    public CompleteMultipartUploadResult completeMultipartUpload(String bucketName, String objectKey, String uploadId, CompleteMultipartUpload compMPU) {      
         if (!uploadId.isEmpty()) {
             List<PartETag> partETagList = compMPU.getPartETags();
             boolean check = true;
             for (PartETag partETag : partETagList) {
-                String tempPartFilePath = systemConfig.getTempPath() + "/" + uploadId + "/" + partETag.getPartNumber() + ".temp";
+                String tempPartFilePath = systemConfig.getTempPath() + "/" + uploadId + "/" + partETag.getPartNumber() + ".md5";
                 String eTag = FileUtil.readFileContent(tempPartFilePath);
+                if(eTag.isEmpty()) {
+                	throw new DatasetPersistenceException("Error save dataset from Igfs due to: partETag file not found");
+                }
                 if (!partETag.geteTag().equals(eTag)) {
                     check = false;
                     break;
                 }
             }
+            
             if (check) {
                 partETagList.sort(new Comparator<PartETag>() {
                     @Override
@@ -233,7 +238,7 @@ public class S3IgfsServiceImpl implements S3Service {
                     }
                 });
                 try {
-                	
+                	Map<String,String> props = new HashMap<>();
                 	Bucket bucket = new Bucket();
                  	bucket.setName(bucketName);
                     DatasetSnapshotContext context = new StandardDatasetSnapshotContext.Builder(bucket)
@@ -241,20 +246,38 @@ public class S3IgfsServiceImpl implements S3Service {
                      		.datasetName(objectKey)                     		
                      		.build();
                      
-                    
+                    String etags = "";
+                    String parts = "";
                     for (PartETag partETag : partETagList) {
-                        File file = new File(EncryptUtil.decryptByDES(partETag.geteTag()));                        
+                    	String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
+                        String[] filePathList = filePath.split("\\/");
+                        StringBuilder result = new StringBuilder();
+                        for (int i = 0; i < filePathList.length - 1; i++) {
+                            result.append(filePathList[i]).append("/");
+                        }
+                        String fileDirPath = result.toString();
+                        String partFilePath = fileDirPath + partETag.getPartNumber() + ".part";
+                        
+                        File file = new File(partFilePath);                      
                         FileInputStream sourceInputStream = new FileInputStream(file);
-                        provider.appendDatasetVersion(context, sourceInputStream);
+                        long n = provider.appendDatasetVersion(context, sourceInputStream);                        
                         sourceInputStream.close();
+                        etags+=partETag.geteTag();
+                        parts+=":"+n;
                     }
+                    
+                    etags = EncryptUtil.encryptByMD5(etags)+"-"+partETagList.size();
+                    props.put("eTag", etags);
+                    props.put("parts", parts);
+                    props.put("usrName", CommonUtil.getCurrentUser());
+                    provider.setObjectMetadata(bucketName, objectKey, props);
                     
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
             else {
-            	throw new DatasetPersistenceException("Error save dataset from Igfs due to: partETag file not found");
+            	throw new DatasetPersistenceException("Error save dataset from Igfs due to: partETag is not checked!");
             }
         }
         String eTag = "";

@@ -13,6 +13,7 @@ public class ObjectMetadata {
     private String cacheControl;
     private String contentEncoding;
     private String fileName;
+    private String ETag;
     private Map<String,String> userMetadata;
     
     public void setUserMetadata(Map<String,String> userMetadata) {
@@ -88,6 +89,14 @@ public class ObjectMetadata {
 
 	public void setContentEncoding(String contentEncoding) {
 		this.contentEncoding = contentEncoding;
+	}
+
+	public String getETag() {
+		return ETag;
+	}
+
+	public void setETag(String eTag) {
+		ETag = eTag;
 	}
     
 }

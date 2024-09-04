@@ -7,12 +7,15 @@ import software.amazon.awssdk.services.s3.model.AccessControlPolicy;
 import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.Grant;
 import software.amazon.awssdk.services.s3.model.Grantee;
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
+import software.amazon.awssdk.services.s3.model.Permission;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.Type;
 import software.amazon.awssdk.utils.StringInputStream;
 import software.amazon.awssdk.utils.StringUtils;
 
 import org.apache.commons.io.FilenameUtils;
+import org.apache.ignite.igfs.IgfsFile;
 import org.shaofan.s3.config.SystemConfig;
 import org.shaofan.s3.util.S3Util;
 import org.shaofan.utils.FileUtils;
@@ -49,11 +52,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.ZipOutputStream;
 
 import static org.shaofan.utils.RarUtils.unRarFile;
@@ -126,6 +133,7 @@ public class FileManagerController  {
                     fileItem.put("date", dt.format(new Date(pathObj.creationDate().getEpochSecond()*1000)));
                     fileItem.put("size", 0);
                     fileItem.put("etag", null);
+                    fileItem.put("rights", getPermissions(fname, null));
                     fileItem.put("type", "dir");
                     fileItems.add(fileItem);
                 }
@@ -148,6 +156,7 @@ public class FileManagerController  {
                 fileItem.put("date", dt.format(new Date(pathObj.lastModified().toEpochMilli())));
                 fileItem.put("size", pathObj.size());
                 fileItem.put("etag", pathObj.eTag());
+                fileItem.put("rights", getPermissions(bucketName,pathObj));
                 fileItem.put("type", pathObj.key().endsWith("/")?"dir":"file");
                 fileItems.add(fileItem);
             }
@@ -228,7 +237,7 @@ public class FileManagerController  {
     @GetMapping("view/**")
     public void view(HttpServletRequest request,HttpServletResponse response) throws IOException {
     	String base = request.getContextPath();
-    	String uri = request.getRequestURI().replaceFirst(base+"/filemanager/s3-rest/view/", "");
+    	String uri = request.getRequestURI().replaceFirst(base+"/s3-rest/view/", "");
     	preview(response,uri);
     }
 
@@ -243,15 +252,31 @@ public class FileManagerController  {
             String[] tokens = getFileToken(newPath);
             String bucketName = tokens[0];
             String path = tokens[1];  
-            
+            if(!StringUtils.isBlank(path)) {
+            	path = path+"/";
+            }
             String jsonString = "{}";
             StringInputStream in = new StringInputStream(jsonString);   
             
-			s3Util.upload(bucketName, path+"/metadata.json", in);
+			s3Util.upload(bucketName, path+"metadata.json", in);
 			return success();
         } catch (Exception e) {
             return error(e.getMessage());
         }
+    }
+    
+    private String getPermissions(String bucketName,S3Object file) throws IOException {
+    	
+    	if(file!=null) {    		
+    		//List<Grant> grants = s3Util.getObjectACL(bucketName, file.key());
+    		//return grants.toString();
+    	}
+    	// default perms
+        Set<PosixFilePermission> permissions = new HashSet<>();
+        permissions.add(PosixFilePermission.OWNER_READ);
+        permissions.add(PosixFilePermission.OWNER_WRITE);
+        permissions.add(PosixFilePermission.OTHERS_READ);
+        return PosixFilePermissions.toString(permissions);
     }
 
     /**
@@ -263,7 +288,42 @@ public class FileManagerController  {
 
             String perms = json.getString("perms"); // 权限
             boolean recursive = json.getBoolean("recursive"); // 子目录是否生效
-
+            Set<PosixFilePermission> posixPerms = PosixFilePermissions.fromString(perms);
+            List<Grant> grants = new ArrayList<>();
+            // admin用户完全控制
+            Grant grant = Grant.builder().grantee(
+    				Grantee.builder()
+    				.displayName("admin")
+    				.type(Type.CANONICAL_USER)
+    				.id("admin")
+    				.build())
+    				.permission(Permission.FULL_CONTROL)
+    			.build();
+            grants.add(grant);
+            
+            ObjectCannedACL acl;
+            if(posixPerms.contains(PosixFilePermission.OTHERS_WRITE)) {
+        		acl = ObjectCannedACL.PUBLIC_READ_WRITE;
+        	}
+            else if(posixPerms.contains(PosixFilePermission.OTHERS_READ)) {
+        		acl = ObjectCannedACL.PUBLIC_READ;
+        	}
+            else if(posixPerms.contains(PosixFilePermission.GROUP_WRITE)) {
+        		acl = ObjectCannedACL.AUTHENTICATED_READ;
+        	}
+            else if(posixPerms.contains(PosixFilePermission.GROUP_READ)) {
+            	acl = ObjectCannedACL.AUTHENTICATED_READ;
+        	}
+            else if(!posixPerms.contains(PosixFilePermission.OWNER_WRITE)) {
+            	acl = ObjectCannedACL.BUCKET_OWNER_READ;
+        	}
+            else {
+            	acl = ObjectCannedACL.BUCKET_OWNER_FULL_CONTROL;
+            }
+            
+            AccessControlPolicy policy = AccessControlPolicy.builder().grants(grants)
+            	.build();
+            
             JSONArray items = json.getJSONArray("items");
             for (int i = 0; i < items.size(); i++) {
                 String key = items.getString(i);
@@ -271,16 +331,7 @@ public class FileManagerController  {
                 String[] tokens = getFileToken(key);
                 String bucketName = tokens[0];
                 String path = tokens[1]; 
-                String acl = "public-read-write";                
-                AccessControlPolicy policy = AccessControlPolicy.builder().grants(
-                		Grant.builder().grantee(
-                				Grantee.builder()
-                				.displayName("public")
-                				.type(Type.GROUP)
-                				.build())
-                		.build())
-                	.build();
-    			s3Util.putObjectACL(bucketName, path, acl, policy);
+    			s3Util.putObjectACL(bucketName, path, acl.toString(), policy);
             }
             return success();
         } catch (Exception e) {

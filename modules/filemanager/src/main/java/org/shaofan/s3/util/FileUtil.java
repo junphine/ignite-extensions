@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -129,12 +130,15 @@ public class FileUtil {
         return  attr.size();
     }
 
-    public static void saveFile(String filePath, InputStream fileStream){
+    public static void saveFile(String filePath, InputStream inputStream){
         FileOutputStream out = null;
         try{
             out = new FileOutputStream(filePath);
-            byte[] file = convertStreamToByte(fileStream);
-            out.write(file);
+            byte[] buffer = new byte[1024*16];
+            int len = 0;            
+            while ((len = inputStream.read(buffer)) != -1) {
+            	out.write(buffer, 0, len);
+            }            
         }catch (Exception e){
             e.printStackTrace();
         }finally {
@@ -147,6 +151,48 @@ public class FileUtil {
                }
             }
         }
+    }
+    
+    public static String saveFileWithMd5(String filePath, InputStream inputStream){
+        FileOutputStream out = null;        
+        try{
+        	//生成md5加密算法
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            
+            out = new FileOutputStream(filePath);
+            byte[] buffer = new byte[1024*16];
+            int len = 0;            
+            while ((len = inputStream.read(buffer)) != -1) {
+            	out.write(buffer, 0, len);
+            	md5.update(buffer, 0, len);
+            }
+            
+            byte b[] = md5.digest();
+            int i;
+            StringBuffer buf = new StringBuffer("");
+            for (int j = 0; j < b.length; j++) {
+            	String hex = Integer.toHexString(0xff & b[j]);  
+                if (hex.length() == 1) 
+                	buf.append('0');
+                buf.append(hex);
+            }
+            String md5_32 = buf.toString();
+            return md5_32;
+            
+        }catch (Exception e){
+            e.printStackTrace();
+        }finally {
+            if(out!=null){
+               try{
+                   out.flush();
+                   out.close();
+               }catch (Exception ex){
+
+               }
+            }
+        }
+        return null;
+        
     }
 
     public static void saveFile(String filePath, byte[] data){

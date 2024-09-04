@@ -390,7 +390,8 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
                         if(pathName.equals("/"))
                         	pathName = "";
                         IgfsPath igpath = new IgfsPath(pathName+"/"+ fileEntry.getKey());
-                        if (!IgfsUtils.create(fs, igpath, fileEntry.getValue())) {
+                        long n = IgfsUtils.create(fs, igpath, fileEntry.getValue());
+                        if (n<0) {
                             LOG.debug("write error");
                             throw new Exception("write error");
                         }
@@ -491,10 +492,9 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
             LOG.debug("list path: Paths.get('{}', '{}'), onlyFolders: {}", REPOSITORY_BASE_PATH, path, onlyFolders);
 
             List<JSONObject> resultList = new ArrayList<>();
-            String[] tokens = getFileToken(path);
-            Collection<IgniteFileSystem> fsList = new ArrayList<>();
+            String[] tokens = getFileToken(path);            
             if(tokens[0].isEmpty()) {
-            	
+            	// 默认的权限是自己可读写，其他人只能读
             	SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
                 for(Map.Entry<String,IgniteFileSystem> fsEnt : allFS().entrySet()) {
     	            try {
@@ -554,8 +554,7 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
 
     private JSONObject move(JSONObject params) throws ServletException {
         try {
-            JSONArray paths =  params.getJSONArray("items");
-            //Path newpath = Paths.get(REPOSITORY_BASE_PATH, params.getString("newPath"));
+            JSONArray paths =  params.getJSONArray("items");            
             String[] tokens = getFileToken(params.getString("newPath"));
             IgniteFileSystem fs = fs(tokens[0]);
             String pathName = tokens[1];
@@ -734,7 +733,7 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
                 String pathName = tokens[1];
                 IgfsPath igpath = new IgfsPath(pathName);
                 IgfsFile file = fs.info(igpath);
-                setPermissions(file, perms, recursive);
+                int n = setPermissions(fs, file, perms, recursive);          
             }
             return success(params);
         } catch (IOException e) {
@@ -850,26 +849,37 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
     }
 
     private String getPermissions(IgfsFile file) throws IOException {        
-    	String perms = file!=null? file.property("perms", null): null;
+    	String perms = file!=null? file.property("permission", null): null;
     	if(perms!=null) {
     		return perms;
     	}
+    	// default perms
         Set<PosixFilePermission> permissions = new HashSet<>();
         permissions.add(PosixFilePermission.OWNER_READ);
         permissions.add(PosixFilePermission.OWNER_WRITE);
         permissions.add(PosixFilePermission.OTHERS_READ);
         return PosixFilePermissions.toString(permissions);
-    }
+    }    
 
-    private String setPermissions(IgfsFile file, String permsCode, boolean recursive) throws IOException {
-    	permsCode = permsCode.replace("R-","");
-    	Map<String, String> props = new HashMap<>(file.properties());
-    	if(recursive) {
-    		permsCode = "R-"+permsCode;    		
+    private int setPermissions(IgniteFileSystem fs, IgfsFile file, String permsCode, boolean recursive) throws IOException {
+    	int n = 0;    	
+    	if(recursive && file.isDirectory()) {  		
+    		
+    		Collection<IgfsPath> directoryStream = fs.listPaths(file.path());          
+           
+            for (IgfsPath pathObj : directoryStream) {
+            	if(pathObj.name().startsWith(".")) {
+            		continue;
+            	}
+            	IgfsFile sub_file = fs.info(pathObj);
+            	n+=setPermissions(fs, sub_file, permsCode, recursive);               
+            }	
     	}
-    	props.put("perms", permsCode);
-    	// todo@perm
-        return permsCode;
+    	n++;
+    	HashMap<String,String> prop = new HashMap<>();
+    	prop.put("permission", permsCode);
+    	fs.update(file.path(), prop);
+    	return n;
     }
 
     private JSONObject error(String msg) {
