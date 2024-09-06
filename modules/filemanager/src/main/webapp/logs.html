@@ -20,17 +20,29 @@
 	
 		var user = {};		
 		var ticket = '';
-	    var xhr0 = $.ajax({url:"/api/security/ticket",async:false,dataType: "json"});
+		var authUrl = 'http://'+location.hostname+':3000/api/v1/user';
+		var loginUrl = 'http://'+location.hostname+':3000/login';
+	    var xhr0 = $.ajax({
+		    url:authUrl,
+		    async:false,
+		    dataType: "json",
+		    xhrFields: {
+                withCredentials: true
+            },
+            crossDomain: true
+	    });
+	    
 	    if(xhr0.status==404){
 	       
 	    }
 	    else if(xhr0.status!=200){
-	    	window.location='/#login';
+	    	window.location=loginUrl;
 	    }
 	    else if(xhr0.status==200){    
-	       user = JSON.parse(xhr0.responseText)
-	       ticket = user.body.ticket
+	       user = JSON.parse(xhr0.responseText);
+	       ticket = user.token;
 	    }
+	
 	
         // 重写默认Config配置
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {

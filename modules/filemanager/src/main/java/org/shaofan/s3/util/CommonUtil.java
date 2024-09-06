@@ -36,7 +36,7 @@ public class CommonUtil {
         ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         Object user = requestAttributes.getAttribute("username", RequestAttributes.SCOPE_SESSION);        
         
-        return user!=null? user.toString(): "Anonymous";
+        return user!=null? user.toString(): "";
     }
     
 }

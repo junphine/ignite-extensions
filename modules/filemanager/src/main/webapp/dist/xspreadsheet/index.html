@@ -32,38 +32,64 @@
   </div>
   <div id="x-spreadsheet-data"></div>
   <script>
-    xspreadsheet = null;
-	dataAPI = getUrlParam('ref') || '';
-	user = null;
-	ws = null;
-	$.getJSON('/api/security/ticket', function(json) {
-	    if(json.status=='OK'){
-	       user = json.body;
-		   ws = new WebSocket("ws://"+location.host+"/ws");
+    var xspreadsheet = null;
+	var dataAPI = getUrlParam('ref') || '';
+	var user = null;
+	var email = null;
+	var ws = null;
+	var authUrl = 'http://'+location.hostname+':3000/api/v1/user';
+	
+	$.ajax({
+            url: authUrl,
+            type: "GET",
+            dataType: "json",
+            xhrFields: {
+                withCredentials: true
+            },
+            crossDomain: true,
+            success: function (json) {
+                ws_co_work(json);
+            }
+    });
+    
+   
+	function ws_co_work(user) {
+	    if(user.email){	       
+	       email = user.email;
+		   ws = new WebSocket("ws://"+location.hostname+":3000/browsers");
 	
 		   ws.onopen = function()
 		   {
 			  // Web Socket 已连接上，使用 send() 方法发送数据	 
-			  var cdata = {msgType:'spreadsheet-load',topic:dataAPI}
-			  ws.send(JSON.stringify(Object.assign({data: cdata,op:'BROADCAST'},user)));
+			  var cdata = {msgType:'spreadsheet-load', topic:dataAPI, email};
+			  ws.send(JSON.stringify({payload: JSON.stringify(cdata),eventType:'BROADCAST'}));
 		   };
 						
 		   ws.onmessage = function (evt) 
 		   { 
 			  var msg = JSON.parse(evt.data);
-			  var data = msg.data;
-			  var msgType = data['msgType'];
-			  if(msgType=='spreadsheet-cell-edited'){
-			    if(data.text!=null){
-				  xspreadsheet.cellText(data.ri, data.ci, data.text);
-				}
-				if(data.style!=null){
-				  xspreadsheet.cell(data.ri, data.ci).style=data.style;
-				}
-				if(data.merge!=null){
-				  xspreadsheet.cell(data.ri, data.ci).merge=data.merge;
-				}
-				xspreadsheet.reRender()
+			  var eventType = msg.eventType;		  
+			  var data = msg.payload;
+			  if(eventType=='BROADCAST'){
+			  	  
+				  var msgType = data['msgType'];
+				  var resourceUrl = data['topic'];
+				  
+				  if (resourceUrl==dataAPI){
+				  
+					  if(msgType=='spreadsheet-cell-edited'){
+						    if(data.text!=null){
+							  xspreadsheet.cellText(data.ri, data.ci, data.text);
+							}
+							if(data.style!=null){
+							  xspreadsheet.cell(data.ri, data.ci).style=data.style;
+							}
+							if(data.merge!=null){
+							  xspreadsheet.cell(data.ri, data.ci).merge=data.merge;
+							}
+							xspreadsheet.reRender()
+					  }
+				  }
 			  }
 			  //console.log("ws数据已接收..."+evt.data);
 		   };
@@ -71,10 +97,10 @@
 		   ws.onclose = function()
 		   { 
 			  // 关闭 websocket
-			  
+			  console.log("websocket已经关闭.");
 		   };
 	    }
-	});	
+	}
 	
 			   
     function load(){
@@ -120,7 +146,7 @@
           // console.log(cdata);
 		  // save data to db		  
           // console.log('>>>', xs.getData());
-		  //saveSpreadsheetData(cdata);
+		  // saveSpreadsheetData(cdata);
 		  
         });
 
@@ -129,14 +155,18 @@
         }).on('cell-edited', (text, ri, ci) => {
 		  var cell = xs.cell(ri, ci);
 		  var cdata = {
-			  text:cell.text,style:cell.style,merge:cell.merge,
-			  ri:ri,ci:ci,
+			  text:cell.text,
+			  style:cell.style,
+			  merge:cell.merge,
+			  ri:ri,
+			  ci:ci,
 			  msgType:'spreadsheet-cell-edited',
-			  topic:dataAPI
+			  topic:dataAPI,
+			  email: email
 		  }
           console.log(cdata);
 		  if(ws){
-		     ws.send(JSON.stringify(Object.assign({data: cdata,op:'BROADCAST'},user)));
+		     ws.send(JSON.stringify({payload: JSON.stringify(cdata),eventType:'BROADCAST'}));
 		  }
         });
 
@@ -144,7 +174,7 @@
     }
 	
 	
-	 function getSpreadsheetData(){
+	function getSpreadsheetData(){
 		 
 		 var pos = dataAPI.lastIndexOf('/');
 		 var tableName = pos>0? dataAPI.substring(pos+1):dataAPI;
@@ -179,14 +209,14 @@
 			}
 			else{
 			    $.getJSON(dataAPI, function(json) {
-				  data = json
-				  var items = [];
-				  if($.isEmptyObject(data) || !data){
-					 data =  { name: tableName, rows: { len: 60 } };
-				  }   
-				  xspreadsheet.loadData(data);
+					  data = json
+					  var items = [];
+					  if($.isEmptyObject(data) || !data){
+						 data =  { name: tableName, rows: { len: 60 } };
+					  }   
+					  xspreadsheet.loadData(data);
 				},function(e){ 
-					alert(e); 
+					  alert(e); 
 				}); 
 			}
 			
@@ -200,35 +230,80 @@
 			 data =  { name: 'sheet-new', rows: { len: 100 } };
 		 }           
 		 return data;
-     }
+    }
+     
+    // contetn为要显示的内容  
+	// height为离窗口顶部的距离  
+	// time为多少秒后关闭的时间，单位为秒  
+	function showTips( content, height, time ){  
+	    //窗口的宽度  
+	    var windowWidth  = $(window).width();  
+	    var tipsDiv = '<div class="tipsClass">' + content + '</div>';  
+	   
+	    $( 'body' ).append( tipsDiv );  
+		$( 'div.tipsClass' ).css({  
+		      'top'       : height + 'px',  
+		      'left'      : ( windowWidth / 2 ) - 350/2 + 'px',  
+		      'position'  : 'absolute',  
+		      'padding'   : '3px 5px',  
+		      'background': '#8FBC8F',  
+		      'font-size' : 12 + 'px',  
+		      'margin'    : '0 auto',  
+		      'text-align': 'center',  
+		      'width'     : '350px',  
+		      'height'    : 'auto',  
+		      'color'     : '#fff',  
+		      'opacity'   : '0.8'  
+		  }).show();
+	  
+	     setTimeout( function(){$( 'div.tipsClass' ).fadeOut();}, ( time * 1000 ) );  
+	}
+  	
 	 
 	 function saveSpreadsheetData(content){   
 	     if(!content){
-		   content = xspreadsheet.getData();
+		   content = JSON.stringify(xspreadsheet.getData());
 		 }
 	     data = {action:'edit'};
-		 // /filemanager/view/data/users.sheet
-		 var pos = dataAPI.indexOf('/view/');
-		 var item = dataAPI.substring(pos+6);
+		 // /filemanager/file/data/users.sheet
+		 var pos = dataAPI.indexOf('/filemanager/');
+		 var item = dataAPI.substring(pos+'/filemanager/'.length);
+		 
+		 if(item.startsWith("s3-rest/view/")){
+		 	item = item.substring(8);
+		 }
+		 
+		 pos = item.indexOf('/');
+		 item = item.substring(pos+1);
 		 if(!item.endsWith('.sheet')){
 		    item+='.sheet';
 		 }
 		 data['item'] = item;
 		 data['content'] = content;
 		 data = Object.assign(data,user);
-		 
-		$.post( "/filemanager/file?action=edit", JSON.stringify(data), function( data ) {
-		  if(data.result && data.result.success){
-		    var msg = ('<span class="success" >保存成功</span>');
-		    $('.message').html(msg);
-		  }
-		  else{		   
-		    var msg = ('<span class="error" >'+data.result.error+'</span>');
-		    $('.message').html(msg);
-		  }
-		},'json').fail(function() {
-					alert( "error:failed to save content!" );
-				  });
+		 var base_api = "/filemanager/file";
+		 if(!dataAPI.startsWith("/filemanager/file")){
+		 	base_api = "/filemanager/s3-rest/edit";
+		 }		 
+
+		 $.post({
+			  url: base_api + "?action=edit",
+			  contentType: "application/json",
+			  data: JSON.stringify(data),
+			  success: function(data) {
+			      if(data.result && data.result.success){
+				    var msg = ('<span class="success" >保存成功</span>');
+				    showTips(msg,200,4);
+				  }
+				  else{		   
+				    var msg = ('<span class="error" >'+data.result.error+'</span>');
+				    showTips(msg,200,20);
+				  }
+			  },
+			  error: function(xhr, status, error) {		    
+			      alert("保存失败! 错误消息："+error );
+			  }
+		 });
 		
 		 return data;
      }
@@ -307,7 +382,7 @@
 				<table>
 				 <tr><td></td><td></td></tr>				
 				</table>
-				<textarea id="getJSON" style='width:95%' rows="10"></textarea>				
+				<textarea id="getJSON" style='width:95%' rows="20"></textarea>		
 				
 			</div>
 			

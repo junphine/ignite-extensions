@@ -89,7 +89,7 @@ public class S3IgfsServiceImpl implements S3Service {
     }
 
     @Override
-    public void putObject(String bucketName, String objectKey, InputStream inputStream) {
+    public void putObject(String bucketName, String objectKey, InputStream inputStream,Map<String, String> metaData) {
         Bucket bucket = createBucket(bucketName);
         DatasetSnapshotContext context = new StandardDatasetSnapshotContext.Builder(bucket)
         		.datasetId(objectKey)
@@ -101,12 +101,13 @@ public class S3IgfsServiceImpl implements S3Service {
         } else {
         	String md5 = provider.createOrUpdateDatasetVersion(context, inputStream);
         	if(md5!=null && !md5.isEmpty()) {
-        		Map<String,String> props = new HashMap<>();
+        		Map<String,String> props = metaData!=null? metaData: new HashMap<>();
         		props.put("eTag", md5);
         		props.put("usrName", CommonUtil.getCurrentUser());
                 provider.setObjectMetadata(bucketName, objectKey, props);
         	}
         }
+        
     }
 
     @Override
@@ -125,6 +126,7 @@ public class S3IgfsServiceImpl implements S3Service {
         		.build();
         
         provider.copy(fromContext,context);
+        
     }
 
     @Override
@@ -158,6 +160,29 @@ public class S3IgfsServiceImpl implements S3Service {
         throw new DatasetPersistenceException("Error retrieving dataset from Igfs due to: file not existed");
     }
 
+    @Override
+    public S3ObjectInputStream getObject(String bucketName, String objectKey, Range range) {
+    	if(range==null) {
+    		return getObject(bucketName,objectKey);
+    	}
+    	Bucket bucket = new Bucket();
+    	bucket.setName(bucketName);        
+        
+    	ObjectMetadata metadata = provider.getObjectMetadata(bucketName, objectKey);
+       
+        if (metadata!=null) {
+        	DatasetSnapshotContext context = new StandardDatasetSnapshotContext.Builder(bucket)
+            		.datasetId(objectKey)
+            		.datasetName(objectKey)
+            		.build();
+        	byte[] fileByte = provider.getDatasetContent(context,range.getStart(),(int)(range.getEnd()-range.getStart()+1));    
+            InputStream inputStream = new ByteArrayInputStream(fileByte);        
+            metadata.setContentLength(fileByte.length);
+            return new S3ObjectInputStream(metadata, inputStream);
+        }
+        throw new DatasetPersistenceException("Error retrieving dataset from Igfs due to: file not existed");
+    }
+    
     @Override
     public InitiateMultipartUploadResult initiateMultipartUpload(String bucketName, String objectKey) {
         createBucket(bucketName);

@@ -1,5 +1,48 @@
 package org.shaofan.s3.controller;
 
+import static org.shaofan.utils.RarUtils.unRarFile;
+import static org.shaofan.utils.TargzUtils.unTargzFile;
+import static org.shaofan.utils.ZipUtils.unZipFiles;
+import static org.shaofan.utils.ZipUtils.zipFiles;
+
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.zip.ZipOutputStream;
+
+import javax.activation.MimetypesFileTypeMap;
+import javax.mail.internet.MimeUtility;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.commons.io.FilenameUtils;
+import org.shaofan.s3.config.SystemConfig;
+import org.shaofan.s3.util.S3Util;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.util.FileCopyUtils;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
+
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
@@ -13,60 +56,6 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.Type;
 import software.amazon.awssdk.utils.StringInputStream;
 import software.amazon.awssdk.utils.StringUtils;
-
-import org.apache.commons.io.FilenameUtils;
-import org.apache.ignite.igfs.IgfsFile;
-import org.shaofan.s3.config.SystemConfig;
-import org.shaofan.s3.util.S3Util;
-import org.shaofan.utils.FileUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-
-
-import org.springframework.util.FileCopyUtils;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.multipart.MultipartHttpServletRequest;
-
-import javax.activation.MimetypesFileTypeMap;
-import javax.mail.internet.MimeUtility;
-import javax.servlet.MultipartConfigElement;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.Part;
-import java.io.*;
-import java.net.URLConnection;
-import java.net.URLEncoder;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.zip.ZipOutputStream;
-
-import static org.shaofan.utils.RarUtils.unRarFile;
-import static org.shaofan.utils.TargzUtils.unTargzFile;
-import static org.shaofan.utils.ZipUtils.unZipFiles;
-import static org.shaofan.utils.ZipUtils.zipFiles;
 
 /**
  * @author shaofan
@@ -143,7 +132,7 @@ public class FileManagerController  {
                 return jsonObject;
             }
 
-            List<S3Object> list = s3Util.getObjectList(bucketName, path);
+            List<S3Object> list = s3Util.getObjectAndPrefixList(bucketName, path);
 
             String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
             SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
@@ -187,9 +176,11 @@ public class FileManagerController  {
 	                    String bucketName = tokens[0];
 	                    String path = tokens[1];	                    
 	
-	                    String filename = part.getOriginalFilename();
-	                    
-	                    s3Util.upload(bucketName, path+"/"+filename, part.getInputStream());
+	                    String filename = path+"/"+part.getOriginalFilename();
+	                    if(path.isBlank() || path.equals("/")) {
+	                    	filename = part.getOriginalFilename();
+	                    }
+	                    s3Util.upload(bucketName, filename, part.getInputStream());
 	                    
 	                    part.getInputStream().close();
 	                }

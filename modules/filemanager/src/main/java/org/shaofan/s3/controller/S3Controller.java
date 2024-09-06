@@ -7,6 +7,7 @@ import org.dom4j.Element;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.SAXReader;
 import org.dom4j.io.XMLWriter;
+import org.shaofan.s3.config.RangeConverter;
 import org.shaofan.s3.config.SystemConfig;
 import org.shaofan.s3.model.*;
 import org.shaofan.s3.service.S3Service;
@@ -14,6 +15,8 @@ import org.shaofan.s3.util.*;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.AntPathMatcher;
@@ -28,11 +31,13 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * api参考地址 https://docs.aws.amazon.com/AmazonS3/latest/API/
@@ -43,6 +48,18 @@ import java.util.TreeSet;
 @RequestMapping("/s3")
 @CrossOrigin
 public class S3Controller {
+	
+	private static final String RANGES_BYTES = "bytes";
+	
+	private static final String RANGE = "Range";
+
+	private static final String UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
+
+	private static final String HEADER_X_AMZ_META_PREFIX = "x-amz-meta-";
+	
+	private static final String HEADER_X_AMZ_COPY_SOURCE = "x-amz-copy-source";
+	
+	  
     @Autowired
     private S3Service s3Service;
     
@@ -193,7 +210,7 @@ public class S3Controller {
         format.setEncoding("utf-8");        
         XMLWriter writer = new XMLWriter(response.getWriter(), format);
         writer.write(doc);
-        writer.close();
+        writer.flush();
     }
 
 
@@ -201,9 +218,7 @@ public class S3Controller {
     public void headObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
         ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
         if (metadata==null) {
@@ -217,7 +232,7 @@ public class S3Controller {
             }
             headInfo.put("Content-Type", metadata.getContentType());
             headInfo.put("Last-Modified", DateUtil.getDateGMTFormat(metadata.getLastModified()));                
-            headInfo.put("ETag",metadata.getETag());
+            headInfo.put("ETag","\"" + metadata.getETag() + "\"");
             
             for (String key : headInfo.keySet()) {
                 response.addHeader(key, headInfo.get(key));
@@ -225,21 +240,34 @@ public class S3Controller {
 
         }
     }
+    
+    private Map<String, String> getUserMetadata(final HttpServletRequest request) {
+        return Collections.list(request.getHeaderNames()).stream()
+            .filter(header -> header.startsWith(HEADER_X_AMZ_META_PREFIX))
+            .collect(Collectors.toMap(
+                header -> header.substring(HEADER_X_AMZ_META_PREFIX.length()),
+                request::getHeader
+            ));
+      }
 
     @PutMapping("/{bucketName}/**")
-    public ResponseEntity<String> putObject(@PathVariable String bucketName, HttpServletRequest request) throws Exception {
+    public ResponseEntity<String> putObject(@PathVariable String bucketName, HttpServletRequest request,HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
-        String copySource = request.getHeader("x-amz-copy-source");
+        String copySource = request.getHeader(HEADER_X_AMZ_COPY_SOURCE);
         if(copySource!=null) {
         	copySource = URLDecoder.decode(copySource, "utf-8");
-        }
+        }        
+        
         if (StringUtils.isEmpty(copySource)) {
-            s3Service.putObject(bucketName, objectKey, request.getInputStream());
+        	Map<String,String> userMeta = getUserMetadata(request);
+        	s3Service.putObject(bucketName, objectKey, request.getInputStream(), userMeta);
+        	ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
+            response.addHeader("Content-Disposition", "filename=" + URLEncoder.encode(metadata.getFileName(), "utf-8"));            
+            response.addHeader("Last-Modified", DateUtil.getDateGMTFormat(metadata.getLastModified()));                
+            response.addHeader("ETag","\"" + metadata.getETag() + "\"");            
             return ResponseEntity.ok().build();
         } else {
             if (copySource.indexOf("\\?") >= 0) {
@@ -263,18 +291,17 @@ public class S3Controller {
             }
             String sourceObjectKey = result.toString();
             s3Service.copyObject(sourceBucketName, sourceObjectKey, bucketName, objectKey);
-
+            ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
             String xml = "";
             Document doc = DocumentHelper.createDocument();
             Element root = doc.addElement("CopyObjectResult");
             Element lastModified = root.addElement("LastModified");
-            lastModified.setText(DateUtil.getUTCDateFormat());
+            lastModified.setText(DateUtil.getDateIso8601Format(metadata.getLastModified()));
             Element eTag = root.addElement("ETag");
-            eTag.setText(EncryptUtil.encryptByMD5(copySource));
+            eTag.setText(metadata.getETag());
             OutputFormat format = OutputFormat.createPrettyPrint();
             format.setEncoding("utf-8");
-            StringWriter out;
-            out = new StringWriter();
+            StringWriter out = new StringWriter();
             XMLWriter writer = new XMLWriter(out, format);
             writer.write(doc);
             writer.close();
@@ -285,12 +312,11 @@ public class S3Controller {
     }
 
     @GetMapping("/{bucketName}/**")
-    public void getOrListObject(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void getOrListObject(@PathVariable String bucketName, 
+    		@RequestHeader(value = RANGE, required = false) String rangeStr,
+    		HttpServletRequest request, HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
-        String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");        
         
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
         ObjectMetadata metadata = s3Service.headObject(bucketName, objectKey);
@@ -301,33 +327,61 @@ public class S3Controller {
         	boolean delimiter = request.getParameter("delimiter")!=null;
         	_listObjects(bucketName,objectKey,delimiter,response);
         }
-        else {
-        	S3ObjectInputStream objectStream = s3Service.getObject(bucketName, objectKey);        	
+        else {        	
+        	Range range = null;
+        	long bytesToRead = metadata.getContentLength();
+        	if(rangeStr!=null && !rangeStr.isEmpty()) {
+        		RangeConverter conv = new RangeConverter();
+        		range = conv.convert(rangeStr);
+        		
+        		final long fileSize = metadata.getContentLength();
+                bytesToRead = Math.min(fileSize - 1, range.getEnd()) - range.getStart() + 1;
+
+                if (bytesToRead < 0 || fileSize < range.getStart()) {
+                  response.setStatus(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE.value());
+                  response.flushBuffer();
+                  return;
+                }
+                
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                response.setHeader(HttpHeaders.ACCEPT_RANGES, RANGES_BYTES);
+                
+        	}
+        	
+        	S3ObjectInputStream objectStream = s3Service.getObject(bucketName, objectKey, range);        	
         	
         	response.addHeader("Content-Disposition", "filename=" + URLEncoder.encode(metadata.getFileName(), "utf-8"));            
             response.addHeader("Last-Modified", DateUtil.getDateGMTFormat(metadata.getLastModified()));                
-            response.addHeader("ETag",metadata.getETag());
-            response.setContentType(metadata.getContentType());          
-            response.setContentLengthLong(metadata.getContentLength());
+            response.addHeader("ETag","\"" + metadata.getETag() + "\"");
+            response.setContentType(metadata.getContentType());
             response.setCharacterEncoding(metadata.getContentEncoding());
+            response.setContentLengthLong(bytesToRead); 
+            if(range!=null) {            	
+            	bytesToRead = objectStream.getMetadata().getContentLength();
+            	response.setContentLengthLong(bytesToRead);
+            	response.setHeader(HttpHeaders.CONTENT_RANGE,
+                        String.format("bytes %s-%s", range.getStart(), bytesToRead + range.getStart() - 1));              
+            }
             
-            byte[] buff = new byte[1024*16];
-            BufferedInputStream bufferedInputStream = null;
+            int bufsize = Math.min(1024*16,(int)(1024+bytesToRead/1024*1024));
+            byte[] buff = new byte[bufsize];
+            int i = 0;
             OutputStream outputStream = null;
             try {
-                outputStream = response.getOutputStream();
-                bufferedInputStream = new BufferedInputStream(objectStream);
-                int i = 0;
-                while ((i = bufferedInputStream.read(buff)) != -1) {
-                    outputStream.write(buff, 0, i);                    
+                outputStream = response.getOutputStream();             
+                
+                while ((i = objectStream.read(buff)) != -1) {
+                    outputStream.write(buff, 0, i);
                 }
                 outputStream.flush();
-            } catch (IOException e) {
-                e.printStackTrace();
-                response.setStatus(404);
+            } catch (EOFException e) {                
+                // ignore     
+            } catch (IOException e) {                
+            	e.printStackTrace();
+            	response.setStatus(404);
             } finally {
                 try {
-                    bufferedInputStream.close();
+                	objectStream.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -354,9 +408,7 @@ public class S3Controller {
     public ResponseEntity<Object> createMultipartUpload(@PathVariable String bucketName, HttpServletRequest request) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
         InitiateMultipartUploadResult result = s3Service.initiateMultipartUpload(bucketName, objectKey);
 
@@ -371,8 +423,7 @@ public class S3Controller {
         uploadId.setText(result.getUploadId());
         OutputFormat format = OutputFormat.createPrettyPrint();
         format.setEncoding("utf-8");
-        StringWriter out;
-        out = new StringWriter();
+        StringWriter out = new StringWriter();
         XMLWriter writer = new XMLWriter(out, format);
         writer.write(doc);
         writer.close();
@@ -385,9 +436,7 @@ public class S3Controller {
     public ResponseEntity<String> uploadPart(@PathVariable String bucketName, HttpServletRequest request, HttpServletResponse response) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
         int partNumber = ConvertOp.convert2Int(request.getParameter("partNumber"));
         String uploadId = request.getParameter("uploadId");
@@ -400,9 +449,7 @@ public class S3Controller {
     public ResponseEntity<String> completeMultipartUpload(@PathVariable String bucketName, HttpServletRequest request) throws Exception {
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
-        if (pageUrl.indexOf("\\?") >= 0) {
-            pageUrl = pageUrl.split("\\?")[0];
-        }
+        
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
         String uploadId = request.getParameter("uploadId");
         List<PartETag> partETags = new ArrayList<>();
@@ -432,8 +479,7 @@ public class S3Controller {
 
         OutputFormat format = OutputFormat.createPrettyPrint();
         format.setEncoding("utf-8");
-        StringWriter out;
-        out = new StringWriter();
+        StringWriter out = new StringWriter();
         XMLWriter writer = new XMLWriter(out, format);
         writer.write(doc);
         writer.close();

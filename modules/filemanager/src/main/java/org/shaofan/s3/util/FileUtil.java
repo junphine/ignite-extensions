@@ -14,6 +14,8 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
 
+import org.shaofan.s3.model.Range;
+
 public class FileUtil {
 
     public static boolean delete(String fileName) {
@@ -214,20 +216,28 @@ public class FileUtil {
         }
     }
 
-    public static byte[] getFile(String filePath) {
+    public static FileInputStream getFileStream(String filePath) {    	
+        try {
+            File file = new File(filePath);
+            FileInputStream fis = new FileInputStream(file);
+            return fis;
+            
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    public static byte[] getFile(String filePath, long offset, int length) {
         byte[] buffer = null;
         try {
             File file = new File(filePath);
             FileInputStream fis = new FileInputStream(file);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream(1000);
-            byte[] b = new byte[1000];
-            int n;
-            while ((n = fis.read(b)) != -1) {
-                bos.write(b, 0, n);
-            }
+            fis.skip(offset);
+            buffer = fis.readNBytes(length);
             fis.close();
-            bos.close();
-            buffer = bos.toByteArray();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -237,9 +247,9 @@ public class FileUtil {
     }
 
     public static byte[] convertStreamToByte(InputStream inputStream) throws IOException {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[1024*8];
         int len = 0;
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream(1024*8);
         while ((len = inputStream.read(buffer)) != -1) {
             bos.write(buffer, 0, len);
         }

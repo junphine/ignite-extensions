@@ -9,6 +9,7 @@ public class Result implements Serializable {
     private int code;
     private String msg;
     private Map data;
+    
     public Result(){
         data = new HashMap();
     }

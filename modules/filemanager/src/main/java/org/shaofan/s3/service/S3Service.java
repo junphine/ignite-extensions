@@ -3,6 +3,7 @@ package org.shaofan.s3.service;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.shaofan.s3.model.*;
 
@@ -22,10 +23,12 @@ public interface S3Service {
     ObjectMetadata headObject(String bucketName, String objectKey);
 
     S3ObjectInputStream getObject(String bucketName, String objectKey);
+    
+    S3ObjectInputStream getObject(String bucketName, String objectKey, Range range);
 
     void deleteObject(String bucketName, String objectKey);
 
-    void putObject(String bucketName, String objectKey, InputStream inputStream);
+    void putObject(String bucketName, String objectKey, InputStream inputStream, Map<String, String> metaData);
 
     void copyObject(String sourceBucketName, String sourceObjectKey, String targetBuckName, String targetObjectKey);
 

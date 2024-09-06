@@ -107,19 +107,19 @@ public class S3LocalFileServiceImpl implements S3Service {
 
     @Override
     public ObjectMetadata headObject(String bucketName, String objectKey) {
-    	ObjectMetadata headInfo = new ObjectMetadata();
+    	ObjectMetadata metadata = new ObjectMetadata();
         String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
         File file = new File(filePath);
         if (file.exists()) {
             try {               
                 
-                headInfo.setFileName(file.getName());
-                headInfo.setContentLength(FileUtil.getFileSize(file));
-                headInfo.setContentType(FileUtil.getContentType(file.getName()));
-                headInfo.setLastModified(FileUtil.getLastModifyTime(file));
+            	metadata.setFileName(file.getName());
+            	metadata.setContentLength(FileUtil.getFileSize(file));
+            	metadata.setContentType(FileUtil.getContentType(file.getName()));
+            	metadata.setLastModified(FileUtil.getLastModifyTime(file));
                 
                 String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+objectKey);
-                headInfo.setETag(eTag+'-'+0);    			
+                metadata.setETag(eTag+'-'+0);    			
                 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -127,11 +127,11 @@ public class S3LocalFileServiceImpl implements S3Service {
         } else {
             return null;
         }
-        return headInfo;
+        return metadata;
     }
 
     @Override
-    public void putObject(String bucketName, String objectKey, InputStream inputStream) {
+    public void putObject(String bucketName, String objectKey, InputStream inputStream,Map<String, String> metaData) {
         createBucket(bucketName);
         String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
         if (filePath.endsWith("/")) {
@@ -151,7 +151,7 @@ public class S3LocalFileServiceImpl implements S3Service {
                 fileDir.mkdirs();
             }
             FileUtil.saveFile(filePath, inputStream);
-        }
+        }        
     }
 
     @Override
@@ -186,15 +186,39 @@ public class S3LocalFileServiceImpl implements S3Service {
     public S3ObjectInputStream getObject(String bucketName, String objectKey) {
         String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
         File file = new File(filePath);
+        if (file.exists()) {            
+            InputStream inputStream = FileUtil.getFileStream(filePath);
+            
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(FileUtil.getFileSize(file));
+            metadata.setContentType(FileUtil.getContentType(file.getName()));
+            metadata.setFileName(file.getName());
+            metadata.setLastModified(FileUtil.getLastModifyTime(file));
+            String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+objectKey);
+            metadata.setETag(eTag+'-'+0);    
+            return new S3ObjectInputStream(metadata, inputStream);
+        }
+        return null;
+    }
+    
+    @Override
+    public S3ObjectInputStream getObject(String bucketName, String objectKey, Range range) {
+    	if(range==null) {
+    		return getObject(bucketName,objectKey);
+    	}
+        String filePath = systemConfig.getDataPath() + bucketName + "/" + objectKey;
+        File file = new File(filePath);
         if (file.exists()) {
-            byte[] fileByte = FileUtil.getFile(filePath);
+            byte[] fileByte = FileUtil.getFile(filePath,range.getStart(),(int)(range.getEnd()-range.getStart()+1));
             InputStream inputStream = new ByteArrayInputStream(fileByte);
-            ;
+            
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentLength(fileByte.length);
             metadata.setContentType(FileUtil.getContentType(file.getName()));
             metadata.setFileName(file.getName());
             metadata.setLastModified(FileUtil.getLastModifyTime(file));
+            String eTag = EncryptUtil.encryptByMD5(bucketName+"/"+objectKey);
+            metadata.setETag(eTag+'-'+0);    
             return new S3ObjectInputStream(metadata, inputStream);
         }
         return null;

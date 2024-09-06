@@ -269,13 +269,32 @@ public class IgfsDatasetPersistenceProvider {
         IgfsPath datasetFile = new IgfsPath(key);
 
         try {
-        	IgniteFileSystem fs = fs(context.getBucketName());
-        	
+        	IgniteFileSystem fs = fs(context.getBucketName());        	
         	
             LOGGER.debug("Successfully retrieved dataset version from Igfs bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
             IgfsInputStream in = fs.open(datasetFile);
             
             BufferedInputStream bs = new BufferedInputStream(in,fs.configuration().getBlockSize());
+            return bs;
+            
+        } catch (Exception e) {
+            throw new DatasetPersistenceException("Error retrieving dataset version from Igfs due to: " + e.getMessage(), e);
+        }
+    }
+    
+    public byte[] getDatasetContent(DatasetSnapshotContext context,long offset,int len)
+            throws DatasetPersistenceException {
+        final String key = getKey(context);
+        LOGGER.debug("Retrieving dataset version from Igfs bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
+        IgfsPath datasetFile = new IgfsPath(key);
+
+        try {
+        	IgniteFileSystem fs = fs(context.getBucketName());        	
+        	
+            LOGGER.debug("Successfully retrieved dataset version from Igfs bucket '{}' with key '{}'", new Object[]{s3BucketName, key});
+            IgfsInputStream in = fs.open(datasetFile);
+            in.skip(offset);
+            byte[] bs = in.readNBytes(len);            
             return bs;
             
         } catch (Exception e) {
@@ -322,6 +341,7 @@ public class IgfsDatasetPersistenceProvider {
         	IgfsPath fromPath = new IgfsPath(fromKey);
             IgfsPath destPath = new IgfsPath(toKey);        
             
+            // todo 使用link技术
             IgfsUtils.copy(fs, fromPath, destPath, StandardCopyOption.REPLACE_EXISTING);
             
         } catch (IOException e) {

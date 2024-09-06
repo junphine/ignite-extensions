@@ -3,6 +3,7 @@ package org.shaofan.s3.model;
 import java.io.InputStream;
 
 public class S3Object {
+	
     private String bucketName;
     private String key;
     private ObjectMetadata metadata;

@@ -110,6 +110,15 @@ public class S3Util {
     }
 
 
+    public List<S3Object> getObjectAndPrefixList(String bucketName, String prefix) {
+        S3Client s3Client = getClient();
+        ListObjectsRequest request = ListObjectsRequest.builder().bucket(bucketName).prefix(prefix).build();
+        ListObjectsResponse response = s3Client.listObjects(request);
+        List<S3Object> s3ObjectList = response.contents();
+        
+        return s3ObjectList;
+    }
+    
     public List<S3Object> getObjectList(String bucketName, String prefix) {
         S3Client s3Client = getClient();
         ListObjectsRequest request = ListObjectsRequest.builder().bucket(bucketName).prefix(prefix).delimiter("/").build();
