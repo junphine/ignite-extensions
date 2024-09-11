@@ -107,7 +107,9 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 	private long docCount = 0;
 	
-	private String idField = "_id";
+	private final String idField;
+	
+	private String typeName;
 
 	/** */
 	private String[] idxdFields = null;
@@ -143,10 +145,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 				marshaller = cacheObjProc.marshaller();				
 				
-				T3<String, String,String> t2 = coll.typeNameAndKeyField(coll.dataMap, new Document());
-				String schemaName = t2.get1();
-				String typeName = t2.get2();
-				String keyField = t2.get3();
+				typeName =  coll.getTypeName();
 				
 				Map<String, FieldType> fields = indexAccess.fields(typeName);
 				for (IndexKey ik : this.getKeys()) {
@@ -168,7 +167,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	}
 
 	private boolean hasIgniteLuenceIndex(String typeName) {
-		if(igniteH2Indexing!=null) {
+		if(igniteH2Indexing==null) {
 			return false;
 		}
 		@Nullable
@@ -252,10 +251,8 @@ public class IgniteLuceneIndex extends Index<Object> {
 		
 		
 		IgniteBinaryCollection coll = (IgniteBinaryCollection) collection;
-		T3<String, String,String> t2 = coll.typeNameAndKeyField(coll.dataMap, document);
-		String schemaName = t2.get1();
-		String typeName = t2.get2();
-		String keyField = t2.get3();
+		
+		String typeName =  coll.getTypeName();	
 		
 		// 使用Ignite自己的luence索引
 		if(hasIgniteLuenceIndex(typeName)) {
@@ -560,8 +557,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	}
 
 	@Override
-	public void drop() {
-		String typeName = IgniteBinaryCollection.tableOfCache(cacheName);
+	public void drop() {		
 		Map<String, FieldType> fields = indexAccess.fields(typeName);
 		for (IndexKey ik : this.getKeys()) {
 			fields.remove(ik.getKey());

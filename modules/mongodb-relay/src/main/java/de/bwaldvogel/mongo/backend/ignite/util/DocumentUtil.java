@@ -85,7 +85,7 @@ public class DocumentUtil {
 	            		  byte t = BsonEncoder.determineType(result);
 	            		  if(t==BsonConstants.TYPE_EMBEDDED_DOCUMENT) {
 	            			  final Document embed = new Document();
-	            			  Map map = (Map)result;
+	            			  Map<String, Object> map = (Map)result;
 	            			  map.forEach((k,v)->{
 	            				try {
 	            					byte t2 = BsonEncoder.determineType(v);
@@ -134,50 +134,52 @@ public class DocumentUtil {
 		}
 		return doc;			 
 	}
-
 	
-	public static Document objectToDocument(Object key,Object obj,String idField){
+	public static Document objectToDocument(Object obj){		
 		if(obj instanceof byte[] || obj instanceof Number || obj instanceof UUID || obj instanceof CharSequence || obj.getClass().isArray()) {
-			key = toDocumentKey(key,idField);
-			Document doc = new Document();
-			doc.append(idField, key);
+			
+			Document doc = new Document();			
 			doc.append("_data", obj);
 			return doc;
 		}		
 		else if(obj instanceof BinaryObject) {
 			BinaryObject bobj = (BinaryObject) obj;
-			return binaryObjectToDocument(key,bobj,idField);
+			Document doc =  binaryObjectToDocument(bobj);			
+			return doc;
 		}
-		else if(obj instanceof Collection) {
-			key = toDocumentKey(key,idField);
-			Document doc = new Document();
-			doc.append(idField, key);
+		else if(obj instanceof Collection) {			
+			Document doc = new Document();			
 			Collection coll = (Collection)obj;
 			doc.append("_data", coll);
 			return doc;
 		}
-		else if(obj instanceof Map) {
-			key = toDocumentKey(key,idField);
-			Map coll = (Map)obj;
-			Document doc = new Document(coll);
-			doc.append(idField, key);			
+		else if(obj instanceof Map) {			
+			Map map = (Map)obj;			
+			Document doc = new Document(map);						
 			return doc;
 		}
 		else if(obj instanceof Vector) {
 			Vector bobj = (Vector) obj;
-			Document doc = new Document();
-			doc.append(idField, key);
+			Document doc = new Document();			
 			doc.append("_data", bobj.getStorage().data());
 			doc.append("_meta", new Document(bobj.getMetaStorage()));
 			return doc;
 		}
-		else {
-			key = toDocumentKey(key,idField);						
-			Document doc = toKeyValuePairs(obj);
-			doc.append(idField, key);
+		else {							
+			Document doc = toKeyValuePairs(obj);			
 			return doc;
 		}
 		
+	}
+
+	
+	public static Document objectToDocument(Object key,Object obj,String idField){
+		boolean hasId = "_id".equals(idField);
+		key = toDocumentKey(key,idField);						
+		Document doc = objectToDocument(obj);
+		if(!hasId) 	doc.append("_id", key);	
+		doc.append(idField, key);
+		return doc;		
 	}
 	
 
@@ -223,29 +225,6 @@ public class DocumentUtil {
 		
 	}
 	
-	/**
-	 * top decode
-	 * @param key
-	 * @param obj
-	 * @param idField document _id
-	 * @return
-	 */
-	public static Document binaryObjectToDocument(Object key, BinaryObject obj, String idField){
-		Document doc = null;
-		Object $value = binaryObjectToDocument(obj);
-		if($value instanceof Document) {
-			doc = (Document)$value;
-			if(key!=null) {
-	    		key = toDocumentKey(key,idField);
-	    		doc.append(idField, key);
-	    	}
-		}
-		else {
-			doc = objectToDocument(key, $value, idField);
-		}
-    	
-	    return doc;
-	}   
     
 	/**
 	 * document key only support bson type
@@ -257,7 +236,7 @@ public class DocumentUtil {
 		if(key!=null) {
     		if(key instanceof BinaryObject){
 				BinaryObject $arr = (BinaryObject)key;
-				key = binaryObjectToDocument($arr);
+				key = binaryObjectToDocumentOrPojo($arr);
 				try {
 					byte t2 = BsonEncoder.determineType(key);					
 				}
@@ -350,7 +329,7 @@ public class DocumentUtil {
 			}			
 			else if($value instanceof BinaryObject){
 				BinaryObject $arrSlice = (BinaryObject)$value;					
-				$value = binaryObjectToDocument($arrSlice);
+				$value = binaryObjectToDocumentOrPojo($arrSlice);
 			}			
 			else {				
 				try {
@@ -366,7 +345,27 @@ public class DocumentUtil {
 	    return $value;
 	}
 
-    public static Object binaryObjectToDocument(BinaryObject bobj){
+
+	/**
+	 * top decode
+	 * @param key
+	 * @param obj
+	 * @param idField document _id
+	 * @return
+	 */
+	public static Document binaryObjectToDocument(BinaryObject obj){
+		Document doc = null;
+		Object $value = binaryObjectToDocumentOrPojo(obj);
+		if($value instanceof Document) {
+			doc = (Document)$value;			
+		}
+		else {
+			doc = objectToDocument($value);
+		}    	
+	    return doc;
+	}
+	
+    public static Object binaryObjectToDocumentOrPojo(BinaryObject bobj){
     	Collection<String> fields = null;
     	try {    		
     		if(bobj instanceof BinaryObjectImpl) {
@@ -433,8 +432,8 @@ public class DocumentUtil {
      * @return
      */
     public static BinaryObject documentToBinaryObject(IgniteBinary igniteBinary,String typeName, Document doc, String idField){	
-    	
-    	BinaryTypeImpl type = (BinaryTypeImpl)igniteBinary.type(typeName);
+    	String docTypeName = (String)doc.getOrDefault("_class",typeName);	
+    	BinaryTypeImpl type = (BinaryTypeImpl)igniteBinary.type(docTypeName);
 		BinaryObjectBuilder bb = igniteBinary.builder(typeName);		
 		Set<Map.Entry<String,Object>> ents = doc.entrySet();
 	    for(Map.Entry<String,Object> ent: ents){	    	

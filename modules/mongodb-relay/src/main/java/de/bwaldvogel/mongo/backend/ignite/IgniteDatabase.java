@@ -311,6 +311,9 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
        
 	    oldDatabase.unregisterCollection(collection.getCollectionName());
 	    collection.renameTo(this, newCollectionName);
+	    
+	    dataMap.close();
+	    dataMap.destroy();
         //throw new UnsupportedOperationException();
     }
     

@@ -105,7 +105,7 @@ public class IgniteVectorIndex extends Index<Object> {
 	
 	private String embeddingModelName = "text2vec-base-chinese-paraphrase";
 	
-	private String tokenizerModelName = "tokenizers/perceiver-ar-xlnet-large";
+	private String tokenizerModelName = "tokenizers/chinese-xlnet-large";
 	
 	private String modelUrl = null;	
 	
@@ -333,9 +333,8 @@ public class IgniteVectorIndex extends Index<Object> {
     }
     
 	@Override
-	public Object getPosition(Document document) {
-		// Set<KeyValue> keyValues = getKeyValues(document);
-		Object key = document.getOrDefault(idField, null);
+	public Object getPosition(Document document) {		
+		Object key = document.get(idField);
 		if (key != null) {
 			return DocumentUtil.toBinaryKey(key);
 		}
@@ -516,20 +515,8 @@ public class IgniteVectorIndex extends Index<Object> {
 	}
 
 	@Override
-	public void drop() {
-		String typeName = IgniteBinaryCollection.tableOfCache(cacheName);
-		try {
-			if (this.knnModel != null) {
-				this.knnModel.close();
-			}	
-			if (this.annModel != null) {
-				this.annModel.close();
-			}
-			
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+	public void drop() {		
+		close();
 		this.vecIndex.destroy();		
 	}
 	
@@ -544,8 +531,7 @@ public class IgniteVectorIndex extends Index<Object> {
 				this.annModel = null;
 			}
 			
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
+		} catch (Exception e) {			
 			e.printStackTrace();
 		}
 	}

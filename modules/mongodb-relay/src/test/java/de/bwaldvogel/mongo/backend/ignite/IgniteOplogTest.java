@@ -12,5 +12,10 @@ public class IgniteOplogTest extends AbstractOplogTest {
     protected MongoBackend createBackend() throws Exception {        
         return IgniteBackend.inMemory(new MongoPluginConfiguration());
     }
+    
+    @Override
+    protected long getNumberOfOpenCursors() {
+        return 0;
+    }
 
 }
