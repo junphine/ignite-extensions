@@ -26,8 +26,7 @@ import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.backend.KeyValue;
 import de.bwaldvogel.mongo.backend.Missing;
 import de.bwaldvogel.mongo.backend.QueryMatcher;
-import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
-import de.bwaldvogel.mongo.bson.Document;
+
 
 /**
  * indexValue-> _id

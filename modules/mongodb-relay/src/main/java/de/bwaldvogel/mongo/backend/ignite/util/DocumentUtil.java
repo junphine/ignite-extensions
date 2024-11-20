@@ -41,7 +41,7 @@ import org.apache.ignite.internal.binary.GridBinaryMarshaller;
 
 import org.apache.ignite.internal.processors.igfs.IgfsBaseBlockKey;
 
-import org.apache.ignite.internal.util.typedef.T2;
+import de.bwaldvogel.mongo.bson.ObjectId;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.lucene.util.BytesRef;
@@ -254,17 +254,20 @@ public class DocumentUtil {
 		if (key == null) {
             return Missing.getInstance();
         }
-		if(key instanceof BinData){
+		else if(key instanceof BinData){
 			key = ((BinData)key).getData();
 		}
-		if(key instanceof byte[]){
+		else if(key instanceof byte[]){
 			Object bKey = keyDict.get(new BytesRef((byte[])key));
 			if(bKey!=null) {
 				return bKey;
 			}
 		}
-		if(key instanceof Number){
+		else if(key instanceof Number){
 			key = Utils.normalizeNumber((Number)key);
+		}
+		else if(key instanceof ObjectId){
+			key = ((ObjectId)key).getHexData();
 		}
 	    return key;
 	}
@@ -412,6 +415,9 @@ public class DocumentUtil {
 				if($value!=null) {					
 					doc.append($key, toBsonValue($value));
 				}
+				else {
+					doc.append($key, null);
+				}
 				
 			} catch (Exception e) {				
 				e.printStackTrace();
@@ -448,6 +454,8 @@ public class DocumentUtil {
 					if(field!=null) {
 						$value = BinaryFieldReader.readNumberBinaryField((Number)$value,field.typeId());
 					}
+					bb.setField($key, $value);
+					continue;
 				}
 				else if(type!=null) {
 					BinaryFieldMetadata field = type.metadata().fieldsMap().get($key);
@@ -463,12 +471,17 @@ public class DocumentUtil {
 					if(bValue instanceof BinaryObject) {						
 						return (BinaryObject)bValue;
 					}
-				}
+					else {
+						bb.setField($key, $value);
+					}
+				}				
 				else if($value!=null) {
 					Object bValue = igniteBinary.toBinary($value);
 					bb.setField($key, bValue);
 				}
-				
+				else {
+					bb.setField($key, null);
+				}				
 				
 			} catch (Exception e) {				
 				e.printStackTrace();

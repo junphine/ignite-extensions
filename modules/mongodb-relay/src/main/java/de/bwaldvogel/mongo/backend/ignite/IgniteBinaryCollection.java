@@ -227,15 +227,22 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		
 		List<Iterable<Object>> indexResult = new ArrayList<>();
 		
+		List<Index<Object>> enabledIndexes = new ArrayList<>();
 		for (Index<Object> index : getIndexes()) {
 			if (index.canHandle(query)) {
-				Iterable<Object> positions = index.getPositions(query);
-				if(index.isUnique() || (positions instanceof List && ((List)positions).size()<=100)) {
-					return matchDocuments(query, positions, orderBy, numberToSkip, limit, batchSize, fieldSelector);
-				}
-				else {
-					indexResult.add(positions);
-				}
+				enabledIndexes.add(index);
+			}
+		}
+		
+		Collections.sort(enabledIndexes,TransformerUtil::indexCompareTo);
+		
+		for (Index<Object> index : enabledIndexes) {
+			Iterable<Object> positions = index.getPositions(query);
+			if(index.isUnique() || (positions instanceof List && ((List)positions).size()<=100)) {
+				return matchDocuments(query, positions, orderBy, numberToSkip, limit, batchSize, fieldSelector);
+			}
+			else {
+				indexResult.add(positions);
 			}
 		}
 		if(indexResult.size()==1) {
@@ -497,7 +504,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	if(StringUtils.isEmpty(typeName)) {
     		// read type name from existed records
     		ScanQuery<Object, Object> scan = new ScanQuery<>(null);
-    		scan.setLocal(true);
+    		// scan.setLocal(true);
     		scan.setPageSize(1);
 			QueryCursor<Cache.Entry<Object, Object>>  cursor = dataMap.query(scan);
 			for(Cache.Entry<Object, Object> row: cursor) {

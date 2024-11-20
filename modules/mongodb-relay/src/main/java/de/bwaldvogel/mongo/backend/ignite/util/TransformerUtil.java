@@ -13,6 +13,7 @@ import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.QueryCursor;
 
 import de.bwaldvogel.mongo.backend.CloseableIterator;
+import de.bwaldvogel.mongo.backend.Index;
 import de.bwaldvogel.mongo.bson.Document;
 
 
@@ -107,6 +108,10 @@ public class TransformerUtil {
         	  cursor.close();
           }
       };
+	}
+	
+	public static int indexCompareTo(Index a, Index b) {
+		return a.getPriority()-b.getPriority();
 	}
 
 }

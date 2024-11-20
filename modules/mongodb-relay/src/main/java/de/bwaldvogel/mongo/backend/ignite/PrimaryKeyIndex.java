@@ -72,6 +72,10 @@ public class PrimaryKeyIndex<P> extends AbstractUniqueIndex<P> {
     	Object id = keyValue.get(0);    	
     	return (P)DocumentUtil.toBinaryKey(id);
     }
+    
+    public int getPriority() {
+        return -2;
+    }
 
     @Override
     protected Iterable<Entry<KeyValue, P>> getIterable(Object queriedValue) {    	

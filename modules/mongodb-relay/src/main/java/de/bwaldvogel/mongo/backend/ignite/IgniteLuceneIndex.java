@@ -168,7 +168,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 	private boolean hasIgniteLuenceIndex(String typeName) {
 		if(igniteH2Indexing==null) {
-			return false;
+			return true;
 		}
 		@Nullable
 		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(cacheName);
@@ -338,7 +338,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	public boolean canHandle(Document query) {
 
 		if (this.isTextIndex() && BsonRegularExpression.isTextSearchExpression(query)) {
-			return !true;
+			return true;
 		}
 		
 		if (this.isTextIndex() && BsonRegularExpression.isRegularExpression(query)) {
@@ -494,7 +494,22 @@ public class IgniteLuceneIndex extends Index<Object> {
 					}
 				}
 			}
-			
+			else if (queriedKey instanceof Number) {					
+				Number keyValue = (Number) queriedKey;
+				if (keyValue!=null) {
+					Query termQuery = getQueryValueForExpression(indexKey,keyValue, QueryOperator.EQUAL);						
+					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+					query.remove(indexKey.getKey());
+				}
+			}
+			else if (queriedKey instanceof Collection) {					
+				Collection querySet = (Collection) queriedKey;
+				if (querySet.size()>0) {
+					Query termQuery = getQueryValueForExpression(indexKey,querySet, QueryOperator.IN);					
+					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+					query.remove(indexKey.getKey());
+				}
+			}
 			// for { $text : { $search: 'keyword' } } || { $text : { $knnVector: [0.1,0.4,0.6] } }
 			if(queriedKey == null && this.isTextIndex() && query.containsKey("$text")) {
 				queriedKey = query.get("$text");
@@ -864,12 +879,10 @@ public class IgniteLuceneIndex extends Index<Object> {
 				}
 				else if(opt.containsKey(BsonRegularExpression.SEARCH)) {
 					text = opt.get(BsonRegularExpression.SEARCH);
-					// 更复杂，支持多种字段
-					
+					// 更复杂，支持多种字段					
 					StandardQueryParser parser = new StandardQueryParser(access.analyzerWrapper); // 定义查询分析器
 					parser.setFieldsBoost(weights);
-					textQuery = parser.parse(text.toString(),field);
-					
+					textQuery = parser.parse(text.toString(),field);					
 				}
 				
 				if(opt.containsKey("$limit")) {
@@ -900,6 +913,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 				docs = searcher.search(query, maxResults);
 			else
 				docs = searcher.search(query, maxResults, new Sort(sortField));
+			
 			limit = docs.scoreDocs.length;
 			result = new ArrayList<>(limit);
 			for (int i = 0; i < limit; i++) {
@@ -942,5 +956,12 @@ public class IgniteLuceneIndex extends Index<Object> {
 		}
 		return false;
 	}
+	
+	public int getPriority() {
+		if(this.isTextIndex()) {
+			return Math.min(99, 10 + (int)docCount/10000);
+		}
+        return 100 + (int)docCount/10000;
+    }
 
 }

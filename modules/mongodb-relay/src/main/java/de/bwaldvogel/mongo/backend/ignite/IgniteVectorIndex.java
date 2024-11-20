@@ -380,9 +380,6 @@ public class IgniteVectorIndex extends Index<Object> {
 
 	@Override
 	public boolean canHandle(Document query) {
-		if (this.isTextIndex() && BsonRegularExpression.isTextSearchExpression(query)) {
-			return true;
-		}
 		
 		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
 			return false;
@@ -626,7 +623,7 @@ public class IgniteVectorIndex extends Index<Object> {
 					LabeledVector<Object> sd = docs.get(i);				
 					float score = sd.weight();
 					if(score<=scoreMax) {		// 越小越好	
-						result.add(new IdWithMeta(sd.label(),true,new Document("vectorScore",score)));
+						result.add(new IdWithMeta(sd.label(),true,new Document("vectorSearchScore",score)));
 					}
 				}
 				n++;
@@ -704,7 +701,7 @@ public class IgniteVectorIndex extends Index<Object> {
 					Object k = doc.label();
 					Vector v = doc.features();
 					
-					result.add(new IdWithMeta(k,true,new Document("vectorScore",score)));
+					result.add(new IdWithMeta(k,true,new Document("vectorSearchScore",score)));
 				}
 				
 			}
@@ -723,5 +720,9 @@ public class IgniteVectorIndex extends Index<Object> {
 	private static boolean isInQuery(String key) {
 		return key.equals(QueryOperator.IN.getValue());
 	}
+	
+    public int getPriority() {
+    	return Math.min(9, 1 + (int)getDataSize()/10000);
+    }
 
 }

@@ -107,11 +107,12 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     }    
     
     @Override
-    protected Index<Object> openOrCreateUniqueIndex(String collectionName,String indexName, List<IndexKey> keys, boolean sparse) { 
-    	
+    protected Index<Object> openOrCreateUniqueIndex(String collectionName,String indexName, List<IndexKey> keys, boolean sparse) {    	
     	if (keys.size()==1 && keys.get(0).getKey().equalsIgnoreCase(ID_FIELD)) {    		
     		IgniteBinaryCollection collection = (IgniteBinaryCollection)resolveCollection(collectionName,true);
-        	return new PrimaryKeyIndex<Object>(indexName,collection.dataMap,keys,false);
+    		PrimaryKeyIndex<Object> index = new PrimaryKeyIndex<Object>(indexName,collection.dataMap,keys,false);
+        	collection.addIndex(index);
+        	return null;
     	}
     	if(keys.size()>0) {
     		IgniteEx ignite = (IgniteEx)mvStore;
