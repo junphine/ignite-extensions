@@ -176,10 +176,9 @@ public class DocumentUtil {
 	public static Document objectToDocument(Object key,Object obj,String idField){
 		boolean hasId = "_id".equals(idField);
 		key = toDocumentKey(key,idField);						
-		Document doc = objectToDocument(obj);
-		if(!hasId) 	doc.append("_id", key);	
+		Document doc = objectToDocument(obj);		
 		doc.append(idField, key);
-		return doc;		
+		return doc;
 	}
 	
 

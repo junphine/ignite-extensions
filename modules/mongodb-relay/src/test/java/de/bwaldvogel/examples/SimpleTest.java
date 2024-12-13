@@ -1,8 +1,7 @@
 package de.bwaldvogel.examples;
 
-
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
 
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -14,8 +13,11 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import com.mongodb.MongoWriteException;
 import com.mongodb.ServerAddress;
@@ -34,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.apache.ignite.internal.processors.query.h2.sys.SystemViewH2Adapter;
 
+
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class SimpleTest {
 
     private static MongoCollection<Document> collection;
@@ -59,14 +63,15 @@ public class SimpleTest {
     }
 
     @AfterEach
-    public void tearDown() {
+    public void tearDown() {    	
     	collection.drop();
     	//client.getDatabase("testdb").drop();
         //client.close();
         //server.shutdown();
     }
 
-    //@Test
+    @Order(0)
+    @Test
     public void testSimpleInsertQuery() throws Exception {
         assertEquals(0, collection.countDocuments());
 
@@ -79,6 +84,7 @@ public class SimpleTest {
     }
     
     // see https://github.com/bwaldvogel/mongo-java-server/issues/39
+    @Order(1)
     @Test
     public void testSecondarySparseFullTextIndex() throws Exception {
         collection.createIndex(json("text: 'text'"), new IndexOptions().unique(false).sparse(true));        
@@ -123,6 +129,7 @@ public class SimpleTest {
     
 
     // see https://github.com/bwaldvogel/mongo-java-server/issues/39
+    @Order(2)
     @Test
     public void testSecondarySparseVectorIndex() throws Exception {
         collection.createIndex(json("text: 'knnVector'"), new IndexOptions().unique(false).sparse(false));
@@ -169,6 +176,7 @@ public class SimpleTest {
     
 
     // see https://github.com/bwaldvogel/mongo-java-server/issues/39
+    @Order(3)
     @Test
     public void testSecondarySparseUniqueIndex() throws Exception {
         collection.createIndex(json("text: 1"), new IndexOptions().unique(true).sparse(true));
@@ -207,6 +215,7 @@ public class SimpleTest {
     
 
     // see https://github.com/bwaldvogel/mongo-java-server/issues/39
+    @Order(4)
     @Test
     public void testCompoundSparseUniqueIndex() throws Exception {
         collection.createIndex(json("a: 1, b: 1"), new IndexOptions().unique(true).sparse(true));
@@ -235,6 +244,7 @@ public class SimpleTest {
     }
 
     @Test
+    @Order(5)
     public void testCompoundSparseUniqueIndexOnEmbeddedDocuments() throws Exception {
         collection.createIndex(json("'x.x': 1, 'z.x': 1"), new IndexOptions().unique(true).sparse(true));
 

@@ -345,6 +345,21 @@ public class IgniteLuceneIndex extends Index<Object> {
 			return true;
 		}
 		
+		Document $expr = query.getDocument("$expr");
+        if($expr!=null && $expr.containsKey("$eq")){
+            List args = (List) $expr.get("$eq");
+            for (String key : keys()){
+                String ekey = "$"+key;
+                if (args.contains(ekey)){
+                    args.remove(ekey);
+                    query.remove("$expr");
+                    query.put(key, args.get(0));
+                    return true;
+                }
+            }
+            return false;
+        }
+		
 		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
 			return false;
 		}

@@ -19,11 +19,10 @@ import de.bwaldvogel.mongo.backend.Utils;
 import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.bson.ObjectId;
 import de.bwaldvogel.mongo.exception.MongoServerException;
+import de.bwaldvogel.mongo.oplog.Oplog;
 import io.netty.channel.Channel;
 
-public class IgniteBackend extends AbstractMongoBackend {
-
-    private static final Logger log = LoggerFactory.getLogger(IgniteBackend.class);
+public class IgniteBackend extends AbstractMongoBackend {    
 
     private final Ignite admin; // admin store
     

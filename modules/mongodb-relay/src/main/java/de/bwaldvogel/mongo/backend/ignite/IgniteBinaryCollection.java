@@ -1,5 +1,7 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -38,6 +40,9 @@ import org.apache.ignite.internal.util.typedef.T3;
 import org.apache.ignite.lang.IgniteBiPredicate;
 import org.apache.ignite.predicate.FieldEqualsMatch;
 
+import com.github.vincentrussell.query.mongodb.sql.converter.FieldType;
+import com.github.vincentrussell.query.mongodb.sql.converter.ParseException;
+import com.github.vincentrussell.query.mongodb.sql.converter.QueryConverter;
 import com.google.common.collect.Sets;
 
 import de.bwaldvogel.mongo.backend.AbstractMongoCollection;
@@ -56,6 +61,7 @@ import de.bwaldvogel.mongo.backend.ignite.util.TransformerUtil;
 import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.exception.BadValueException;
 import de.bwaldvogel.mongo.exception.DuplicateKeyError;
+import de.bwaldvogel.mongo.exception.FailedToParseException;
 import de.bwaldvogel.mongo.exception.IllegalOperationException;
 import de.bwaldvogel.mongo.exception.InvalidOptionsException;
 import de.bwaldvogel.mongo.exception.TypeMismatchException;
@@ -352,10 +358,39 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         	else {
         		throw new InvalidOptionsException("$sql value must be String or Document!");
         	}
-       	 
-        	FieldsQueryCursor<List<?>>  cursor = dataMap.query(sqlQ);
-    		
-    		return TransformerUtil.mapListField(cursor,this.idField);
+       	 	
+        	if(getTableName()!=null) {
+        		// cache does not have table or queryentity
+	        	FieldsQueryCursor<List<?>>  cursor = dataMap.query(sqlQ);
+	    		
+	    		return TransformerUtil.mapListField(cursor,this.idField);
+       	 	}
+        	else {
+        		QueryConverter queryConverter;
+				try {
+					queryConverter = new QueryConverter.Builder()
+							.sqlString(sqlQ.getSql())
+							.aggregationBatchSize(sqlQ.getPageSize())
+							.aggregationAllowDiskUse(false)
+							.build();
+					
+					if(true) {
+						ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+				        queryConverter.write(byteArrayOutputStream);
+				        this.log.info(byteArrayOutputStream.toString("UTF-8"));
+					}
+					
+					SQLQueryRunner runner = new SQLQueryRunner(queryConverter);
+					
+					return runner.run((IgniteDatabase)this.getDatabase());
+					
+				} catch (ParseException e) {
+					throw new FailedToParseException(e.getMessage());					
+				} catch (IOException e) {
+					throw new IllegalOperationException(e.getMessage());	
+				}
+        		
+        	}
         }
         else {
 	        IgniteBiPredicate<Object, Object> filter = null;
