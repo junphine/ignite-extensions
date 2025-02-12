@@ -148,8 +148,10 @@ public class SQLSimpleTest {
         collection.insertOne(json("_id: 3, title: '标题'"));
         collection.insertOne(json("_id: 4"));
         collection.insertOne(json("_id: 5, title: 'def'"));
-
+        
         FindIterable<Document>  ret = findSql("select title,count(*) from testcoll group by title");
+        
+        findSql("select name,count(*) from information_schema.tables group by name");
     }
     
     

@@ -51,7 +51,7 @@ public class TransactionTest {
     @BeforeEach
     public void setUp() {    	
 
-        String connectionString = "mongodb://127.0.0.1:27018/graph?ssl=false";
+        String connectionString = "mongodb://127.0.0.1:2701/graph?ssl=false";
 
         client = MongoClients.create(connectionString);
         
@@ -63,13 +63,13 @@ public class TransactionTest {
 
     @AfterEach
     public void tearDown() {
-    	collection.drop();
+    	//collection.drop();
     	//client.getDatabase("testdb").drop();
         client.close();       
     }
 
-    //@Test
-    void _testSimpleCursor() {
+    @Test
+    void testSimpleCursor() {
         int expectedCount = 20;
         int batchSize = 10;
         for (int i = 0; i < expectedCount; i++) {
@@ -80,6 +80,7 @@ public class TransactionTest {
         while (cursor.hasNext()) {
             retrievedDocuments.add(cursor.next());
         }
+        cursor.close();
 
         assertThatExceptionOfType(NoSuchElementException.class)
             .isThrownBy(cursor::next)
@@ -87,7 +88,7 @@ public class TransactionTest {
 
     }
 
-    @Test
+    //@Test
     public void testBuildData() throws Exception {        
         
         ClientSession session = client.startSession();

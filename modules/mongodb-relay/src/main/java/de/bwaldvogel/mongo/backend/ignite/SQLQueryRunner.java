@@ -122,8 +122,24 @@ public class SQLQueryRunner {
     @SuppressWarnings("unchecked")
     public CloseableIterator<de.bwaldvogel.mongo.bson.Document> run(final IgniteDatabase mongoDatabase) throws ParseException {
         MongoDBQueryHolder mongoDBQueryHolder = queryConverter.getMongoQuery();
+        String collectionName = mongoDBQueryHolder.getCollection();
+        if(mongoDatabase.getDatabaseName().equals("admin")){
+        	String collectionNameBase = collectionName.toLowerCase().replace("information_schema.", "");
+        	if(collectionNameBase.equalsIgnoreCase("tables")){
+            	collectionName = "system.namespaces";
+            }
+        	else if(collectionNameBase.equalsIgnoreCase("views")){
+            	collectionName = "system.views";
+            }
+        	else if(collectionNameBase.equalsIgnoreCase("indexes")){
+            	collectionName = "system.indexes";
+            }
+        	else if(collectionNameBase.equalsIgnoreCase("sessions")){
+            	collectionName = "system.sessions";
+            }        	
+        }
 
-        IgniteBinaryCollection mongoCollection = (IgniteBinaryCollection)mongoDatabase.resolveCollection(mongoDBQueryHolder.getCollection(),true);
+        IgniteBinaryCollection mongoCollection = (IgniteBinaryCollection)mongoDatabase.resolveCollection(collectionName,true);
 
         if (SQLCommandType.SELECT.equals(mongoDBQueryHolder.getSqlCommandType())) {
 

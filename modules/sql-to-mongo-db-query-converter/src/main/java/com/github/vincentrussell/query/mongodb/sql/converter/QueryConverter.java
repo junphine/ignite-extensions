@@ -29,6 +29,7 @@ import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.parser.CCJSqlParser;
 import net.sf.jsqlparser.parser.StreamProvider;
 import net.sf.jsqlparser.schema.Column;
+import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.OrderByElement;
 import net.sf.jsqlparser.statement.select.SelectExpressionItem;
 import net.sf.jsqlparser.statement.select.SelectItem;
@@ -184,7 +185,13 @@ public final class QueryConverter {
 
     private MongoDBQueryHolder getMongoQueryInternal(final SQLCommandInfoHolder sqlCommandInfoHolder)
             throws ParseException, net.sf.jsqlparser.parser.ParseException {
-        MongoDBQueryHolder mongoDBQueryHolder = new MongoDBQueryHolder(sqlCommandInfoHolder.getBaseTableName(), sqlCommandInfoHolder.getSqlCommandType());
+    	String collectionName = sqlCommandInfoHolder.getBaseTableName();
+    	if(sqlCommandInfoHolder.getFromHolder().getBaseFrom() instanceof Table) {
+    		Table table = (Table)(sqlCommandInfoHolder.getFromHolder().getBaseFrom());
+    		collectionName =table.getFullyQualifiedName();
+    	}
+    	
+        MongoDBQueryHolder mongoDBQueryHolder = new MongoDBQueryHolder(collectionName, sqlCommandInfoHolder.getSqlCommandType());
         Document document = new Document();
         //From Subquery
         if (sqlCommandInfoHolder.getFromHolder().getBaseFrom().getClass() == SubSelect.class) {

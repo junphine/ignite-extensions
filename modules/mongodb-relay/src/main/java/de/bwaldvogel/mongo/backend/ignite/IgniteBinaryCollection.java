@@ -71,10 +71,10 @@ import static de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil.*;
 
 public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
-	public final IgniteCache<Object, BinaryObject> dataMap;	
-	public final String idField;
-	public String tableName;
-	public String typeName;
+	final IgniteCache<Object, BinaryObject> dataMap;	
+	final String idField;
+	private String tableName;
+	private String typeName;
 	private boolean readOnly = false;
     
     public IgniteBinaryCollection(IgniteDatabase database, String collectionName, CollectionOptions options,
@@ -378,10 +378,12 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 						ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
 				        queryConverter.write(byteArrayOutputStream);
 				        this.log.info(byteArrayOutputStream.toString("UTF-8"));
-					}
+					}					
 					
 					SQLQueryRunner runner = new SQLQueryRunner(queryConverter);
-					
+					if(queryConverter.getMongoQuery().getCollection().toLowerCase().startsWith("information_schema.")) {
+						return runner.run((IgniteDatabase)IgniteBackend.instance.adminDatabase());
+			        }
 					return runner.run((IgniteDatabase)this.getDatabase());
 					
 				} catch (ParseException e) {
