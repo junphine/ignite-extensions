@@ -20,8 +20,16 @@
 	
 		var user = {};		
 		var ticket = '';
-		var authUrl = 'http://'+location.hostname+':3000/api/v1/user';
-		var loginUrl = 'http://'+location.hostname+':3000/login';
+		var authUrl = '/api/v1/user';
+		var loginUrl = '/login';
+		var storageHost = 'http://localhost:18080';
+		var servicePath = '/filemanager/files/';
+    const currentStorageHost = localStorage.getItem('currentStorageHost');
+    if (currentStorageHost) {     
+        storageHost = currentStorageHost;
+    }
+
+		var storageUrl = storageHost+ servicePath;
 	    var xhr0 = $.ajax({
 		    url:authUrl,
 		    async:false,
@@ -47,23 +55,23 @@
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {
             var defaults = config.$get();
             config.set({
-				ticket: ticket,
+				        ticket: ticket,
                 appName: 'File Manager',
                 defaultLang: 'zh',
-                listUrl: 'file/list/',
-                uploadUrl: 'file/upload/',
-                downloadFileUrl: 'file/preview/',
-                createFolderUrl: 'file/createFolder/',
-                permissionsUrl: 'file/changePermissions/',
-                copyUrl: 'file/copy/',
-                moveUrl: 'file/move/',
-                removeUrl: 'file/remove/',
-                renameUrl: 'file/rename/',
-                getContentUrl: 'file/getContent/',
-                editUrl: 'file/edit/',
-                compressUrl: 'file/compress/',
-                extractUrl: 'file/extract/',
-                documentViewUrl: 'office/',
+                listUrl: storageUrl+'list/',
+                uploadUrl: storageUrl+'upload/',
+                downloadFileUrl: storageUrl+'preview/',
+                createFolderUrl: storageUrl+'createFolder/',
+                permissionsUrl: storageUrl+'changePermissions/',
+                copyUrl: storageUrl+'copy/',
+                moveUrl: storageUrl+'move/',
+                removeUrl: storageUrl+'remove/',
+                renameUrl: storageUrl+'rename/',
+                getContentUrl: storageUrl+'getContent/',
+                editUrl: storageUrl+'edit/',
+                compressUrl: storageUrl+'compress/',
+                extractUrl: storageUrl+'extract/',
+                documentViewUrl: storageUrl+'office/',
                 pickCallback: function (item) {
 				    if(item.type!='file')
 					   return ;
@@ -75,19 +83,19 @@
 					  return ;
 					}
 					else if(item.name.endsWith('.ipynb') ){
-					  var msg = 'Use %s "filemanager/file%s" as url for import external jupiter nodebook to zeppelin'
+					  var msg = 'Use %s "filemanager/s3-rest%s" as url for import external jupiter nodebook to zeppelin'
                             .replace('%s', item.type)
                             .replace('%s', item.fullPath());
 					  window.alert(msg);
 					  return false;
 					}
 					else if(item.name.endsWith('.sheet') || item.name.endsWith('.csv') || item.name.endsWith('.tsv') ){
-					  window.location='dist/xspreadsheet/?ref=/filemanager/file'+item.fullPath();
+					  window.location='dist/xspreadsheet/?ref='+storageUrl+'view'+item.fullPath();
 					  return false;
 					}
 					
 					
-					var msg = 'Picked %s "filemanager/file%s" for external use'
+					var msg = 'Picked %s "filemanager/s3%s" for external use'
                             .replace('%s', item.type)
                             .replace('%s', item.fullPath());
                     window.alert(msg);

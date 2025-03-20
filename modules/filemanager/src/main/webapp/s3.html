@@ -20,9 +20,19 @@
 	
 		var user = {};		
 		var ticket = '';
-		var authUrl = 'http://'+location.hostname+':3000/api/v1/user';
-		var loginUrl = 'http://'+location.hostname+':3000/login';
-	    var xhr0 = $.ajax({
+		var authUrl = '/api/v1/user';
+		var loginUrl = '/login';
+		var storageHost = 'http://localhost:18080';
+		var servicePath = '/filemanager/s3-rest/';
+
+    const currentStorageHost = localStorage.getItem('currentStorageHost');
+    if (currentStorageHost) {     
+        storageHost = currentStorageHost;
+    }
+
+		var storageUrl = storageHost+ servicePath;
+	    
+    var xhr0 = $.ajax({
 		    url:authUrl,
 		    async:false,
 		    dataType: "json",
@@ -47,23 +57,23 @@
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {
             var defaults = config.$get();
             config.set({
-				ticket: ticket,
+				        ticket: ticket,
                 appName: 'File Manager',
                 defaultLang: 'zh',
-                listUrl: 's3-rest/list/',
-                uploadUrl: 's3-rest/upload/',
-                downloadFileUrl: 's3-rest/preview/',
-                createFolderUrl: 's3-rest/createFolder/',
-                permissionsUrl: 's3-rest/changePermissions/',
-                copyUrl: 's3-rest/copy/',
-                moveUrl: 's3-rest/move/',
-                removeUrl: 's3-rest/remove/',
-                renameUrl: 's3-rest/rename/',
-                getContentUrl: 's3-rest/getContent/',
-                editUrl: 's3-rest/edit/',
-                compressUrl: 's3-rest/compress/',
-                extractUrl: 's3-rest/extract/',
-                documentViewUrl: 'office/',
+                listUrl: storageUrl+'list/',
+                uploadUrl: storageUrl+'upload/',
+                downloadFileUrl: storageUrl+'preview/',
+                createFolderUrl: storageUrl+'createFolder/',
+                permissionsUrl: storageUrl+'changePermissions/',
+                copyUrl: storageUrl+'copy/',
+                moveUrl: storageUrl+'move/',
+                removeUrl: storageUrl+'remove/',
+                renameUrl: storageUrl+'rename/',
+                getContentUrl: storageUrl+'getContent/',
+                editUrl: storageUrl+'edit/',
+                compressUrl: storageUrl+'compress/',
+                extractUrl: storageUrl+'extract/',
+                documentViewUrl: storageUrl+'office/',
                 pickCallback: function (item) {
 				    if(item.type!='file')
 					   return ;
@@ -82,7 +92,7 @@
 					  return false;
 					}
 					else if(item.name.endsWith('.sheet') || item.name.endsWith('.csv') || item.name.endsWith('.tsv') ){
-					  window.location='dist/xspreadsheet/?ref=/filemanager/s3-rest/view'+item.fullPath();
+					  window.location='dist/xspreadsheet/?ref='+storageUrl+'view'+item.fullPath();
 					  return false;
 					}
 					
@@ -101,6 +111,8 @@
                 tplPath: 'app/templates'
             });
         }]);
+		
+		
     </script>
 </head>
 

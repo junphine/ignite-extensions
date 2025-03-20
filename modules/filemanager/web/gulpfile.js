@@ -12,7 +12,7 @@ var path = require('path');
 
 // Vars
 var src = 'app/';
-var dst = 'src/main/resources/static/dist/';
+var dst = 'src/main/webapp/dist/';
 var tplPath = 'app/templates'; //must be same as fileManagerConfig.tplPath
 var jsFile = 'angular-filemanager.min.js';
 var cssFile = 'angular-filemanager.min.css';
