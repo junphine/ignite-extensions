@@ -22,17 +22,17 @@
 		var ticket = '';
 		var authUrl = '/api/v1/user';
 		var loginUrl = '/login';
-		var storageHost = 'http://localhost:18080';
+		var storageHost = '';
 		var servicePath = '/filemanager/s3-rest/';
 
-    const currentStorageHost = localStorage.getItem('currentStorageHost');
-    if (currentStorageHost) {     
-        storageHost = currentStorageHost;
-    }
+	    const currentStorageHost = localStorage.getItem('currentStorageHost');
+	    if (currentStorageHost) {     
+	        storageHost = currentStorageHost;
+	    }
 
 		var storageUrl = storageHost+ servicePath;
 	    
-    var xhr0 = $.ajax({
+    	var xhr0 = $.ajax({
 		    url:authUrl,
 		    async:false,
 		    dataType: "json",

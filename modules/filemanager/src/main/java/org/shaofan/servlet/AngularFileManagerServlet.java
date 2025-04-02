@@ -121,8 +121,7 @@ public class AngularFileManagerServlet extends HttpServlet {
     }
 
     private String REPOSITORY_BASE_PATH = "/tmp";
-    private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)
-    //private String DATE_FORMAT = "EEE, d MMM yyyy HH:mm:ss z"; // (Wed, 4 Jul 2001 12:08:56)
+    private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)    
 
     @Override
     public void init() throws ServletException {
@@ -171,6 +170,9 @@ public class AngularFileManagerServlet extends HttpServlet {
    
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    	response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT");
+        
     	String action = request.getParameter("action");
     	String pathName = request.getParameter("path");
     	// Catch download requests    	
@@ -249,6 +251,9 @@ public class AngularFileManagerServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         try {
+        	response.setHeader("Access-Control-Allow-Origin", "*");
+            response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT");
+            
             // if request contains multipart-form-data
             if (ServletFileUpload.isMultipartContent(request)) {
                 if (isSupportFeature(Mode.upload)) {

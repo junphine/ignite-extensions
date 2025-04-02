@@ -422,9 +422,7 @@ public class DocumentUtil {
 			}	    	
 	    }
 	    return doc;
-	}   
-
-
+	}
    
     /**
      * 
@@ -438,7 +436,7 @@ public class DocumentUtil {
     public static BinaryObject documentToBinaryObject(IgniteBinary igniteBinary,String typeName, Document doc, String idField){	
     	String docTypeName = (String)doc.getOrDefault("_class",typeName);	
     	BinaryTypeImpl type = (BinaryTypeImpl)igniteBinary.type(docTypeName);
-		BinaryObjectBuilder bb = igniteBinary.builder(typeName);		
+		BinaryObjectBuilder bb = igniteBinary.builder(docTypeName);	
 		Set<Map.Entry<String,Object>> ents = doc.entrySet();
 	    for(Map.Entry<String,Object> ent: ents){	    	
 	    	String $key =  ent.getKey();
@@ -486,7 +484,7 @@ public class DocumentUtil {
 			}	    	
 	    }
 	    
-	    BinaryObject  bobj = bb.build();
+	    BinaryObject bobj = bb.build();
 	    return bobj;
 	}
 }

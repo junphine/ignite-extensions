@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.text.SimpleDateFormat;
@@ -82,9 +83,7 @@ public class FileManagerController  {
 	   if(webjarsResourceURI.startsWith("/")) {
 		   webjarsResourceURI = webjarsResourceURI.substring(1);
 	   }
-	   if(webjarsResourceURI.startsWith(systemConfig.getS3BucketName())) {
-		  // webjarsResourceURI = webjarsResourceURI.substring(systemConfig.getS3BucketName().length()+1);
-	   }
+	   
        String[] tokens = webjarsResourceURI.split("/",2);
        if(tokens.length==1) {
     	   return new String[] { tokens[0], "" };
@@ -548,6 +547,10 @@ public class FileManagerController  {
             String destination = json.getString("destination");
             String zipName = json.getString("item");
             String folderName = json.getString("folderName");
+            if(folderName!=null) {
+            	destination = destination+"/"+folderName;
+            }
+            
             File file = new File(root, zipName);
 
             String extension = org.shaofan.utils.FileUtils.getExtension(zipName);

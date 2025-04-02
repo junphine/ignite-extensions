@@ -22,15 +22,15 @@
 		var ticket = '';
 		var authUrl = '/api/v1/user';
 		var loginUrl = '/login';
-		var storageHost = 'http://localhost:18080';
-		var servicePath = '/filemanager/files/';
-    const currentStorageHost = localStorage.getItem('currentStorageHost');
-    if (currentStorageHost) {     
-        storageHost = currentStorageHost;
-    }
+		var storageHost = '';
+		var servicePath = '/filemanager/file/';
+	    const currentStorageHost = localStorage.getItem('currentStorageHost');
+	    if (currentStorageHost) {     
+	        storageHost = currentStorageHost;
+	    }
 		var storageUrl = storageHost+ servicePath;
 	    
-    var xhr0 = $.ajax({
+    	var xhr0 = $.ajax({
 		    url:authUrl,
 		    async:false,
 		    dataType: "json",

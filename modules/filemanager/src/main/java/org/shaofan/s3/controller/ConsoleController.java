@@ -89,7 +89,7 @@ public class ConsoleController {
     public Result headObject(@RequestBody Map<String, Object> params) {
         String bucketName = ConvertOp.convert2String(params.get("bucketName"));
         String key = ConvertOp.convert2String(params.get("key"));
-        HashMap headInfo = s3Util.headObject(bucketName, key);
+        HashMap<String,String> headInfo = s3Util.headObject(bucketName, key);
         if (headInfo.containsKey("noExist")) {
             return Result.okResult().add("obj", false);
         } else {

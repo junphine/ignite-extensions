@@ -128,7 +128,6 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
 
     private String REPOSITORY_BASE_PATH = "/tmp";
     private String DATE_FORMAT = "yyyy-MM-dd hh:mm:ss"; // (2001-07-04 12:08:56)
-    private String WEEK_DATE_FORMAT = "EEE, d MMM yyyy HH:mm:ss z"; // (Wed, 4 Jul 2001 12:08:56)
    
     private Map<String,IgniteFileSystem> fsMap = new HashMap<>();
     private String instanceName;
@@ -233,9 +232,22 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
        return new IgfsPath("/" + tokens[1]);
    }
 
+   protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+	   resp.setHeader("Access-Control-Allow-Origin", "*");
+	   resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+	   super.doOptions(req, resp);
+   }
    
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    	response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        // 如果是预检请求（OPTIONS），直接返回
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+        
     	String action = request.getParameter("action");
     	String pathName = request.getParameter("path");
     	// Catch download requests    	
@@ -266,8 +278,7 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
                 mimeType = "application/octet-stream";
             }
 
-            response.setContentType(mimeType);            
-            //response.setHeader("Content-Type", "application/force-download");
+            response.setContentType(mimeType);
             response.setHeader("Content-Disposition", "inline; filename=\"" + MimeUtility.encodeWord(fspath.name()) + "\"");
             
             
@@ -315,6 +326,15 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         try {
+        	response.setHeader("Access-Control-Allow-Origin", "*");
+            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            
+            // 如果是预检请求（OPTIONS），直接返回
+            if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+                response.setStatus(HttpServletResponse.SC_OK);
+                return;
+            }
+            
             // if request contains multipart-form-data
             if (ServletFileUpload.isMultipartContent(request)) {
                 if (isSupportFeature(Mode.upload)) {
@@ -325,7 +345,8 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
             } // all other post request has jspn params in body
             else {
                 fileOperation(request, response);
-            }
+            }            
+            
         } catch (ServletException | IOException ex) {
             LOG.error(ex.getMessage(), ex);
             setError(ex, response);

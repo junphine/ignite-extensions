@@ -61,7 +61,7 @@ public class ZipUtils {
         }
         ZipFile zip = new ZipFile(zipFile);
 
-        for (Enumeration entries = zip.entries(); entries.hasMoreElements(); ) {
+        for (Enumeration<?> entries = zip.entries(); entries.hasMoreElements(); ) {
             ZipEntry entry = (ZipEntry) entries.nextElement();
             String zipEntryName = entry.getName();
             InputStream in = zip.getInputStream(entry);
