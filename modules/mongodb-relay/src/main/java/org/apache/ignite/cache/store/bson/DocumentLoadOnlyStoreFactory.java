@@ -20,6 +20,11 @@ package org.apache.ignite.cache.store.bson;
 import javax.cache.configuration.Factory;
 import javax.sql.DataSource;
 import org.apache.ignite.IgniteException;
+import org.apache.ignite.cache.store.jdbc.JdbcType;
+import org.apache.ignite.cache.store.jdbc.JdbcTypeDefaultHasher;
+import org.apache.ignite.cache.store.jdbc.JdbcTypeHasher;
+import org.apache.ignite.cache.store.jdbc.JdbcTypesDefaultTransformer;
+import org.apache.ignite.cache.store.jdbc.JdbcTypesTransformer;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.IgniteComponentType;
 import org.apache.ignite.internal.util.spring.IgniteSpringHelper;
@@ -70,6 +75,9 @@ public class DocumentLoadOnlyStoreFactory<K> implements Factory<DocumentLoadOnly
 
     /** Parallel load cache minimum threshold. If {@code 0} then load sequentially. */
     private int parallelLoadCacheMinThreshold = DFLT_PARALLEL_LOAD_CACHE_MINIMUM_THRESHOLD;
+    
+    /** Types that store could process. */
+    private JdbcType[] types;    
 
 
     /** Application context. */
@@ -80,6 +88,8 @@ public class DocumentLoadOnlyStoreFactory<K> implements Factory<DocumentLoadOnly
     @Override public DocumentLoadOnlyStore<K> create() {
     	DocumentLoadOnlyStore<K> store = new DocumentLoadOnlyStore<>(dataSrc,idField);
         store.setBatchSize(batchSize);
+        store.setTypes(types);
+        store.streamerEnabled = this.streamerEnabled;
         return store;
     }
 
@@ -184,6 +194,15 @@ public class DocumentLoadOnlyStoreFactory<K> implements Factory<DocumentLoadOnly
 
 	public DocumentLoadOnlyStoreFactory<K> setStreamerEnabled(boolean streamerEnabled) {
 		this.streamerEnabled = streamerEnabled;
+		return this;
+	}
+
+	public JdbcType[] getTypes() {
+		return types;
+	}
+
+	public DocumentLoadOnlyStoreFactory<K> setTypes(JdbcType[] types) {
+		this.types = types;
 		return this;
 	}
 }

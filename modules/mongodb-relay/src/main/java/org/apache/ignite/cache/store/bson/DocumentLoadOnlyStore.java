@@ -41,6 +41,11 @@ import org.apache.ignite.Ignite;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.store.CacheLoadOnlyStoreAdapter;
 import org.apache.ignite.cache.store.CacheStore;
+import org.apache.ignite.cache.store.jdbc.JdbcType;
+import org.apache.ignite.cache.store.jdbc.JdbcTypeDefaultHasher;
+import org.apache.ignite.cache.store.jdbc.JdbcTypeHasher;
+import org.apache.ignite.cache.store.jdbc.JdbcTypesDefaultTransformer;
+import org.apache.ignite.cache.store.jdbc.JdbcTypesTransformer;
 import org.apache.ignite.configuration.CacheConfiguration;
 
 import org.apache.ignite.internal.util.typedef.T2;
@@ -66,6 +71,15 @@ public	class DocumentLoadOnlyStore<K> extends CacheLoadOnlyStoreAdapter<K, Binar
     final String idField;
     final List<Document> collection = new ArrayList<>();
     boolean streamerEnabled = false;
+    
+    /** Hash calculator.  */
+    protected JdbcTypeHasher hasher = JdbcTypeDefaultHasher.INSTANCE;
+
+    /** Types transformer. */
+    protected JdbcTypesTransformer transformer = JdbcTypesDefaultTransformer.INSTANCE;
+
+    /** Types that store could process. */
+    private JdbcType[] types;
     
     /** Auto injected ignite instance. */
     @IgniteInstanceResource
@@ -202,4 +216,15 @@ public	class DocumentLoadOnlyStore<K> extends CacheLoadOnlyStoreAdapter<K, Binar
     	BinaryObject value = DocumentUtil.documentToBinaryObject(this.ignite.binary(), "", doc, idField);
     	return new T2<>((K)key,value);
     }
+
+
+	public JdbcType[] getTypes() {
+		java.sql.Types t;
+		return types;
+	}
+
+
+	public void setTypes(JdbcType[] types) {
+		this.types = types;
+	}
 }

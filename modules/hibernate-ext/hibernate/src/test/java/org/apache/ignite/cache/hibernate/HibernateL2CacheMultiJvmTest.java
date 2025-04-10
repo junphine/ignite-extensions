@@ -60,8 +60,6 @@ public class HibernateL2CacheMultiJvmTest extends GridCommonAbstractTest {
             cacheConfiguration(Entity3.class.getName())
         );
 
-        cfg.setMarshaller(new BinaryMarshaller());
-
         cfg.setPeerClassLoadingEnabled(false);
 
         return cfg;
