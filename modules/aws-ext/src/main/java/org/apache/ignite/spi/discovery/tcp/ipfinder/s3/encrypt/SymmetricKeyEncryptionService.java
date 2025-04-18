@@ -49,14 +49,34 @@ public class SymmetricKeyEncryptionService implements EncryptionService {
 
         return this;
     }
+    
+    /**
+     * @param key Cipher Key.
+     * @param encMode Enc mode see {@link Cipher#ENCRYPT_MODE}, {@link Cipher#DECRYPT_MODE}, etc.
+     */
+    public static Cipher createCipher(Key key, int encMode) {
+        if (key == null)
+            throw new IgniteException("Cipher Key cannot be null");
+
+        try {
+            Cipher cipher = Cipher.getInstance(key.getAlgorithm());
+
+            cipher.init(encMode, key);
+
+            return cipher;
+        }
+        catch (Exception e) {
+            throw new IgniteException(e);
+        }
+    }
 
     /** {@inheritDoc} */
     @Override public void init() throws IgniteException {
         if (secretKey == null)
             throw new IgniteException("Secret key was not set / was set to null.");
 
-        encCipher = IgniteUtils.createCipher(secretKey, Cipher.ENCRYPT_MODE);
-        decCipher = IgniteUtils.createCipher(secretKey, Cipher.DECRYPT_MODE);
+        encCipher = createCipher(secretKey, Cipher.ENCRYPT_MODE);
+        decCipher = createCipher(secretKey, Cipher.DECRYPT_MODE);
     }
 
     /** {@inheritDoc} */

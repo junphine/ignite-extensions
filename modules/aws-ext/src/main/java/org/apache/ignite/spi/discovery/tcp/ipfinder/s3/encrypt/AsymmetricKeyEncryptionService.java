@@ -57,6 +57,26 @@ public class AsymmetricKeyEncryptionService implements EncryptionService {
         publicKey = keyPair.getPublic();
         privateKey = keyPair.getPrivate();
     }
+    
+    /**
+     * @param key Cipher Key.
+     * @param encMode Enc mode see {@link Cipher#ENCRYPT_MODE}, {@link Cipher#DECRYPT_MODE}, etc.
+     */
+    public static Cipher createCipher(Key key, int encMode) {
+        if (key == null)
+            throw new IgniteException("Cipher Key cannot be null");
+
+        try {
+            Cipher cipher = Cipher.getInstance(key.getAlgorithm());
+
+            cipher.init(encMode, key);
+
+            return cipher;
+        }
+        catch (Exception e) {
+            throw new IgniteException(e);
+        }
+    }
 
     /** {@inheritDoc} */
     @Override public void init() throws IgniteException {
@@ -66,8 +86,8 @@ public class AsymmetricKeyEncryptionService implements EncryptionService {
         if (publicKey == null)
             throw new IgniteException("Public key was not set / was set to null.");
 
-        encCipher = IgniteUtils.createCipher(privateKey, Cipher.ENCRYPT_MODE);
-        decCipher = IgniteUtils.createCipher(publicKey, Cipher.DECRYPT_MODE);
+        encCipher = createCipher(privateKey, Cipher.ENCRYPT_MODE);
+        decCipher = createCipher(publicKey, Cipher.DECRYPT_MODE);
     }
 
     /** {@inheritDoc} */

@@ -99,7 +99,7 @@ public class CacheOperationsHandler implements IgnitePerformanceStatisticsHandle
             });
         });
 
-        return U.map("cacheOps", jsonRes);
+        return Map.of("cacheOps", jsonRes);
     }
 
     /** */

@@ -139,6 +139,6 @@ public class ClusterInfoHandler implements IgnitePerformanceStatisticsHandler {
         res.set("nodes", nodes);
         res.set("caches", caches);
 
-        return U.map("clusterInfo", res);
+        return Map.of("clusterInfo", res);
     }
 }
