@@ -56,7 +56,14 @@
             <artifactId>spring-context</artifactId>
             <version>${spring.version}</version>
             <scope>provided</scope>           
-        </dependency>		
+        </dependency>
+        
+        <dependency>
+            <groupId>org.apache.ignite</groupId>
+            <artifactId>ignite-vertx-rest</artifactId>
+            <version>${ignite.version}</version>  
+            <scope>provided</scope>         
+        </dependency>	
 		
 		<dependency>
 			<groupId>commons-codec</groupId>
@@ -106,5 +113,5 @@
         </dependency>
 
 	</dependencies>
-	<packaging>war</packaging>
+	<packaging>jar</packaging>
 </project>

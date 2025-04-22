@@ -482,9 +482,9 @@ public class ESQueryKernelIgniteHandler extends ESQueryHandler {
 		else if(query.getAction().equals(ESConstants.SEARCH_FRAGMENT)) {
 			ObjectNode matchQurey = ESRelay.jsonNodeFactory.objectNode();
 			
-			String[] keywords = query.getParams().get("q");
-			String keyword = "";
-			if(keywords==null){
+			String keyword = query.getParams().get("q");
+	
+			if(keyword==null){
 				StringBuilder keywordBuilder = new StringBuilder();
 				ObjectNode queryObj = query.getQuery().withObject("/query");
 				if(queryObj.has("multi_match")){
@@ -522,9 +522,7 @@ public class ESQueryKernelIgniteHandler extends ESQueryHandler {
 				}
 				keyword = keywordBuilder.toString();
 			}
-			else {
-				keyword = String.join(" ", keywords);
-			}
+			
 			// order by 
 			ArrayNode sorts = query.getQuery().withArray("/sort");
 			for(JsonNode field: sorts) {
@@ -550,11 +548,11 @@ public class ESQueryKernelIgniteHandler extends ESQueryHandler {
 			}
 			
 			
-			for(Map.Entry<String, String[]> param: query.getParams().entrySet()) {
+			for(Map.Entry<String, String> param: query.getParams().entrySet()) {
 				if(param.getKey().equals("pageSize")) {
-					String[] pageSize = query.getParams().get("pageSize");
+					String pageSize = query.getParams().get("pageSize");
 					if(pageSize!=null){
-						qry.setPageSize(Integer.valueOf(pageSize[0]));
+						qry.setPageSize(Integer.valueOf(pageSize));
 					}
 				}				
 			}			
@@ -590,11 +588,11 @@ public class ESQueryKernelIgniteHandler extends ESQueryHandler {
 			ScanQuery<Object, BinaryObject> qry = new ScanQuery<>(match);
 			int iFrom = query.getFrom();
 			int iMaxSize = query.getLimit();
-			for(Map.Entry<String, String[]> param: query.getParams().entrySet()) {
+			for(Map.Entry<String, String> param: query.getParams().entrySet()) {
 				if(param.getKey().equals("pageSize")) {
-					String[] pageSize = query.getParams().get("pageSize");
+					String pageSize = query.getParams().get("pageSize");
 					if(pageSize!=null){
-						qry.setPageSize(Integer.valueOf(pageSize[0]));
+						qry.setPageSize(Integer.valueOf(pageSize));
 					}
 				}				
 			}

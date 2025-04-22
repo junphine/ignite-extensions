@@ -39,7 +39,7 @@ public class ESQuery {
 	
 	private String docId;	
 
-	private Map<String, String[]> fParams;
+	private Map<String, String> fParams;
 
 	private ObjectNode fBody;
 
@@ -68,7 +68,7 @@ public class ESQuery {
 	 *            query body
 	 */
 	public ESQuery(String[] path, ObjectNode body) {
-		this(path, new HashMap<String, String[]>(), body);
+		this(path, new HashMap<String, String>(), body);
 	}
 
 	/**
@@ -77,7 +77,7 @@ public class ESQuery {
 	 * @param params
 	 *            query parameters
 	 */
-	public ESQuery(String[] path, Map<String, String[]> params) {
+	public ESQuery(String[] path, Map<String, String> params) {
 		this(path, params, null);
 	}
 
@@ -89,7 +89,7 @@ public class ESQuery {
 	 * @param body
 	 *            query body
 	 */
-	public ESQuery(String[] path, Map<String, String[]> params, ObjectNode body) {
+	public ESQuery(String[] path, Map<String, String> params, ObjectNode body) {
 		indices = path[0];
 		
 		if(path.length>=2) {
@@ -123,28 +123,28 @@ public class ESQuery {
 	}
 	
 
-	public Map<String, String[]> getParams() {
+	public Map<String, String> getParams() {
 		return fParams;
 	}
 	
 	public String param(String... name) {		
 		for(String nameOne: name) {
-			String[] value = fParams.get(nameOne);
+			String value = fParams.get(nameOne);
 			if(value!=null) {
-				return value[0];
+				return value;
 			}
 		}
 		return null;
 	}
 
-	public void setParams(Map<String, String[]> params) {
-		String[] responseFormat = params.get("responseFormat");
+	public void setParams(Map<String, String> params) {
+		String responseFormat = params.get("responseFormat");
 		if(responseFormat!=null) {
-			this.setResponseFormat(ResponseFormat.of(responseFormat[0]));
+			this.setResponseFormat(ResponseFormat.of(responseFormat));
 		}
-		String[] responseRootPath = params.get("responseRootPath");
-		if(responseRootPath!=null && !responseRootPath[0].isBlank()) {
-			this.responseRootPath = responseRootPath[0].strip();
+		String responseRootPath = params.get("responseRootPath");
+		if(responseRootPath!=null && !responseRootPath.isBlank()) {
+			this.responseRootPath = responseRootPath.strip();
 		}
 		fParams = params;
 	}
@@ -228,17 +228,15 @@ public class ESQuery {
 		// add parameters
 		if (fParams != null && !fParams.isEmpty()) {
 			// construct URL with all parameters
-			Iterator<Entry<String, String[]>> paramIter = fParams.entrySet().iterator();
-			Entry<String, String[]> entry = null;
+			Iterator<Entry<String, String>> paramIter = fParams.entrySet().iterator();
+			Entry<String, String> entry = null;
 			urlBuff.append("?");
 			while (paramIter.hasNext()) {
 				entry = paramIter.next();				
-				for(String v: entry.getValue()) {
-					urlBuff.append("&");
-					urlBuff.append(entry.getKey());
-					urlBuff.append("=");
-					urlBuff.append(v);
-				}
+				urlBuff.append("&");
+				urlBuff.append(entry.getKey());
+				urlBuff.append("=");
+				urlBuff.append(entry.getValue());
 			}
 		}
 
@@ -264,9 +262,9 @@ public class ESQuery {
 	public int getLimit() {
 		int limit = 1024;
 
-		String[] limitParam = getParams().get(ESConstants.MAX_ELEM_PARAM);
+		String limitParam = getParams().get(ESConstants.MAX_ELEM_PARAM);
 		if (limitParam != null) {
-			limit = Integer.parseInt(limitParam[0]);
+			limit = Integer.parseInt(limitParam);
 		}
 		else {
 			ObjectNode queryObj = getQuery();
@@ -281,9 +279,9 @@ public class ESQuery {
 	public int getFrom() {
 		int from = 0;
 
-		String[] limitParam = getParams().get(ESConstants.FIRST_ELEM_PARAM);
+		String limitParam = getParams().get(ESConstants.FIRST_ELEM_PARAM);
 		if (limitParam != null) {
-			from = Integer.parseInt(limitParam[0]);
+			from = Integer.parseInt(limitParam);
 		}
 		else {
 			ObjectNode queryObj = getQuery();

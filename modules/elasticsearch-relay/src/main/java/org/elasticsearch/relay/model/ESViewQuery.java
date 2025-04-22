@@ -125,17 +125,15 @@ public class ESViewQuery extends ESQuery{
 		// add parameters
 		if (this.getParams() != null && !this.getParams().isEmpty()) {
 			// construct URL with all parameters
-			Iterator<Entry<String, String[]>> paramIter = this.getParams().entrySet().iterator();
-			Entry<String, String[]> entry = null;
+			Iterator<Entry<String, String>> paramIter = this.getParams().entrySet().iterator();
+			Entry<String, String> entry = null;
 			
 			while (paramIter.hasNext()) {
 				entry = paramIter.next();				
-				for(String v: entry.getValue()) {
-					urlBuff.append("&");
-					urlBuff.append(entry.getKey());
-					urlBuff.append("=");
-					urlBuff.append(v);
-				}
+				urlBuff.append("&");
+				urlBuff.append(entry.getKey());
+				urlBuff.append("=");
+				urlBuff.append(entry.getValue());
 			}
 		}
 
@@ -146,12 +144,12 @@ public class ESViewQuery extends ESQuery{
 		StringBuilder where = new StringBuilder();
 		int limit = this.getLimit();
 		int offset = this.getFrom();
-		for(Map.Entry<String, String[]> param: getParams().entrySet()) {
+		for(Map.Entry<String, String> param: getParams().entrySet()) {
 			if(param.getKey().equals("responseFormat")) {
 				// have processed
-				String[] responseFormat = param.getValue();
+				String responseFormat = param.getValue();
 				if(responseFormat!=null) {
-					this.setResponseFormat(ResponseFormat.valueOf(responseFormat[0].toUpperCase()));
+					this.setResponseFormat(ResponseFormat.valueOf(responseFormat.toUpperCase()));
 				}
 			}			
 			else if(param.getKey().charAt(0)!='_'){

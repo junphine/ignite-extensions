@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,6 +20,8 @@ import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.IgnitionEx;
 import org.apache.ignite.internal.jackson.IgniteObjectMapper;
+import org.apache.ignite.internal.util.typedef.F;
+import org.apache.ignite.internal.util.typedef.internal.U;
 import org.elasticsearch.relay.handler.ESQueryClientIgniteHandler;
 import org.elasticsearch.relay.handler.ESQueryHandler;
 import org.elasticsearch.relay.handler.ESQueryKernelIgniteHandler;
@@ -29,6 +32,7 @@ import org.elasticsearch.relay.model.ESViewQuery;
 import org.elasticsearch.relay.util.ESConstants;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,19 +40,26 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+
+import io.vertx.core.MultiMap;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpServerRequest;
+import io.vertx.core.http.HttpServerResponse;
+import io.vertx.ext.auth.User;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.webmvc.Vertxlet;
+import io.vertx.webmvc.annotation.VertxletMapping;
+
 
 
 /**
  * Elasticsearch Relay main servlet taking in all GET and POST requests and
  * their bodies and returning the response created by the ESQueryHandler.
  */
-@WebServlet("/es-relay/*")
-public class ESRelay extends HttpServlet {
+@Service
+@VertxletMapping(url="/es-relay/*")
+public class ESRelayVertxlet extends Vertxlet {
 	private static final String CONTENT_TYPE = "application/json; charset=UTF-8";
 	
 	public static ScheduledExecutorService scheduleExecutorService = Executors.newSingleThreadScheduledExecutor();
@@ -57,35 +68,27 @@ public class ESRelay extends HttpServlet {
 	
 	public static JsonNodeFactory jsonNodeFactory = JsonNodeFactory.withExactBigDecimals(true);
 	
-	private static ApplicationContext context = null;
 
 	private final ESRelayConfig fConfig;
 
 	private final Logger fLogger;
 
-	private ESQueryHandler fHandler;	
-	
-	public Map<String, ESViewQuery> allViews = null;
+	private ESQueryHandler fHandler;
 	
 	
-	public static ApplicationContext applicationContext() {
-		if(context==null) {
-			context = new ClassPathXmlApplicationContext(new String[]{"/relay-views.xml","/relay-plugins.xml"},true);
-		}
-		return context;
-	}
+	public Map<String, ESViewQuery> allViews = null;	
 	
 
-	public ESRelay() {
+	public ESRelayVertxlet() {
 		fConfig = new ESRelayConfig();
 		fLogger = Logger.getLogger(this.getClass().getName());
 	}
 
 	@Override
-	public void init() throws ServletException {
+	public void init() {
 		// initialize query handler
 		try {
-			ApplicationContext context = applicationContext();
+			ApplicationContext context = ESRelay.applicationContext();
 			
 			allViews = context.getBeansOfType(ESViewQuery.class);			
 			
@@ -110,52 +113,60 @@ public class ESRelay extends HttpServlet {
 			fLogger.info("init hander:" + fHandler.getClass());
 			
 		} catch (Exception e) {
-			fLogger.severe("init ESRelay:" +e.getMessage());
-			throw new ServletException(e);
+			fLogger.severe("init ESRelay:" +e.getMessage());			
 		}
 	}
+	
+	
+	/**
+     * Parses HTTP parameters in an appropriate format and return back map of values to predefined list of names.
+     *
+     * @param req Request.
+     * @return Map of parsed parameters.
+     */
+    private Map<String, String> getParams(HttpServerRequest req) {
+        MultiMap params = req.params();
 
-	private Map<String, String> getParams(HttpServletRequest request) {
-		Map<String, String> parameters = new HashMap<String, String>();
+        if (F.isEmpty(params))
+            return Collections.emptyMap();
 
-		String key = null;
-		String[] value = null;
-		Enumeration<?> paramEnum = request.getParameterNames();
-		while (paramEnum.hasMoreElements()) {
-			key = paramEnum.nextElement().toString();
-			value = request.getParameterValues(key);
-			if(value.length>1) {
-				parameters.put(key, String.join(",",value));
-			}
-			else {
-				parameters.put(key, value[0]);
-			}
-		}
+        Map<String, String> map = U.newHashMap(params.size());
 
-		return parameters;
-	}
+        for (Map.Entry<String, String> entry : req.params()) {
+        	String lastValue = map.get(entry.getKey());
+        	if(lastValue!=null) {
+        		lastValue = lastValue+','+entry.getValue();
+        	}
+        	else {
+        		lastValue = entry.getValue();
+        	}
+            map.put(entry.getKey(), lastValue);
+        }
 
-	private ObjectNode getJSONBody(String cmd, HttpServletRequest request) {
+        return map;
+    }
+
+	private ObjectNode getJSONBody(String cmd, RoutingContext rc) {
 		
 		ObjectNode jsonRequest = new ObjectNode(jsonNodeFactory);
 
 		try {
-			BufferedReader reader = new BufferedReader(new InputStreamReader(request.getInputStream(), "utf-8"));
+			
+			String body = rc.body().asString("UTF-8");
 
 			if(cmd.equals(ESConstants.BULK_FRAGMENT)){
 				ArrayNode list = new ArrayNode(jsonNodeFactory);
-				String line = reader.readLine();
-				while (line != null) {	
+				String[] lines = body.split("\n");
+				for(String line: lines) {
 					if(!line.isBlank() && line.length()>1) {
 						list.add(objectMapper.readTree(line));
-					}
-					line = reader.readLine();
-				}				
+					}	
+				}
 				jsonRequest.set(ESConstants.BULK_FRAGMENT, list);
 			}
 			else {
 			
-				JsonNode jsonData = objectMapper.readTree(reader);
+				JsonNode jsonData = objectMapper.readTree(body);
 				if(jsonData.isObject()) {
 					jsonRequest = (ObjectNode)jsonData;
 				}
@@ -179,9 +190,9 @@ public class ESRelay extends HttpServlet {
 	 * @param request
 	 * @return
 	 */
-	private String[] getFixedPath(HttpServletRequest request) {
+	private String[] getFixedPath(HttpServerRequest request) {
 		// arrange path elements in a predictable manner
-		String pathString = request.getPathInfo();		
+		String pathString = request.path().replaceFirst("/es-relay/", "");
 		pathString = StringUtils.trimLeadingCharacter(pathString, '/');
 		pathString = StringUtils.trimTrailingCharacter(pathString, '/');
 		
@@ -210,18 +221,22 @@ public class ESRelay extends HttpServlet {
 	 * {index}/_cmd or {index}/_doc/{id}
 	 */
 	@Override
-	public void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+	public void handle(RoutingContext rc) {
+	
+		HttpServerRequest request = rc.request(); 
+		HttpServerResponse response = rc.response();
+		String method = request.method().name();
 		// get authenticated user
-		String user = request.getRemoteUser();
-
+		User userObj = rc.user();
+		String user = userObj!=null? userObj.subject():null;
 		// extract and forward request path
 		String[] path = getFixedPath(request);
 		String action = path[1];
 		// properly extract query parameters
 		
+		
 		Map<String, String> parameters = getParams(request);
 		
-		PrintWriter out = response.getWriter();
 		try {
 			
 			
@@ -233,7 +248,8 @@ public class ESRelay extends HttpServlet {
 				parameters.put("cmd", path[1]);				
 
 				// read request body
-				ObjectNode jsonRequest = getJSONBody(path[0],request);
+				
+				ObjectNode jsonRequest = getJSONBody(path[0],rc);
 					
 				ESUpdate query = new ESUpdate(new String[] {"","_cmd"}, parameters, jsonRequest);
 				
@@ -247,10 +263,10 @@ public class ESRelay extends HttpServlet {
 				ESViewQuery viewQuery = allViews.get(viewName);
 				if(viewQuery==null) { // path[1] is schema not viewName,  q is SQL 	
 					if(path.length>=3) {
-						viewQuery = new ESViewQuery(path[1],path[2],request.getParameter("q"));
+						viewQuery = new ESViewQuery(path[1],path[2],request.getParam("q"));
 					}
 					else {
-						viewQuery = new ESViewQuery(path[1],request.getParameter("q"));
+						viewQuery = new ESViewQuery(path[1],request.getParam("q"));
 					}
 				}
 				else {
@@ -259,22 +275,22 @@ public class ESRelay extends HttpServlet {
 				}
 				viewQuery.setQuery(null);
 				viewQuery.setParams(parameters);
-				if(!request.getMethod().equals("GET")){
-					ObjectNode jsonRequest = getJSONBody(action,request);
+				if(!method.equals("GET")){
+					ObjectNode jsonRequest = getJSONBody(action,rc);
 					viewQuery.setQuery(jsonRequest);
 				}
 				// process request, forward to ES instances
 				result = fHandler.handleRequest(viewQuery, user);	
 				
 			}
-			else if(request.getMethod().equals("GET") 
+			else if(method.equals("GET") 
 					|| action.equalsIgnoreCase(ESConstants.SEARCH_FRAGMENT) 
 					|| action.equalsIgnoreCase(ESConstants.ALL_FRAGMENT)
 					|| action.equalsIgnoreCase(ESConstants.GET_FRAGMENT)){
 				
 				
-				if(!request.getMethod().equals("GET")){
-					ObjectNode jsonRequest = getJSONBody(action,request);
+				if(!method.equals("GET")){
+					ObjectNode jsonRequest = getJSONBody(action,rc);
 					ESQuery query = new ESQuery(path, parameters, jsonRequest);
 					
 					// process request, forward to ES instances
@@ -291,25 +307,25 @@ public class ESRelay extends HttpServlet {
 				}
 				
 			}
-			else if(request.getMethod().equals("POST")){
+			else if(method.equals("POST")){
 				
-				ObjectNode jsonRequest = getJSONBody(action,request);
+				ObjectNode jsonRequest = getJSONBody(action,rc);
 				ESUpdate query = new ESUpdate(path, parameters, jsonRequest);
 				query.setOp(ESConstants.INSERT_FRAGMENT);
 				// process request, forward to ES instances
 				result = fHandler.handleRequest(query, user);	
 			
 			}
-			else if(request.getMethod().equals("PUT")){
+			else if(method.equals("PUT")){
 				
-				ObjectNode jsonRequest = getJSONBody(action,request);
+				ObjectNode jsonRequest = getJSONBody(action,rc);
 				ESUpdate query = new ESUpdate(path, parameters, jsonRequest);
 				query.setOp(ESConstants.UPDATE_FRAGMENT);
 				// process request, forward to ES instances
 				result = fHandler.handleRequest(query, user);	
 			
 			}
-			else if(request.getMethod().equals("DELETE")){
+			else if(method.equals("DELETE")){
 				
 				ESDelete query = new ESDelete(path, parameters);
 				
@@ -317,7 +333,7 @@ public class ESRelay extends HttpServlet {
 				result = fHandler.handleRequest(query, user);	
 			
 			}
-			else if(request.getMethod().equals("HEAD")){
+			else if(method.equals("HEAD")){
 				// handle exists
 				ESQuery query = new ESQuery(path, parameters);				
 				// process request, forward to ES instances
@@ -329,48 +345,46 @@ public class ESRelay extends HttpServlet {
 			else{				
 				throw new UnsupportedOperationException();
 			}
-			// return result
-			response.setContentType(CONTENT_TYPE);
-			out.println(result);
+			// return result			
+			response.putHeader("Content-Type", CONTENT_TYPE);
+			response.end(result);
 			
 		} catch (NoSuchElementException e) {
-			response.setStatus(404);
-			response.resetBuffer();
+			response.setStatusCode(404);
+			response.reset();
 
 			ObjectNode jsonError = new ObjectNode(jsonNodeFactory);
 			jsonError.put(ESConstants.R_ERROR, e.getMessage());
 			jsonError.put(ESConstants.R_STATUS, 404);
 			
-			out.println(jsonError.toPrettyString());
+			response.end(jsonError.toPrettyString());
 			
 			fLogger.log(Level.SEVERE, "Error during error JSON generation", e);
 			
 		} catch (Exception e) {
 			
-			response.resetBuffer();
+			response.reset();
 
 			ObjectNode jsonError = new ObjectNode(jsonNodeFactory);
 			jsonError.put(ESConstants.R_ERROR, e.getMessage());
 			jsonError.put(ESConstants.R_STATUS, 500);
 			if(e.getClass().getSimpleName().indexOf("NotFound")>=0) {
 				jsonError.put(ESConstants.R_STATUS, 404);
-				response.setStatus(404);
+				response.setStatusCode(404);
 			}
 			if(e.getClass().getSimpleName().indexOf("Access")>=0) {
 				jsonError.put(ESConstants.R_STATUS, 402);
-				response.setStatus(402);
+				response.setStatusCode(402);
 			}
 			else {
-				response.setStatus(500);
+				response.setStatusCode(500);
 			}
 			
-			out.println(jsonError.toPrettyString());
+			response.end(jsonError.toPrettyString());
 			
 			fLogger.log(Level.SEVERE, "Error during error JSON generation", e);
 		}
 
-		out.flush();
-		out.close();
 	}
 	
 

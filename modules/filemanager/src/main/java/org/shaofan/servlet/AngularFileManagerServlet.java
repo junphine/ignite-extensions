@@ -166,6 +166,20 @@ public class AngularFileManagerServlet extends HttpServlet {
        String[] tokens = webjarsResourceURI.split("/");
        return tokens[tokens.length - 1];
    }
+   
+   @Override
+   protected void doOptions(HttpServletRequest request, HttpServletResponse response) {
+
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Access-Control-Allow-Credentials", "true");
+      response.setHeader("Access-Control-Allow-Methods", "*");
+      response.setHeader("Access-Control-Max-Age", "3600");
+      response.setHeader("Access-Control-Allow-Headers", "Authorization,Origin,X-Requested-With,Content-Type,Accept,"
+      + "content-Type,origin,x-requested-with,content-type,accept,authorization,token,id,X-Custom-Header,X-Cookie,Connection,User-Agent,Cookie,*");
+      response.setHeader("Access-Control-Request-Headers", "Authorization,Origin, X-Requested-With,content-Type,Accept");
+      response.setHeader("Access-Control-Expose-Headers", "*");
+      response.setStatus(HttpServletResponse.SC_OK);
+   }
 
    
     @Override

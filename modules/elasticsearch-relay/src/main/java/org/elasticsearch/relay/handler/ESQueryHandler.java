@@ -158,7 +158,7 @@ public class ESQueryHandler {
 		// add shortening post processor for all types
 		fGlobalPostProcs = new ArrayList<>();
 		
-		Map<String, IPostProcessor> allPostProcs = ESRelay.context.getBeansOfType(IPostProcessor.class);
+		Map<String, IPostProcessor> allPostProcs = ESRelay.applicationContext().getBeansOfType(IPostProcessor.class);
 		for(IPostProcessor pp: allPostProcs.values()) {
 			if(pp.getTypeSet()==null) {
 				fGlobalPostProcs.add(pp);
@@ -908,9 +908,9 @@ public class ESQueryHandler {
 	protected int getLimit(ESViewQuery query) {
 		int limit = Integer.MAX_VALUE;
 
-		String[] limitParam = query.getParams().get(ESConstants.MAX_ELEM_PARAM);
+		String limitParam = query.getParams().get(ESConstants.MAX_ELEM_PARAM);
 		if (limitParam != null) {
-			limit = Integer.parseInt(limitParam[0]);
+			limit = Integer.parseInt(limitParam);
 		}
 
 		return limit;
