@@ -28,7 +28,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.FilenameUtils;
-import org.shaofan.s3.config.SystemConfig;
+import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
 import org.shaofan.s3.util.S3Util;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;

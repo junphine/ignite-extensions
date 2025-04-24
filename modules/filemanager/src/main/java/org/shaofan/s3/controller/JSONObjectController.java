@@ -6,9 +6,9 @@ import com.alibaba.fastjson.JSONObject;
 import software.amazon.awssdk.utils.StringInputStream;
 
 import org.apache.commons.io.FilenameUtils;
-import org.shaofan.s3.model.S3Object;
-import org.shaofan.s3.model.S3ObjectInputStream;
-import org.shaofan.s3.service.S3Service;
+import org.apache.ignite.internal.processors.rest.igfs.model.S3Object;
+import org.apache.ignite.internal.processors.rest.igfs.model.S3ObjectInputStream;
+import org.apache.ignite.internal.processors.rest.igfs.service.S3Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -42,7 +42,7 @@ public class JSONObjectController {
 	private static final String HEADER_X_AMZ_META_PREFIX = "x-amz-meta-";
 
 	@Autowired
-	private S3Service s3Util;
+	private S3Service s3Service;
 
 	private String bucketName = "json_datasets";
 
@@ -75,7 +75,7 @@ public class JSONObjectController {
 			// 返回的结果集
 			List<JSONObject> fileItems = new ArrayList<>();
 
-			List<S3Object> list = s3Util.listObjects(bucketName, null);
+			List<S3Object> list = s3Service.listObjects(bucketName, null);
 
 			String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 			SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
@@ -120,7 +120,7 @@ public class JSONObjectController {
 			// 需要显示的目录路径
 			// 返回的结果集
 
-			List<S3Object> list = s3Util.listObjects(bucketName, collection);
+			List<S3Object> list = s3Service.listObjects(bucketName, collection);
 
 			List<JSONObject> fileItems = list.parallelStream().filter((S3Object pathObj) -> {
 				String fname = pathObj.getKey().substring(collection.length());
@@ -137,7 +137,7 @@ public class JSONObjectController {
 			}).map((S3Object pathObj) -> {
 				String fname = pathObj.getKey();
 
-				S3ObjectInputStream objectStream = s3Util.getObject(bucketName, fname);
+				S3ObjectInputStream objectStream = s3Service.getObject(bucketName, fname);
 
 				JSONObject json;
 				try {
@@ -175,7 +175,7 @@ public class JSONObjectController {
 		try {
 			Map<String,String> userMeta = getUserMetadata(request);
 			StringInputStream in = new StringInputStream(json.toJSONString());
-			s3Util.putObject(bucketName, key(collection, destination), in, userMeta);
+			s3Service.putObject(bucketName, key(collection, destination), in, userMeta);
 			return success(key(collection, destination));
 		} catch (Exception e) {
 			return error(e.getMessage(), 500);
@@ -196,7 +196,7 @@ public class JSONObjectController {
 		response.setHeader("Content-Disposition",
 				"inline; filename=\"" + MimeUtility.encodeWord(FilenameUtils.getName(path)) + "\"");
 
-		try (S3ObjectInputStream objectStream = s3Util.getObject(bucketName, key(collection, path))) {
+		try (S3ObjectInputStream objectStream = s3Service.getObject(bucketName, key(collection, path))) {
 
 			FileCopyUtils.copy(objectStream, response.getOutputStream());
 		} catch (Exception e) {
@@ -217,7 +217,7 @@ public class JSONObjectController {
 		try {
 			Map<String,String> userMeta = getUserMetadata(request);
 			StringInputStream in = new StringInputStream(updates.toJSONString());
-			s3Util.putObject(bucketName, key(collection, destination), in, userMeta);
+			s3Service.putObject(bucketName, key(collection, destination), in, userMeta);
 			return success(key(collection, destination));
 		} catch (Exception e) {
 			return error(e.getMessage(), 500);
@@ -236,11 +236,11 @@ public class JSONObjectController {
 		try {
 			String path = key(collection, destination);
 			if (deletes == null) {
-				s3Util.deleteObject(bucketName, path);
+				s3Service.deleteObject(bucketName, path);
 				return success(path);
 			}
 
-			S3ObjectInputStream objectStream = s3Util.getObject(bucketName, path);
+			S3ObjectInputStream objectStream = s3Service.getObject(bucketName, path);
 
 			JSONObject json;
 			json = JSONObject.parseObject(objectStream, StandardCharsets.UTF_8, JSONObject.class);
@@ -249,7 +249,7 @@ public class JSONObjectController {
 
 			StringInputStream in = new StringInputStream(json.toJSONString());
 
-			s3Util.putObject(bucketName, path, in, null);
+			s3Service.putObject(bucketName, path, in, null);
 			return success(deletes.keySet());
 
 		} catch (Exception e) {
@@ -288,7 +288,7 @@ public class JSONObjectController {
 			@PathVariable("path") String destination) {
 		try {
 			JSONObject jsonObject = new JSONObject();
-			List<S3Object> list = s3Util.listObjects(bucketName, key(collection, destination));
+			List<S3Object> list = s3Service.listObjects(bucketName, key(collection, destination));
 			String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 			SimpleDateFormat dt = new SimpleDateFormat(DATE_FORMAT);
 			for (S3Object pathObj : list) {
@@ -323,14 +323,14 @@ public class JSONObjectController {
 			@RequestBody JSONObject updates) {
 
 		try {
-			S3ObjectInputStream objectStream = s3Util.getObject(bucketName, path);
+			S3ObjectInputStream objectStream = s3Service.getObject(bucketName, path);
 
 			JSONObject json = JSONObject.parseObject(objectStream, StandardCharsets.UTF_8, JSONObject.class);
 			json.putAll(updates);
 
 			StringInputStream in = new StringInputStream(json.toJSONString());
 
-			s3Util.putObject(bucketName, key(collection, path), in, null);
+			s3Service.putObject(bucketName, key(collection, path), in, null);
 			return success("");
 		} catch (Exception e) {
 			return error(e.getMessage(), 500);

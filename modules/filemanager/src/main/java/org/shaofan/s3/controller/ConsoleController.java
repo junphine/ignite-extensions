@@ -3,8 +3,8 @@ package org.shaofan.s3.controller;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
+import org.apache.ignite.internal.processors.rest.igfs.util.ConvertOp;
 import org.shaofan.s3.model.Result;
-import org.shaofan.s3.util.ConvertOp;
 import org.shaofan.s3.util.S3Util;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -39,9 +39,9 @@ public class ConsoleController {
     @ResponseBody
     public Result listBucket() {
         List<Bucket> bucketList = s3Util.getBucketList();
-        List<org.shaofan.s3.model.Bucket> bucketInfoList = new ArrayList<>();
+        List<org.apache.ignite.internal.processors.rest.igfs.model.Bucket> bucketInfoList = new ArrayList<>();
         for (Bucket item : bucketList) {
-            org.shaofan.s3.model.Bucket bucket = new org.shaofan.s3.model.Bucket();
+            org.apache.ignite.internal.processors.rest.igfs.model.Bucket bucket = new org.apache.ignite.internal.processors.rest.igfs.model.Bucket();
             bucket.setName(item.name());
             bucket.setCreationDate(item.creationDate().toString());
             bucketInfoList.add(bucket);

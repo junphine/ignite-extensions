@@ -1,18 +1,18 @@
 package org.shaofan.s3.controller;
 
 
+import org.apache.ignite.internal.processors.rest.igfs.config.RangeConverter;
+import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
+import org.apache.ignite.internal.processors.rest.igfs.model.*;
+import org.apache.ignite.internal.processors.rest.igfs.service.S3Service;
+import org.apache.ignite.internal.processors.rest.igfs.util.*;
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.SAXReader;
 import org.dom4j.io.XMLWriter;
-import org.shaofan.s3.config.RangeConverter;
-import org.shaofan.s3.config.SystemConfig;
-import org.shaofan.s3.model.*;
-import org.shaofan.s3.service.S3Service;
-import org.shaofan.s3.util.*;
-
+import org.shaofan.s3.util.MiscUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
@@ -75,8 +75,11 @@ public class S3Controller {
             return ResponseEntity.status(409).body("BucketAlreadyExists");
         }
         s3Service.createBucket(bucketName);
-        String lacation = systemConfig.getEndpointOverride()+bucketName+"/";
-        return ResponseEntity.ok().location(new URI(lacation)).build();
+        String endpoint = systemConfig.getEndpointOverride();
+        if(endpoint==null || endpoint.isBlank()) {
+    		endpoint = MiscUtil.getApiPath() ;
+    	}
+        return ResponseEntity.ok().location(new URI(endpoint+"/"+bucketName+"/")).build();
     }
 
     @GetMapping("/")
@@ -398,7 +401,15 @@ public class S3Controller {
             pageUrl = pageUrl.split("\\?")[0];
         }
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
-        s3Service.deleteObject(bucketName, objectKey);
+        if(request.getParameter("uploadId")!=null) { 
+        	// AbortMultipartUpload
+        	String uploadId = request.getParameter("uploadId");
+        	s3Service.abortMultipartUpload(bucketName, objectKey, uploadId);
+        }
+        else {
+        	s3Service.deleteObject(bucketName, objectKey);
+        }
+
         return ResponseEntity.noContent().build();
     }
 
@@ -406,11 +417,13 @@ public class S3Controller {
     // 分片上传
     @RequestMapping(value = "/{bucketName}/**", method = RequestMethod.POST, params = "uploads")
     public ResponseEntity<Object> createMultipartUpload(@PathVariable String bucketName, HttpServletRequest request) throws Exception {
+    	Map<String,String> userMeta = getUserMetadata(request);
+    	userMeta.put("ownerName", MiscUtil.getCurrentUser());
         bucketName = URLDecoder.decode(bucketName, "utf-8");
         String pageUrl = URLDecoder.decode(request.getRequestURI(), "utf-8");
         
         String objectKey = pageUrl.replace(request.getContextPath() + "/s3/" + bucketName + "/", "");
-        InitiateMultipartUploadResult result = s3Service.initiateMultipartUpload(bucketName, objectKey);
+        InitiateMultipartUploadResult result = s3Service.initiateMultipartUpload(bucketName, objectKey, userMeta);
 
         String xml = "";
         Document doc = DocumentHelper.createDocument();
@@ -464,12 +477,13 @@ public class S3Controller {
             PartETag partETag = new PartETag(partNumber, eTag);
             partETags.add(partETag);
         }
-        CompleteMultipartUploadResult result = s3Service.completeMultipartUpload(bucketName, objectKey, uploadId, new CompleteMultipartUpload(partETags));
+        String ownerName =  MiscUtil.getCurrentUser();
+        CompleteMultipartUploadResult result = s3Service.completeMultipartUpload(bucketName, objectKey, uploadId, ownerName, new CompleteMultipartUpload(partETags));
         String xml = "";
         Document doc = DocumentHelper.createDocument();
         Element root = doc.addElement("CompleteMultipartUploadResult");
         Element location = root.addElement("Location");
-        location.setText(CommonUtil.getApiPath() + "s3/" + bucketName + "/" + objectKey);
+        location.setText(MiscUtil.getApiPath() + "s3/" + bucketName + "/" + objectKey);
         Element bucket = root.addElement("Bucket");
         bucket.setText(bucketName);
         Element key = root.addElement("Key");

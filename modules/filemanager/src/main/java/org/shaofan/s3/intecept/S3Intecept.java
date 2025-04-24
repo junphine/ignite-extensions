@@ -1,10 +1,9 @@
 package org.shaofan.s3.intecept;
 
-import org.shaofan.s3.config.SystemConfig;
-import org.shaofan.s3.util.CommonUtil;
-import org.shaofan.s3.util.ConvertOp;
-import org.shaofan.s3.util.FileUtil;
-
+import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
+import org.apache.ignite.internal.processors.rest.igfs.util.ConvertOp;
+import org.apache.ignite.internal.processors.rest.igfs.util.FileUtil;
+import org.shaofan.s3.util.MiscUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
