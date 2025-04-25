@@ -918,6 +918,7 @@ public class AngularIgfsFileManagerServlet extends HttpServlet {
         result.put("error", null);
         JSONObject json = new JSONObject();
         json.put("result", result);
+        json.put("params", params);
         return json;
     }
 
