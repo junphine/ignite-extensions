@@ -29,6 +29,7 @@
 	        <groupId>io.netty</groupId>
 	        <artifactId>netty-transport</artifactId>
 	        <version>4.1.97.Final</version>
+	        <scope>provided</scope>
 	      </dependency>
 
 

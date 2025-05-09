@@ -201,7 +201,7 @@ public class DocumentLoadOnlyStoreFactory<K> implements Factory<DocumentLoadOnly
 		return types;
 	}
 
-	public DocumentLoadOnlyStoreFactory<K> setTypes(JdbcType[] types) {
+	public DocumentLoadOnlyStoreFactory<K> setTypes(JdbcType... types) {
 		this.types = types;
 		return this;
 	}
