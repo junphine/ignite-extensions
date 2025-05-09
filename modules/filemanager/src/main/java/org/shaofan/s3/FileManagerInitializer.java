@@ -11,12 +11,6 @@ import javax.servlet.ServletException;
 import javax.servlet.ServletRegistration;
 import javax.servlet.annotation.WebListener;
 
-import org.apache.ignite.Ignite;
-import org.apache.ignite.Ignition;
-import org.apache.ignite.internal.GridKernalContext;
-
-
-
 @WebListener
 public class FileManagerInitializer implements ServletContextListener {
 	private static ServletContext servletContext;

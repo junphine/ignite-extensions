@@ -258,6 +258,11 @@ public class GeoSpatialIndexImpl extends AbstractIndex implements GeoSpatialInde
         }
     }
 
+    /** {@inheritDoc} */
+    @Override public IndexDefinition indexDefinition() {
+        return def;
+    }
+
     /**
      * @param filter Table filter.
      * @return Cursor.
@@ -378,9 +383,4 @@ public class GeoSpatialIndexImpl extends AbstractIndex implements GeoSpatialInde
     public int segmentForRow(CacheDataRow row) {
         return segments.length == 1 ? 0 : (def.rowHandler().partition(row) % segments.length);
     }
-
-	@Override
-	public IndexDefinition indexDefinition() {
-		return def;
-	}
 }

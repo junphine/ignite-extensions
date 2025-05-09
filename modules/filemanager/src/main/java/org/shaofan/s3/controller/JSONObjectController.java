@@ -35,7 +35,7 @@ import javax.servlet.http.HttpServletResponse;
  * for amis
  */
 @RestController
-@RequestMapping(value = "docs")
+@RequestMapping(value = "/docs")
 @CrossOrigin
 public class JSONObjectController {
 	private static final String ACCEPT_JSON = "Accept=application/json";

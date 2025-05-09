@@ -17,6 +17,7 @@
 
 package org.apache.ignite.internal.performancestatistics.handlers;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,6 +40,11 @@ public interface IgnitePerformanceStatisticsHandler extends PerformanceStatistic
 
     /** {@inheritDoc} */
     @Override default void cacheStart(UUID nodeId, int cacheId, String name) {
+        // No-op.
+    }
+
+    /** {@inheritDoc} */
+    @Override default void systemView(UUID nodeId, String viewName, List<String> schema, List<Object> data) {
         // No-op.
     }
 
@@ -77,27 +83,13 @@ public interface IgnitePerformanceStatisticsHandler extends PerformanceStatistic
         // No-op.
     }
 
-    /** {@inheritDoc} */    
-    @Override default void checkpoint(
-            UUID nodeId,
-            long beforeLockDuration,
-            long lockWaitDuration,
-            long listenersExecDuration,
-            long markDuration,
-            long lockHoldDuration,
-            long pagesWriteDuration,
-            long fsyncDuration,
-            long walCpRecordFsyncDuration,
-            long writeCpEntryDuration,
-            long splitAndSortCpPagesDuration,
-            long recoveryDataWriteDuration,
-            long totalDuration,
-            long cpStartTime,
-            int pagesSize,
-            int dataPagesWritten,
-            int cowPagesWritten
-        ) {
-    	// No-op.
+    /** {@inheritDoc} */
+    @Override default void checkpoint(UUID nodeId, long beforeLockDuration, long lockWaitDuration,
+        long listenersExecDuration, long markDuration, long lockHoldDuration, long pagesWriteDuration,
+        long fsyncDuration, long walCpRecordFsyncDuration, long writeCpEntryDuration, long splitAndSortCpPagesDuration,
+        long recoveryDataWriteDuration, long totalDuration, long cpStartTime, int pagesSize, int dataPagesWritten,
+        int cowPagesWritten) {
+        // No-op.
     }
 
     /** {@inheritDoc} */

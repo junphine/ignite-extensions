@@ -62,7 +62,7 @@ import software.amazon.awssdk.utils.StringUtils;
  * @author shaofan
  */
 @RestController
-@RequestMapping(value = "s3-rest")
+@RequestMapping(value = "/s3-rest")
 @CrossOrigin
 public class FileManagerController  {  	
     

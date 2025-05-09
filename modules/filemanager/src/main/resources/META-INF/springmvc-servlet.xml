@@ -41,13 +41,5 @@
 		<property name="maxUploadSize" value="2147483648" />
 		<property name="maxInMemorySize" value="67108864" />
 	</bean>
-
-	
-	<bean id="systemConfig" class="org.shaofan.s3.config.SystemConfig">
-		<property name="accessKey" value="admin" />
-		<property name="secretAccessKey" value="123456" />
-		<property name="dataPath" value="work/data/" />
-		<property name="s3BucketName" value="igfs" />		
-	</bean>	
 	
 </beans>

@@ -30,6 +30,7 @@ import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.CacheAtomicityMode;
 import org.apache.ignite.cache.CacheEntry;
 import org.apache.ignite.cache.CacheEntryVersion;
+import org.apache.ignite.cdc.conflictresolve.CacheVersionConflictResolverImpl;
 import org.apache.ignite.cdc.conflictresolve.CacheVersionConflictResolverPluginProvider;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
@@ -41,9 +42,11 @@ import org.apache.ignite.internal.processors.cache.KeyCacheObject;
 import org.apache.ignite.internal.processors.cache.KeyCacheObjectImpl;
 import org.apache.ignite.internal.processors.cache.dr.GridCacheDrInfo;
 import org.apache.ignite.internal.processors.cache.version.GridCacheVersion;
-import org.apache.ignite.internal.processors.metric.MetricRegistryImpl;
-import org.apache.ignite.internal.processors.metric.impl.LongAdderMetric;
+import org.apache.ignite.testframework.ListeningTestLogger;
+import org.apache.ignite.testframework.LogListener;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.config.Configurator;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -51,9 +54,6 @@ import org.junit.runners.Parameterized;
 import static java.util.Collections.singletonMap;
 import static org.apache.ignite.cache.CacheAtomicityMode.ATOMIC;
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL;
-import static org.apache.ignite.cdc.conflictresolve.CacheConflictResolutionManagerImpl.CONFLICT_RESOLVER_METRICS_REGISTRY_NAME;
-import static org.apache.ignite.cdc.conflictresolve.CacheVersionConflictResolverImpl.ACCEPTED_EVENTS_CNT;
-import static org.apache.ignite.cdc.conflictresolve.CacheVersionConflictResolverImpl.REJECTED_EVENTS_CNT;
 
 /**
  * Cache conflict operations test.
@@ -101,6 +101,9 @@ public class CacheConflictOperationsTest extends GridCommonAbstractTest {
     /** */
     private IgniteEx ign;
 
+    /** Listening test logger. */
+    private final ListeningTestLogger listeningLog = new ListeningTestLogger(log);
+
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
         CacheVersionConflictResolverPluginProvider<?> pluginCfg = new CacheVersionConflictResolverPluginProvider<>();
@@ -109,7 +112,9 @@ public class CacheConflictOperationsTest extends GridCommonAbstractTest {
         pluginCfg.setCaches(new HashSet<>(Collections.singleton(DEFAULT_CACHE_NAME)));
         pluginCfg.setConflictResolveField(conflictResolveField());
 
-        return super.getConfiguration(igniteInstanceName).setPluginProviders(pluginCfg);
+        return super.getConfiguration(igniteInstanceName)
+            .setPluginProviders(pluginCfg)
+            .setGridLogger(listeningLog);
     }
 
     /** {@inheritDoc} */
@@ -254,20 +259,33 @@ public class CacheConflictOperationsTest extends GridCommonAbstractTest {
         putConflict(key, 5, conflictResolveField() != null);
     }
 
-    /** */
+    /** Test switching debug log level for ConflictResolver during runtime */
     @Test
-    public void testMetrics() throws Exception {
+    public void testResolveDebug() throws Exception {
         String key = key("UpdateClusterUpdateReorder", otherClusterId);
 
-        checkMetrics(0, 0);
+        LogListener lsnr = LogListener.matches("isUseNew").build();
 
-        putConflict(key, 1, true);
+        listeningLog.registerListener(lsnr);
 
-        checkMetrics(1, 0);
+        Configurator.setLevel(CacheVersionConflictResolverImpl.class.getName(), Level.DEBUG);
+
+        try {
+            putConflict(key, 1, true);
+
+            putConflict(key, 1, false);
+
+            assertTrue(lsnr.check());
+        }
+        finally {
+            Configurator.setLevel(CacheVersionConflictResolverImpl.class.getName(), Level.INFO);
+        }
+
+        lsnr.reset();
 
         putConflict(key, 1, false);
 
-        checkMetrics(1, 1);
+        assertFalse(lsnr.check());
     }
 
     /** */
@@ -352,16 +370,5 @@ public class CacheConflictOperationsTest extends GridCommonAbstractTest {
     /** */
     protected String conflictResolveField() {
         return null;
-    }
-
-    /** Checks metrics for conflict resolver. */
-    protected void checkMetrics(int acceptedCnt, int rejectedCnt) {
-        MetricRegistryImpl mreg = ign.context().metric().registry(CONFLICT_RESOLVER_METRICS_REGISTRY_NAME);
-
-        assertNotNull(mreg.findMetric(ACCEPTED_EVENTS_CNT));
-        assertNotNull(mreg.findMetric(REJECTED_EVENTS_CNT));
-
-        assertEquals(acceptedCnt, ((LongAdderMetric)mreg.findMetric(ACCEPTED_EVENTS_CNT)).value());
-        assertEquals(rejectedCnt, ((LongAdderMetric)mreg.findMetric(REJECTED_EVENTS_CNT)).value());
     }
 }

@@ -149,3 +149,9 @@ fabric.properties
 # Ignite work folder
 **/ignite/work/
 **/ignite/README.txt
+
+# NPM
+ods_shanxi/
+node_modules/
+frontend/generated/
+package-lock.json

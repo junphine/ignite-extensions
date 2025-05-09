@@ -18,12 +18,15 @@
 package org.apache.ignite.internal.performancestatistics;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteException;
@@ -40,7 +43,15 @@ import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.performancestatistics.handlers.QueryHandler;
+import org.apache.ignite.internal.performancestatistics.handlers.SystemViewHandler;
+import org.apache.ignite.internal.processors.cache.CacheObject;
+import org.apache.ignite.internal.processors.cache.CacheObjectImpl;
+import org.apache.ignite.internal.processors.cache.IgniteInternalCache;
+import org.apache.ignite.internal.processors.cache.KeyCacheObject;
+import org.apache.ignite.internal.processors.cache.KeyCacheObjectImpl;
+import org.apache.ignite.internal.processors.cache.dr.GridCacheDrInfo;
 import org.apache.ignite.internal.processors.cache.query.GridCacheQueryType;
+import org.apache.ignite.internal.processors.cache.version.GridCacheVersion;
 import org.apache.ignite.internal.util.typedef.F;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi;
@@ -49,6 +60,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.Test;
 
+import static java.util.Collections.singletonMap;
 import static org.apache.ignite.cache.query.IndexQueryCriteriaBuilder.gt;
 import static org.apache.ignite.internal.processors.performancestatistics.AbstractPerformanceStatisticsTest.waitForStatisticsEnabled;
 import static org.apache.ignite.internal.processors.performancestatistics.FilePerformanceStatisticsWriter.PERF_STAT_DIR;
@@ -62,6 +74,9 @@ import static org.junit.Assert.assertTrue;
  * Tests the performance statistics report.
  */
 public class PerformanceStatisticsReportSelfTest {
+    /** Cache name. */
+    private static final String CACHE_NAME = "cache";
+
     /** @throws Exception If failed. */
     @Test
     public void testCreateReport() throws Exception {
@@ -76,7 +91,7 @@ public class PerformanceStatisticsReportSelfTest {
         ) {
             client.context().performanceStatistics().startCollectStatistics();
 
-            IgniteCache<Object, Object> cache = client.createCache(new CacheConfiguration<>("cache")
+            IgniteCache<Object, Object> cache = client.createCache(new CacheConfiguration<>(CACHE_NAME)
                 .setQueryEntities(F.asList(new QueryEntity()
                     .setKeyType(Integer.class.getName())
                     .setValueType(Integer.class.getName()))));
@@ -90,6 +105,15 @@ public class PerformanceStatisticsReportSelfTest {
             cache.removeAll(Collections.singleton(2));
             cache.getAndPut(3, 3);
             cache.getAndRemove(3);
+
+            IgniteInternalCache<Object, Object> cachex = client.cachex(CACHE_NAME);
+
+            KeyCacheObject keyConfl = new KeyCacheObjectImpl(1, null, 1);
+            CacheObject valConfl = new CacheObjectImpl(1, null);
+            GridCacheVersion confl = new GridCacheVersion(1, 0, 1, (byte)2);
+
+            cachex.putAllConflict(singletonMap(keyConfl, new GridCacheDrInfo(valConfl, confl)));
+            cachex.removeAllConflict(singletonMap(keyConfl, confl));
 
             client.compute().run(() -> {
                 // No-op.
@@ -227,6 +251,53 @@ public class PerformanceStatisticsReportSelfTest {
             assertNotNull(rows);
             assertEquals(10, rows.get("ROWS").asInt());
             assertEquals(20, rows.get("ROWSx2").asInt());
+        }
+    }
+
+    /** */
+    @Test
+    public void testSystemViewHandler() {
+        SystemViewHandler sysViewHandler = new SystemViewHandler();
+
+        int nodesNumber = 10;
+        int viewsNumber = 10;
+
+        List<String> schema = new ArrayList<>();
+        schema.add("col1");
+        schema.add("col2");
+
+        for (int id = 0; id < nodesNumber; id++) {
+            UUID nodeId = new UUID(0, id);
+
+            for (int i = 0; i < viewsNumber; i++) {
+                List<Object> data = new ArrayList<>();
+                data.add(i);
+                data.add(i);
+
+                sysViewHandler.systemView(nodeId, "view" + i, schema, data);
+            }
+        }
+
+        JsonNode res = sysViewHandler.results().get("systemView");
+
+        for (int id = 0; id < nodesNumber; id++) {
+            UUID nodeId = new UUID(0, id);
+
+            JsonNode nodeRes = res.get(nodeId.toString());
+
+            for (int i = 0; i < viewsNumber; i++) {
+                ObjectNode view = (ObjectNode)nodeRes.get("view" + i);
+
+                ArrayNode schemaNode = (ArrayNode)view.get("schema");
+
+                assertEquals(schemaNode.get(0).asText(), schema.get(0));
+                assertEquals(schemaNode.get(1).asText(), schema.get(1));
+
+                ArrayNode rowNode = (ArrayNode)view.get("data").get(0);
+
+                assertEquals(Integer.toString(i), rowNode.get(0).asText());
+                assertEquals(Integer.toString(i), rowNode.get(1).asText());
+            }
         }
     }
 

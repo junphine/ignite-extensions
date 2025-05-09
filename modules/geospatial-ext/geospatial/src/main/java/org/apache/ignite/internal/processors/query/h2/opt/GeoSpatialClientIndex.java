@@ -54,6 +54,11 @@ public class GeoSpatialClientIndex extends AbstractClientIndex implements GeoSpa
     }
 
     /** {@inheritDoc} */
+    @Override public IndexDefinition indexDefinition() {
+        return def;
+    }
+
+    /** {@inheritDoc} */
     @Override public GridCursor<IndexRow> find(int seg, TableFilter filter) {
         throw unsupported();
     }
@@ -72,9 +77,4 @@ public class GeoSpatialClientIndex extends AbstractClientIndex implements GeoSpa
     @Override public GridCursor<IndexRow> findByGeometry(int seg, TableFilter filter, Geometry intersection) {
         throw unsupported();
     }
-
-	@Override
-	public IndexDefinition indexDefinition() {		
-		return def;
-	}
 }
