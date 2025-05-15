@@ -20,6 +20,7 @@ package org.apache.ignite.springdata.proxy;
 import java.util.Objects;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
+import org.apache.ignite.configuration.CacheConfiguration;
 
 /** Implementation of {@link IgniteProxy} that provides access to Ignite cluster through {@link Ignite} instance. */
 public class IgniteNodeProxy implements IgniteProxy {
@@ -36,6 +37,10 @@ public class IgniteNodeProxy implements IgniteProxy {
     /** {@inheritDoc} */
     @Override public <K, V> IgniteCacheProxy<K, V> getOrCreateCache(String name) {
         return new IgniteNodeCacheProxy<>(ignite.getOrCreateCache(name));
+    }
+    
+    public <K, V> IgniteCacheProxy<K, V> getOrCreateCache(CacheConfiguration<K,V> cacheCfg) {
+        return new IgniteNodeCacheProxy<K, V>(ignite.getOrCreateCache(cacheCfg));
     }
 
     /** {@inheritDoc} */

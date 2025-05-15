@@ -16,8 +16,18 @@
  */
 package org.apache.ignite.springdata.repository.support;
 
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.Optional;
+
+import javax.cache.Cache;
+
+import org.apache.ignite.cache.QueryEntity;
+import org.apache.ignite.client.ClientCacheConfiguration;
+import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.springdata.proxy.IgniteCacheProxy;
+import org.apache.ignite.springdata.proxy.IgniteClientProxy;
+import org.apache.ignite.springdata.proxy.IgniteNodeProxy;
 import org.apache.ignite.springdata.proxy.IgniteProxy;
 import org.apache.ignite.springdata.repository.config.DynamicQueryConfig;
 import org.apache.ignite.springdata.repository.config.Query;
@@ -99,8 +109,33 @@ public class IgniteRepositoryFactory extends RepositoryFactorySupport {
         Assert.hasText(cacheName, "Invalid configuration for repository " + repoInterface.getName() +
             ". Set a name of an Apache Ignite cache using " + RepositoryConfig.class.getName() +
             " annotation to map this repository to the underlying cache.");
-
-        cache = cfg.autoCreateCache() ? ignite.getOrCreateCache(cacheName) : ignite.cache(cacheName);
+        
+        //add@byron 
+        if(cfg.autoCreateCache() && ignite instanceof IgniteNodeProxy) {
+        	CacheConfiguration<?,?> cacheCfg = new CacheConfiguration<>();
+        	cacheCfg.setName(cacheName);
+        	
+        	Class<?>[] keyValueClass = getKeyValueTypes(repoInterface);
+        	if(keyValueClass!=null) {
+        		cacheCfg.setIndexedTypes(keyValueClass);
+        	}
+        	cache = ((IgniteNodeProxy)ignite).getOrCreateCache(cacheCfg);
+        }
+        else if(cfg.autoCreateCache() && ignite instanceof IgniteClientProxy) {
+        	ClientCacheConfiguration cacheCfg = new ClientCacheConfiguration();
+        	cacheCfg.setName(cacheName);
+        	
+        	Class<?>[] keyValueClass = getKeyValueTypes(repoInterface);
+        	if(keyValueClass!=null) {
+        		 QueryEntity newEntity = new QueryEntity(keyValueClass[0], keyValueClass[1]);	                    
+                 cacheCfg.setQueryEntities(newEntity);
+        	}	        
+	        
+	        cache = ((IgniteClientProxy)ignite).getOrCreateCache(cacheCfg);
+        }
+        else {
+        	cache = ignite.cache(cacheName);
+        }
 
         if (cache == null) {
             throw new IllegalArgumentException(
@@ -108,6 +143,28 @@ public class IgniteRepositoryFactory extends RepositoryFactorySupport {
                     + ". Please, add a cache configuration to ignite configuration"
                     + " or pass autoCreateCache=true to " + RepositoryConfig.class.getName() + " annotation.");
         }
+    }
+    
+    private Class<?>[] getKeyValueTypes(Class<?> repoInterface){
+    	
+        Type[] genericInterfaces = repoInterface.getGenericInterfaces();
+        while(repoInterface!=null && genericInterfaces==null) {
+        	repoInterface = repoInterface.getSuperclass();
+        	genericInterfaces = repoInterface.getGenericInterfaces();
+        }
+        if(genericInterfaces!=null) {
+        	for (Type type : genericInterfaces) {
+                if (type instanceof ParameterizedType) {
+                    ParameterizedType pType = (ParameterizedType) type;
+                    Type[] typeArguments = pType.getActualTypeArguments();
+                    
+                    Class<?> keyType = (Class) typeArguments[1];
+                    Class<?> valueType =(Class) typeArguments[0];
+                    return new Class<?>[] {keyType,valueType};
+                }
+            }		        
+        }
+        return null;
     }
 
     /** {@inheritDoc} */

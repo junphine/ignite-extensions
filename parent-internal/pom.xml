@@ -23,8 +23,8 @@
             NOTE: The dependency versions below must be changed in the release branch up to
             the latest released version prior to an extension release.
         -->
-        <ignite-spring-data-ext.release.version>2.0.0</ignite-spring-data-ext.release.version>
-        <ignite-spring-data-commons.release.version>1.1.0</ignite-spring-data-commons.release.version>
+        <ignite-spring-data-ext.release.version>3.2.0</ignite-spring-data-ext.release.version>
+        <ignite-spring-data-commons.release.version>1.2.0</ignite-spring-data-commons.release.version>
         <paho.version>1.2.5</paho.version>
         <guava.retrying.version>2.0.0</guava.retrying.version>
         <jms.spec.version>1.1.1</jms.spec.version>
@@ -196,7 +196,7 @@
                 <maven.compiler.target>11</maven.compiler.target>
                 <spring-boot.version>2.7.13</spring-boot.version>
 		        <spring.data.version>2.7.13</spring.data.version>
-		        <spring61.version>6.1.14</spring61.version>
+		        <spring61.version>5.3.39</spring61.version>
             </properties>
             <build>
                 <plugins>

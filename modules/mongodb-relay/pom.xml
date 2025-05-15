@@ -116,8 +116,7 @@
 		<dependency>
 			<groupId>org.apache.ignite</groupId>
 			<artifactId>ignite-jieba-lucene-plugin</artifactId>
-			<version>1.0.0-SNAPSHOT</version>
-			<scope>provided</scope>
+			<version>1.0.0-SNAPSHOT</version>			
 		</dependency>
 		
 		<dependency>
