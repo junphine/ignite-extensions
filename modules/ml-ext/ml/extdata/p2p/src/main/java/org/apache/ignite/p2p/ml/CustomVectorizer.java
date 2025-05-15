@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.tests.p2p.ml;
+package org.apache.ignite.p2p.ml;
 
 import java.io.Serializable;
 import java.util.List;

@@ -41,7 +41,7 @@ import org.apache.ignite.ml.trainers.FeatureLabelExtractor;
  */
 public abstract class Vectorizer<K, V, C extends Serializable, L> implements FeatureLabelExtractor<K, V, L> {
     /** Label coordinate shortcut. */
-    private LabelCoordinate lbCoordinateShortcut;
+	protected LabelCoordinate lbCoordinateShortcut;
 
     /** Serial version uid. */
     private static final long serialVersionUID = 4301406952131379459L;
@@ -53,7 +53,7 @@ public abstract class Vectorizer<K, V, C extends Serializable, L> implements Fea
     private List<C> extractionCoordinates;
 
     /** Label coordinate. */
-    private C labelCoord;
+    protected C labelCoord;
     
     private DenseVector root; //default type root
 
@@ -110,7 +110,7 @@ public abstract class Vectorizer<K, V, C extends Serializable, L> implements Fea
     /**
      * @return true if label in vector is valid.
      */
-    private boolean isLabeled() {
+    protected boolean isLabeled() {
         return labelCoord != null || lbCoordinateShortcut != null;
     }
 

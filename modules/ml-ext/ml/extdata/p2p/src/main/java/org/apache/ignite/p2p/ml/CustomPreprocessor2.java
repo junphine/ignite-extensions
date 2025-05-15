@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.ignite.tests.p2p.ml;
+package org.apache.ignite.p2p.ml;
 
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.preprocessing.Preprocessor;
@@ -24,18 +24,18 @@ import org.apache.ignite.ml.structures.LabeledVector;
 /**
  *
  */
-public class CustomPreprocessor1 implements Preprocessor<Integer, Vector> {
+public class CustomPreprocessor2 implements Preprocessor<Integer, Vector> {
     /** */
     private final Preprocessor<Integer, Vector> basePreprocessor;
 
     /** */
-    public CustomPreprocessor1(Preprocessor<Integer, Vector> basePreprocessor) {
+    public CustomPreprocessor2(Preprocessor<Integer, Vector> basePreprocessor) {
         this.basePreprocessor = basePreprocessor;
     }
 
     /** */
     @Override public LabeledVector apply(Integer integer, Vector vector) {
         LabeledVector res = basePreprocessor.apply(integer, vector);
-        return res.features().normalize().labeled(res.label());
+        return res.features().times(2.0).labeled(res.label());
     }
 }

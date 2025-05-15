@@ -269,12 +269,32 @@ public class IgniteVectorIndex extends Index<Object> {
 	}
 	
 	
-	public Vector computeEmbedding(Document document) {
+	public Vector computeEmbedding(Document document,Object position) {
 		Vector vec = null;
+		List<String> sentences = new ArrayList<>();
 		for(String field : keys()) {
 			Object val = document.get(field);
-			vec = computeValueEmbedding(val);
-			if(vec!=null) break;
+			if(val instanceof CharSequence) {
+				sentences.add(val.toString());
+			}
+			else if(val!=null){
+				vec = computeValueEmbedding(val);
+				if(vec!=null) {
+					return vec;
+				}
+			}
+			
+		}
+		
+		if(!sentences.isEmpty()) {
+			
+			if(this.isSparse()) {
+				vec = EmbeddingUtil.textTwoGramVec(position,sentences,modelUrl);
+				
+			}
+			else {			
+				vec = EmbeddingUtil.textXlmVec(position,sentences,modelUrl);
+			}
 		}
 		return vec;
 	}	
@@ -307,16 +327,7 @@ public class IgniteVectorIndex extends Index<Object> {
 				data[i] = fdata.get(i).doubleValue();
 			}
 			vec = new DenseVector(data);
-		}
-		else if(val instanceof String) {
-			
-			if(this.isSparse()) {
-				vec = EmbeddingUtil.textTwoGramVec(val.toString(),modelUrl);
-			}
-			else {			
-				vec = EmbeddingUtil.textXlmVec(val.toString(),modelUrl);
-			}
-		}
+		}		
 		return vec;
 	}
 	
@@ -353,7 +364,7 @@ public class IgniteVectorIndex extends Index<Object> {
 		
 		// build doc body
 		try {
-			Vector vec = this.computeEmbedding(document);
+			Vector vec = this.computeEmbedding(document,position);
 			if(vec==null) {
 				vecIndex.removeAsync(position);
 				return ;

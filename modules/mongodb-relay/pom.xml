@@ -58,6 +58,15 @@
 			<version>1.1.0-SNAPSHOT</version>
 			<scope>provided</scope>
 		</dependency>
+		
+		<!-- <dependency>
+			<groupId>org.apache.ignite</groupId>
+        	<artifactId>ignite-ml-p2p-ext</artifactId>
+			<version>1.1.0-SNAPSHOT</version>
+			<scope>provided</scope>
+		</dependency> -->
+		
+		
 
 		<dependency>
 			<groupId>org.slf4j</groupId>
@@ -97,23 +106,6 @@
 			<version>${jackson.version}</version>
 		</dependency>
 
-		<dependency>
-			<groupId>aias</groupId>
-			<artifactId>sentence-encoder-100-sdk</artifactId>
-			<version>0.23.0</version>
-		</dependency>
-
-		<dependency>
-			<groupId>aias</groupId>
-			<artifactId>sentence-encoder-15-sdk</artifactId>
-			<version>0.23.0</version>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.huggingface</groupId>
-			<artifactId>tokenizers</artifactId>
-			<version>0.23.0</version>
-		</dependency>
 		
 		<dependency>
 			<groupId>com.github.vincentrussell</groupId>
@@ -126,6 +118,12 @@
 			<artifactId>ignite-jieba-lucene-plugin</artifactId>
 			<version>1.0.0-SNAPSHOT</version>
 			<scope>provided</scope>
+		</dependency>
+		
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>1.10.0</version>
 		</dependency>
 
 		<!-- Test dependencies -->
