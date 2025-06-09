@@ -16,6 +16,9 @@
 
 package io.stuart.services.cache.impl;
 
+import static org.apache.ignite.internal.IgniteComponentType.SPRING;
+
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +30,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteAtomicLong;
 import org.apache.ignite.IgniteCompute;
+import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.events.Event;
+import org.apache.ignite.failure.StopNodeFailureHandler;
 import org.apache.ignite.lang.IgniteCallable;
 import org.apache.ignite.lang.IgniteClosure;
 import org.apache.ignite.lang.IgnitePredicate;
+import org.apache.ignite.plugin.segmentation.SegmentationPolicy;
 
 import io.stuart.caches.AclCache;
 import io.stuart.caches.AdminCache;
@@ -68,15 +74,28 @@ import io.stuart.enums.Status;
 import io.stuart.ext.collections.BoundedIgniteMap;
 import io.stuart.ext.collections.BoundedIgniteMapUnsafe;
 import io.stuart.ext.collections.BoundedIgniteQueue;
+import io.stuart.log.Logger;
 import io.stuart.services.cache.CacheService;
 import io.stuart.services.metrics.MetricsService;
 import io.stuart.utils.AesUtil;
 import io.stuart.utils.MetricsUtil;
 import io.stuart.utils.SysUtil;
+import io.vertx.core.VertxException;
 import io.vertx.core.json.JsonObject;
 import io.vertx.mqtt.messages.MqttPublishMessage;
+import io.vertx.spi.cluster.ignite.IgniteOptions;
+import io.vertx.spi.cluster.ignite.impl.VertxLogger;
+import io.vertx.spi.cluster.ignite.util.ConfigHelper;
 
 public abstract class AbstractCacheService implements CacheService {
+	
+    // Default Ignite configuration file
+    private static final String DEFAULT_CONFIG_FILE = "default-ignite.json";
+    // User defined Ignite configuration file
+    private static final String CONFIG_FILE = "ignite.json";
+    // Fallback XML Ignite configuration file (requires ignite-spring dependency)
+    private static final String XML_CONFIG_FILE = "ignite.xml";
+
 
     protected Ignite ignite;
 
@@ -110,11 +129,43 @@ public abstract class AbstractCacheService implements CacheService {
 
     protected DestroySessionClosure destroySessionClosure;
 
+    private IgniteOptions extOptions;
+    
+    public String extConfigFile = "vertx-ignite.xml";
+
     public AbstractCacheService() {
         // initialize destroy session closure
         this.destroySessionClosure = new DestroySessionClosure(this);
     }
 
+    
+    protected IgniteConfiguration prepareConfig() {
+        IgniteConfiguration cfg = null;
+        if (SPRING.inClassPath()) {
+            try {
+              cfg = ConfigHelper.lookupXmlConfiguration(this.getClass(), extConfigFile, XML_CONFIG_FILE);
+            } catch (VertxException e) {
+            	Logger.log().debug("xml config could not be loaded");
+            }
+        }
+        
+        if (cfg == null) {
+          IgniteOptions options;
+          if (extOptions == null) {
+            options = new IgniteOptions(ConfigHelper.lookupJsonConfiguration(this.getClass(), CONFIG_FILE, DEFAULT_CONFIG_FILE));
+          } else {
+            options = extOptions;
+          }
+          
+          cfg = ConfigHelper.toIgniteConfig(null, options).setGridLogger(new VertxLogger());
+        }
+        
+        cfg.setSegmentationPolicy(SegmentationPolicy.NOOP);
+        cfg.setFailureHandler(new StopNodeFailureHandler());
+        cfg.setAsyncContinuationExecutor(Runnable::run);
+        return cfg;
+    }
+    
     @Override
     public abstract void start();
 

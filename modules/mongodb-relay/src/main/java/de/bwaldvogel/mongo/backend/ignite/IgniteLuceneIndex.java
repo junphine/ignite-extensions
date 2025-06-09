@@ -382,7 +382,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 					if (isInQuery(queriedKeys)) {
 						// okay
 					} 
-					else if (this.isTextIndex() && queriedKeys.startsWith("$search")) {
+					else if (this.isTextIndex() && (queriedKeys.startsWith("$search") || queriedKeys.startsWith("$text"))) {
 						// not yet supported
 						return true;
 					}
@@ -392,6 +392,9 @@ public class IgniteLuceneIndex extends Index<Object> {
 						if(queryDoc.size()==1) {
 							return false;
 						}
+					}
+					else if(queriedKeys.startsWith("$")){
+						return false;
 					}
 				}
 			}
@@ -727,6 +730,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			throw new UnsupportedOperationException("unsupported query expression: " + operator);
 		}
 	}
+	
 	/**
 	 * 对所有字段使用lucene索引进行查询, for $text
 	 * @param keyValue
@@ -754,6 +758,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			access.flush();
 			
 			int limit = 0;
+			float scoreThreshold = 0;
 			SortField sortField = null;
 
 			// take a reference as the searcher may change
@@ -799,6 +804,10 @@ public class IgniteLuceneIndex extends Index<Object> {
 					limit = Integer.parseInt(opt.get("$limit").toString());
 				}
 				
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+				
 				if(opt.containsKey("$sort")) {
 					String sortOpt = opt.get("$sort").toString();
 					sortField = new SortField(sortOpt,Type.DOUBLE, true);
@@ -828,10 +837,13 @@ public class IgniteLuceneIndex extends Index<Object> {
 				ScoreDoc sd = docs.scoreDocs[i];
 				org.apache.lucene.document.Document doc = searcher.doc(sd.doc);
 				float score = sd.score;
+				if(score<scoreThreshold) {
+					continue;
+				}
 
 				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
 				
-				Document meta = new Document("searchScore",score);
+				Document meta = new Document("textScore",score);
 				if(i==0) {
 					meta.append("totalHits", docs.totalHits.value);
 				}
@@ -854,6 +866,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	protected List<IdWithMeta> getFullTextList(IndexKey indexKey, Object exp) {
 		LuceneIndexAccess access = indexAccess;		
 		int limit = 0;
+		float scoreThreshold = 0;
 		List<IdWithMeta> result = new ArrayList<>();
 		try {
 			String field = indexKey.getKey();
@@ -904,6 +917,10 @@ public class IgniteLuceneIndex extends Index<Object> {
 					limit = Integer.parseInt(opt.get("$limit").toString());
 				}
 				
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+				
 				if(opt.containsKey("$sort")) {
 					String sortOpt = opt.get("$sort").toString();
 					sortField = new SortField(sortOpt,Type.DOUBLE, true);
@@ -935,6 +952,9 @@ public class IgniteLuceneIndex extends Index<Object> {
 				ScoreDoc sd = docs.scoreDocs[i];
 				org.apache.lucene.document.Document doc = searcher.doc(sd.doc);
 				float score = sd.score;
+				if(score<scoreThreshold) {
+					continue;
+				}
 
 				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
 				String v = doc.get(field);

@@ -78,7 +78,7 @@ public class StdCacheServiceImpl extends AbstractCacheService {
 
         try {
             // start ignite
-            ignite = Ignition.start(StdUtil.igniteCfg(new IgniteConfiguration()));
+            ignite = Ignition.getOrStart(StdUtil.igniteCfg(prepareConfig()));
             // active ignite for persistent storage
             ignite.cluster().active(true);
             // set baseline topology

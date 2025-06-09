@@ -30,6 +30,7 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.cluster.BaselineNode;
 import org.apache.ignite.cluster.ClusterGroup;
 import org.apache.ignite.cluster.ClusterNode;
+import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.events.DiscoveryEvent;
 import org.apache.ignite.events.EventType;
 import org.apache.ignite.internal.IgniteEx;
@@ -61,6 +62,7 @@ import io.stuart.exceptions.StartException;
 import io.stuart.log.Logger;
 import io.stuart.services.cache.CacheService;
 import io.stuart.utils.ClsUtil;
+import io.stuart.utils.StdUtil;
 import io.stuart.utils.SysUtil;
 
 // TODO cluster node use only memory mode(can not be baseline topology node), or use persistence mode
@@ -125,12 +127,7 @@ public class ClsCacheServiceImpl extends AbstractCacheService {
     private ClsCacheServiceImpl() {
         super();
     }
-
-    ClsCacheServiceImpl(IgniteClusterManager clusterManager) {
-        super();
-        this.clusterManager = clusterManager;
-    }
-
+    
     public static CacheService getInstance() {
         if (instance == null) {
             synchronized (ClsCacheServiceImpl.class) {
@@ -140,16 +137,11 @@ public class ClsCacheServiceImpl extends AbstractCacheService {
                 }
             }
         }
-
-        // return instance
         return instance;
     }
 
     // get vert.x cluster manager
-    public IgniteClusterManager getClusterManager(){
-        if(clusterManager==null) {
-            clusterManager = new IgniteClusterManager();
-        }
+    public IgniteClusterManager getClusterManager(){        
         return clusterManager;
     }
 
@@ -163,10 +155,14 @@ public class ClsCacheServiceImpl extends AbstractCacheService {
             // item not found for id=0
             // also see: IGNITE-8879. This bug will be fixed in version 2.8
             // start ignite
-            ClsUtil.igniteCfg(getClusterManager().getIgniteConfiguration());
-            ignite = getClusterManager().getIgniteInstance();
+        	
+        	ignite = Ignition.getOrStart(ClsUtil.igniteCfg(prepareConfig()));
+        	clusterManager = new IgniteClusterManager(ignite);            
+       
             // active ignite for persistent storage
-            ignite.cluster().active(true);
+        	while(!ignite.cluster().active()) {
+            	Thread.sleep(1000);
+        	}
             // set baseline topology
             Collection<ClusterNode> clusterNodes = ClsUtil.setBaselineTopology(ignite);
 

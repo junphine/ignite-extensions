@@ -1,24 +1,15 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
-import static org.apache.ignite.ml.knn.utils.PointWithDistanceUtil.transformToListOrdered;
-import static org.apache.ignite.ml.knn.utils.PointWithDistanceUtil.tryToAddIntoHeap;
 
-import java.io.Serializable;
-import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.PriorityQueue;
-import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteFileSystem;
 import org.apache.ignite.cache.CacheAtomicityMode;
@@ -27,11 +18,6 @@ import org.apache.ignite.cache.CachePeekMode;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.igfs.IgfsPath;
 import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.processors.cache.binary.CacheObjectBinaryProcessorImpl;
-import org.apache.ignite.lang.IgniteBiTuple;
-import org.apache.ignite.ml.dataset.feature.extractor.ExtractionUtils.IntCoordObjectLabelVectorizer;
-import org.apache.ignite.ml.dataset.Dataset;
-import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.dataset.impl.cache.CacheBasedDataset;
 import org.apache.ignite.ml.dataset.impl.cache.CacheBasedDatasetBuilder;
 import org.apache.ignite.ml.dataset.primitive.builder.context.EmptyContextBuilder;
@@ -50,7 +36,6 @@ import org.apache.ignite.ml.math.distances.CosineSimilarity;
 import org.apache.ignite.ml.math.distances.DistanceMeasure;
 import org.apache.ignite.ml.math.distances.DotProductSimilarity;
 import org.apache.ignite.ml.math.distances.EuclideanDistance;
-import org.apache.ignite.ml.math.distances.JaccardIndex;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.ignite.ml.structures.LabeledVector;
@@ -71,9 +56,10 @@ import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.exception.KeyConstraintError;
 
+
 public class IgniteVectorIndex extends Index<Object> {
 	
-	 /** Learning environment builder. */
+	/** Learning environment builder. */
     protected LearningEnvironmentBuilder envBuilder = LearningEnvironmentBuilder.defaultBuilder();
 
     /** Learning Environment. */
@@ -282,8 +268,7 @@ public class IgniteVectorIndex extends Index<Object> {
 				if(vec!=null) {
 					return vec;
 				}
-			}
-			
+			}			
 		}
 		
 		if(!sentences.isEmpty()) {
@@ -300,14 +285,11 @@ public class IgniteVectorIndex extends Index<Object> {
 	}	
 
 	public Vector computeValueEmbedding(Object val) {
+
 		Vector vec = null;
 		if(val instanceof float[]) {
-			float[] fdata = (float[])val;
-			double[] data = new double[fdata.length];
-			for(int i=0;i<fdata.length;i++) {
-				data[i] = fdata[i];
-			}
-			vec = new DenseVector(data);
+			float[] fdata = (float[])val;			
+			vec = new DenseVector(fdata);
 		}
 		else if(val instanceof double[]) {
 			vec = new DenseVector((double[])val);
@@ -321,13 +303,22 @@ public class IgniteVectorIndex extends Index<Object> {
 			vec = new DenseVector(data);
 		}
 		else if(val instanceof List) {
-			List<Number> fdata = (List)val;
+			List<Number> fdata = (List<Number>)val;
 			double[] data = new double[fdata.size()];
 			for(int i=0;i<fdata.size();i++) {
 				data[i] = fdata.get(i).doubleValue();
 			}
 			vec = new DenseVector(data);
-		}		
+		}
+		else if(val instanceof CharSequence) {
+			if(this.isSparse()) {
+				vec = EmbeddingUtil.textTwoGramVec(0L,Arrays.asList(val.toString()),modelUrl);
+				
+			}
+			else {			
+				vec = EmbeddingUtil.textXlmVec(0L,Arrays.asList(val.toString()),modelUrl);
+			}
+		}
 		return vec;
 	}
 	
@@ -358,9 +349,7 @@ public class IgniteVectorIndex extends Index<Object> {
 
 
 	@Override
-	public void add(Document document, Object position, MongoCollection<Object> collection) {		
-
-		String typeName = collection.getCollectionName();
+	public void add(Document document, Object position, MongoCollection<Object> collection) {
 		
 		// build doc body
 		try {
@@ -405,24 +394,21 @@ public class IgniteVectorIndex extends Index<Object> {
 			if (queryValue instanceof Document) {				
 				Document queryDoc = (Document) queryValue;
 				
-				if (BsonRegularExpression.isTextSearchExpression(queryValue)) {
+				if (BsonRegularExpression.isTextSearchExpression(queryDoc)) {
 					continue;
 				}
-				for (String queriedKeys : ((Document) queryValue).keySet()) {
+				for (String queriedKeys : queryDoc.keySet()) {
 					if (isInQuery(queriedKeys)) {
 						// okay
 					} 
-					else if (queriedKeys.startsWith("$search")) {						
+					else if (queriedKeys.startsWith("$search") || queriedKeys.startsWith("$vectorSearch")) {						
 						return true;
 					}
 					else if (queriedKeys.startsWith("$knnVector") || queriedKeys.startsWith("$annVector")) {						
 						return true;
 					}
-					else if (queriedKeys.startsWith("$")) {
-						// not yet supported
-						if(queryDoc.size()==1) {
-							return false;
-						}
+					else if(queriedKeys.startsWith("$")){
+						return false;
 					}
 				}
 			}
@@ -506,7 +492,7 @@ public class IgniteVectorIndex extends Index<Object> {
 
 	@Override
 	public void checkUpdate(Document oldDocument, Document newDocument, MongoCollection<Object> collection) {
-		// TODO Auto-generated method stub
+		
 
 	}
 
@@ -569,6 +555,7 @@ public class IgniteVectorIndex extends Index<Object> {
 			throw new UnsupportedOperationException("unsupported query expression: " + operator);
 		}
 	}
+	
 	/**
 	 *  可以获取多个字段的匹配结果，拼接在一起返回
 	 * @param keyValue
@@ -580,7 +567,7 @@ public class IgniteVectorIndex extends Index<Object> {
 		try {
 			int n = 0;
 			int limit = 0;
-			float scoreMax = Float.MAX_VALUE;
+			float scoreThreshold = 0;
 			for (IndexKey key : this.getKeys()) {
 				Object obj = keyValue.get(n);
 				if(obj == null) {
@@ -600,17 +587,14 @@ public class IgniteVectorIndex extends Index<Object> {
 					}
 					else if(opt.containsKey("$search")) {
 						obj = opt.get("$search");
-					}
-					else if(opt.containsKey("$text")) {
-						obj = opt.get("$text");
-					}
+					}					
 					
 					if(opt.containsKey("$limit")) {
 						limit = Integer.parseInt(opt.get("$limit").toString());
 					}
 					
-					if(opt.containsKey("$max")) {
-						scoreMax = Float.parseFloat(opt.get("$max").toString());
+					if(opt.containsKey("$scoreThreshold")) {
+						scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
 					}
 					
 					if(opt.containsKey("$indexType")) {					
@@ -632,8 +616,9 @@ public class IgniteVectorIndex extends Index<Object> {
 				limit = (int) docs.size();
 				for (int i = 0; i < limit; i++) {
 					LabeledVector<Object> sd = docs.get(i);				
-					float score = sd.weight();
-					if(score<=scoreMax) {		// 越小越好	
+					float distance = sd.weight();
+					float score = convertDistanceToSimilarity(distance);
+					if(score >= scoreThreshold) {		// 越大越好	
 						result.add(new IdWithMeta(sd.label(),true,new Document("vectorSearchScore",score)));
 					}
 				}
@@ -658,7 +643,7 @@ public class IgniteVectorIndex extends Index<Object> {
 		try {
 			int limit = 0;			
 			Object obj = exp;
-			float scoreMax = Float.MAX_VALUE;
+			float scoreThreshold = 0.0f;
 			boolean useAnn = defaultANN;
 			if (exp instanceof Map) {
 				Map<String, Object> opt = (Map) obj;
@@ -674,16 +659,14 @@ public class IgniteVectorIndex extends Index<Object> {
 				else if(opt.containsKey("$search")) {
 					obj = opt.get("$search");
 				}
-				else if(opt.containsKey("$text")) {
-					obj = opt.get("$text");
-				}				
+							
 				
 				if(opt.containsKey("$limit")) {
 					limit = Integer.parseInt(opt.get("$limit").toString());
 				}
 				
-				if(opt.containsKey("$max")) {
-					scoreMax = Float.parseFloat(opt.get("$max").toString());
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
 				}
 				
 				if(opt.containsKey("$indexType")) {					
@@ -707,8 +690,8 @@ public class IgniteVectorIndex extends Index<Object> {
 			for (int i = 0; i < limit; i++) {
 				
 				LabeledVector<Object> doc = docs.get(i);
-				float score = doc.weight();
-				if(score<=scoreMax) { // 越小越好
+				float score = convertDistanceToSimilarity(doc.weight());
+				if(score>=scoreThreshold) { // 越大越好
 					Object k = doc.label();
 					Vector v = doc.features();
 					
@@ -734,6 +717,16 @@ public class IgniteVectorIndex extends Index<Object> {
 	
     public int getPriority() {
     	return Math.min(9, 1 + (int)getDataSize()/10000);
+    }    
+    
+    public float convertDistanceToSimilarity(float distance) {
+    	if(distanceMeasure.getClass()==CosineSimilarity.class) {
+    		// 将余弦相似度转换为 [0, 1] 范围内的相似度
+    		return (1 + (1- distance)) / 2;
+    	}
+    	// 使用高斯核函数将欧氏距离转换为相似度
+    	double sigma = 1;
+        double sim = Math.exp(-Math.pow(distance, 2) / (2 * Math.pow(sigma, 2)));
+        return (float)sim;
     }
-
 }

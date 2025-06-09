@@ -218,6 +218,12 @@
 			<artifactId>vertx-codegen</artifactId>
 			<version>${vertx.version}</version>
 		</dependency>
+		
+		 <dependency>
+			<groupId>io.vertx</groupId>
+			<artifactId>vertx-ignite</artifactId>
+			<version>${vertx.version}</version>
+		</dependency>
 
 		<dependency>
 			<groupId>io.vertx</groupId>
