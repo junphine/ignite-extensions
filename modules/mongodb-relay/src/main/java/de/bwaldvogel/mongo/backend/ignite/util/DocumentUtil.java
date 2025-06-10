@@ -44,11 +44,14 @@ import de.bwaldvogel.mongo.bson.ObjectId;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.lucene.util.BytesRef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.util.LRUMap;
 
 import de.bwaldvogel.mongo.backend.Missing;
 import de.bwaldvogel.mongo.backend.Utils;
+import de.bwaldvogel.mongo.backend.ignite.IgniteLuceneIndex;
 import de.bwaldvogel.mongo.bson.BinData;
 import de.bwaldvogel.mongo.bson.Bson;
 import de.bwaldvogel.mongo.bson.Document;
@@ -58,6 +61,7 @@ import de.bwaldvogel.mongo.wire.bson.BsonEncoder;
 
 
 public class DocumentUtil {
+	private static final Logger log = LoggerFactory.getLogger(IgniteLuceneIndex.class);
 	
 	public static LRUMap<BytesRef,Object> keyDict = new LRUMap<>(100,5000);
 	
@@ -367,6 +371,7 @@ public class DocumentUtil {
 	
     public static Object binaryObjectToDocumentOrPojo(BinaryObject bobj,int level){
     	Collection<String> fields = null;
+    	String typeName = bobj.type().typeName();
     	try {    		
     		if(bobj instanceof BinaryObjectImpl) {
 	    		BinaryObjectImpl bin = (BinaryObjectImpl)bobj;
@@ -375,40 +380,35 @@ public class DocumentUtil {
 	    		}
     		}
     		else if(bobj instanceof BinaryArray) {
-    			BinaryArray bin = (BinaryArray)bobj;
-	    		if(bin.componentClassName().startsWith("java.")) {
-	    			return bin.deserialize();
-	    		}
+    			BinaryArray bin = (BinaryArray)bobj;	    		
 	    		return bin.deserialize();
     		}
     		else if(bobj instanceof BinaryEnumObjectImpl) {
     			BinaryEnumObjectImpl bin = (BinaryEnumObjectImpl)bobj;	    		
-	    		return ((Enum)bin.deserialize()).name();
-    		}
+	    		return bin.enumName();
+    		}    		
     		
-    		String typeName = bobj.type().typeName();
     		if(typeName.equals("Document") || typeName.equals("SerializationProxy")) {
     			return bobj.deserialize();
     		}
     		
     		fields = bobj.type().fieldNames();
-    		if(fields==null || fields.size()<=1) {
-    			return toBsonValue(bobj.deserialize(),level);
-    		}    		
-    	}
-    	catch(BinaryObjectException e) {
-    		if(bobj instanceof BinaryEnumObjectImpl) {
-    			BinaryEnumObjectImpl bin = (BinaryEnumObjectImpl)bobj;	    		
-	    		return bin.enumName();
+    		if(fields==null || fields.size()<=1 ) {
+    			if(!typeName.equals("SecurityContextImpl")) { 
+    				return toBsonValue(bobj.deserialize(),level);
+    			}
     		}
+    		
+    	}
+    	catch(BinaryObjectException e) {    		
     		fields = bobj.type().fieldNames();	
     	}
     	
     	Document doc = level==0? new Document("_id",null) : new Document();
 	    for(String field: fields){	    	
 	    	String $key =  field;
-	    	Object $value = bobj.field(field);
-			try {				
+			try {	
+				Object $value = bobj.field(field);
 				if($value!=null) {					
 					doc.append($key, toBsonValue($value,level+1));
 				}
@@ -417,7 +417,7 @@ public class DocumentUtil {
 				}
 				
 			} catch (Exception e) {				
-				e.printStackTrace();
+				log.warn("Error read ignite binary object field from "+typeName,e.getMessage());
 			}	    	
 	    }
 	    return doc;
@@ -478,8 +478,8 @@ public class DocumentUtil {
 					bb.setField($key, null);
 				}				
 				
-			} catch (Exception e) {				
-				e.printStackTrace();
+			} catch (Exception e) {
+				log.warn("Error read ignite binary object field from "+docTypeName,e);
 			}	    	
 	    }
 	    

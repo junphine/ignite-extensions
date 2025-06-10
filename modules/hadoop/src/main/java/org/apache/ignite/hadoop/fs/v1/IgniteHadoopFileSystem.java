@@ -59,6 +59,8 @@ import org.apache.ignite.internal.util.typedef.internal.A;
 import org.apache.ignite.internal.util.typedef.internal.S;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.ignite.IgniteFileSystem.IGFS_SCHEME;
 import static org.apache.ignite.configuration.FileSystemConfiguration.DFLT_IGFS_LOG_BATCH_SIZE;
@@ -109,7 +111,9 @@ import static org.apache.ignite.internal.processors.hadoop.impl.igfs.HadoopIgfsU
  * and {@code config/hadoop/default-config.xml} configuration files in Ignite installation.
  */
 public class IgniteHadoopFileSystem extends FileSystem {
-    /** Empty array of file block locations. */
+	public static final Logger LOG = LoggerFactory.getLogger(IgniteHadoopFileSystem.class);
+    
+	/** Empty array of file block locations. */
     private static final BlockLocation[] EMPTY_BLOCK_LOCATIONS = new BlockLocation[0];
 
     /** Ensures that close routine is invoked at most once. */
@@ -277,6 +281,10 @@ public class IgniteHadoopFileSystem extends FileSystem {
         finally {
             leaveBusy();
         }
+    }
+    
+    @Override public String getScheme() {
+        return IGFS_SCHEME;
     }
 
     /** {@inheritDoc} */

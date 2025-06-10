@@ -396,7 +396,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         }
         else {
 	        IgniteBiPredicate<Object, Object> filter = null;
-	        if(isSysDB && !query.isEmpty()) {
+	        if(isSysDB && query.containsKey("ns")) {
 	        	final String ns = (String)query.get("ns");
 	        	if(ns!=null) {
 		        	filter = new FieldEqualsMatch("ns",ns);
