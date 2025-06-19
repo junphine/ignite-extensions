@@ -18,6 +18,7 @@
 package org.apache.ignite.internal.processors.hadoop.impl.igfs;
 
 
+import org.apache.hadoop.fs.ByteBufferPositionedReadable;
 import org.apache.hadoop.fs.PositionedReadable;
 import org.apache.hadoop.fs.Seekable;
 import org.apache.ignite.IgniteCheckedException;
@@ -31,13 +32,14 @@ import org.slf4j.Logger;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 
 /**
  * IGFS input stream wrapper for hadoop interfaces.
  */
 @SuppressWarnings("FieldAccessedSynchronizedAndUnsynchronized")
 public final class HadoopIgfsInputStream extends InputStream implements Seekable, PositionedReadable,
-    HadoopIgfsStreamEventListener {
+	ByteBufferPositionedReadable, HadoopIgfsStreamEventListener {
     /** Minimum buffer size. */
     private static final int MIN_BUF_SIZE = 4 * 1024;
 
@@ -201,7 +203,8 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
         finally {
             readEnd();
         }
-    }
+    }    
+    
 
     /** {@inheritDoc} */
     @Override public synchronized long skip(long n) throws IOException {
@@ -285,7 +288,7 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
     }
 
     /** {@inheritDoc} */
-    @Override public synchronized int read(long position, byte[] buf, int off, int len) throws IOException {
+    @Override public int read(long position, byte[] buf, int off, int len) throws IOException {
         long remaining = limit - position;
 
         int read = (int)Math.min(len, remaining);
@@ -298,6 +301,22 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
 
         return read;
     }
+    
+    @Override
+	public int read(long position, ByteBuffer buf) throws IOException {
+    	long remaining = limit - position;
+    	int len = buf.remaining();
+    	
+        int read = (int)Math.min(len, remaining);
+
+        // Return -1 at EOF.
+        if (read == 0)
+            return -1;
+
+        readFully(position, buf, read);
+
+        return read;
+	}
 
     /** {@inheritDoc} */
     @Override public synchronized void readFully(long position, byte[] buf, int off, int len) throws IOException {
@@ -332,7 +351,59 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
         finally {
             readEnd();
         }
-    }
+    }    
+    
+    /** {@inheritDoc} */
+    @Override public void readFully(long position, ByteBuffer buf) throws IOException {
+        readFully(position, buf, buf.remaining());
+    }    
+
+	public synchronized void readFully(long position, ByteBuffer bbuf, int len) throws IOException {
+		long remaining = limit - position;
+		int off = bbuf.position();
+        checkClosed();
+
+        if (len > remaining)
+            throw new EOFException("End of stream reached before data was fully read.");
+
+        readStart();
+
+        try {
+        	byte[] buf;
+        	if(bbuf.hasArray()) {
+        		buf = bbuf.array();
+        		off = off + bbuf.arrayOffset();        		
+        	}
+        	else {
+        		buf = new byte[len];
+        		off = 0;
+        	}
+            int read = this.buf.flatten(buf, position, off, len);
+            int readAmt = 0;
+            total += read;
+
+            if (read != len) {
+                readAmt = len - read;
+
+                delegate.hadoop().readData(delegate, position + read, readAmt, buf, off + read, readAmt).get();
+
+                total += readAmt;
+            }
+            
+            if(!bbuf.hasArray()) {
+            	bbuf.put(buf,0,read+readAmt);
+            }
+
+            if (clientLog.isLogEnabled())
+                clientLog.logRandomRead(logStreamId, position, len);
+        }
+        catch (IgniteCheckedException e) {
+            throw HadoopIgfsUtils.cast(e);
+        }
+        finally {
+            readEnd();
+        }
+	}
 
     /** {@inheritDoc} */
     @Override public void readFully(long position, byte[] buf) throws IOException {
@@ -627,5 +698,7 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
             return size <= 0 ? null :
                 new FetchBufferPart(delegate.hadoop().readData(delegate, pos, size, null, 0, 0), pos, size);
         }
+    
     }
+	
 }
