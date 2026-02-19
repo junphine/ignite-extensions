@@ -40,7 +40,6 @@
         <module>modules/performance-statistics-ext</module>
        
         <module>modules/cdc-ext</module>
-        <module>modules/aws-ext</module>
         <module>modules/zookeeper-ip-finder-ext</module>
         <module>modules/topology-validator-ext</module>
         <module>modules/hibernate-ext</module>

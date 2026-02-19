@@ -84,12 +84,13 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- The TestSuiteAwareTestsetReporter added to classpath for the maven-surefire-plugin. -->
+        <!-- The TestSuiteAwareTestsetReporter added to classpath for the maven-surefire-plugin.
         <dependency>
             <groupId>org.apache.ignite</groupId>
             <artifactId>ignite-tools</artifactId>
             <scope>test</scope>
         </dependency>
+        -->
     </dependencies>
 
     <build>
@@ -103,17 +104,7 @@
                 </configuration>
             </plugin>
 
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>flatten-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>flatten</id>
-                        <inherited>false</inherited>
-                        <phase/>
-                    </execution>
-                </executions>
-            </plugin>
+
         </plugins>
     </build>
 
@@ -156,36 +147,8 @@
                             </execution>
                         </executions>
                     </plugin>
-                    <plugin>
-                        <inherited>true</inherited>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-deploy-plugin</artifactId>
-                        <configuration>
-                            <!-- We want to deploy the artifact to a staging location. -->
-                            <updateReleaseInfo>true</updateReleaseInfo>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>net.nicoulaj.maven.plugins</groupId>
-                        <artifactId>checksum-maven-plugin</artifactId>
-                        <version>1.10</version>
-                        <executions>
-                            <execution>
-                                <id>checksum</id>
-                                <goals>
-                                    <goal>artifacts</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <algorithms>
-                                <algorithm>SHA-512</algorithm>
-                            </algorithms>
-                            <appendFilename>true</appendFilename>
-                            <excludeMainArtifact>true</excludeMainArtifact>
-                            <failIfNoFiles>false</failIfNoFiles>
-                        </configuration>
-                    </plugin>
+
+
                 </plugins>
             </build>
         </profile>
@@ -199,7 +162,7 @@
                 <maven.compiler.target>11</maven.compiler.target>
                 <spring-boot.version>2.7.13</spring-boot.version>
 		        <spring.data.version>2.7.13</spring.data.version>
-		        <spring61.version>5.3.39</spring61.version>
+		        <spring6.version>5.3.39</spring6.version>
             </properties>
             <build>
                 <plugins>
@@ -260,7 +223,7 @@
                 <maven.compiler.target>17</maven.compiler.target>
                 <spring-boot.version>3.4.5</spring-boot.version>
 		        <spring.data.version>3.4.5</spring.data.version>
-		        <spring61.version>6.1.14</spring61.version>
+		        <spring6.version>6.1.14</spring6.version>
             </properties>
             <build>
                 <plugins>

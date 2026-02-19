@@ -51,17 +51,6 @@
                     <skip>true</skip>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>flatten-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>flatten</id>
-                        <inherited>false</inherited>
-                        <phase/>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 </project>
