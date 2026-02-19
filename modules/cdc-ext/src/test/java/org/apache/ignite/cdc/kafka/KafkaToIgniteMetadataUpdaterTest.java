@@ -21,10 +21,12 @@ import java.util.Collections;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.cdc.CdcConsumer;
 import org.apache.ignite.cdc.TypeMapping;
-import org.apache.ignite.configuration.IgniteConfiguration;
+import org.apache.ignite.configuration.BinaryConfiguration;
 import org.apache.ignite.internal.binary.BinaryContext;
+import org.apache.ignite.internal.binary.BinaryUtils;
 import org.apache.ignite.internal.cdc.TypeMappingImpl;
 import org.apache.ignite.internal.processors.metric.MetricRegistryImpl;
+import org.apache.ignite.internal.util.typedef.internal.CU;
 import org.apache.ignite.platform.PlatformType;
 import org.apache.ignite.testframework.GridTestUtils;
 import org.apache.ignite.testframework.ListeningTestLogger;
@@ -154,7 +156,7 @@ public class KafkaToIgniteMetadataUpdaterTest extends GridCommonAbstractTest {
 
         GridTestUtils.setFieldValue(streamer, "log", listeningLog.getLogger(IgniteToKafkaCdcStreamer.class));
 
-        streamer.start(new MetricRegistryImpl("test", null, null, log));
+        streamer.start(new MetricRegistryImpl("test", null, null, null, log));
 
         return streamer;
     }
@@ -166,7 +168,20 @@ public class KafkaToIgniteMetadataUpdaterTest extends GridCommonAbstractTest {
 
     /** */
     private KafkaToIgniteMetadataUpdater metadataUpdater(KafkaToIgniteCdcStreamerConfiguration streamerCfg) {
-        BinaryContext noOpCtx = new BinaryContext(new IgniteConfiguration(), log) {
+        BinaryContext noOpCtx = new BinaryContext(
+            BinaryUtils.cachingMetadataHandler(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            CU.affinityFields(null),
+            BinaryConfiguration.DFLT_COMPACT_FOOTER,
+            CU::affinityFieldName,
+            log
+        ) {
             @Override public boolean registerUserClassName(int typeId, String clsName, boolean failIfUnregistered,
                 boolean onlyLocReg, byte platformId) {
                 return true;

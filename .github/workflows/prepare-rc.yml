@@ -82,7 +82,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v2
         with:
-          java-version: 8
+          java-version: 11
           distribution: 'adopt'
 
       - name: Extract POM Version and Compare With Branch Version
@@ -172,10 +172,11 @@ jobs:
             })
 
       - name: Checkout Sources Into Distribution
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: ${{ env.EXTENSION_DIST }}/git
           ref: ${{ github.ref_name }}
+          persist-credentials: false
 
       - name: Configure Git for Release
         run: |

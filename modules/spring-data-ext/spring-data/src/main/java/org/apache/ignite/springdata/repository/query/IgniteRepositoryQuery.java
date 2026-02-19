@@ -38,8 +38,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.cache.Cache;
-import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.lang.reflect.FieldUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.Query;
@@ -57,6 +57,7 @@ import org.apache.ignite.springdata.repository.query.StringQuery.ParameterBindin
 import org.apache.ignite.springdata.repository.query.StringQuery.ParameterBindingParser;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.core.convert.TypeDescriptor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -902,7 +903,7 @@ public class IgniteRepositoryQuery implements RepositoryQuery {
      * @return Converted object.
      */
     private <T> T convert(Object source, Class<?> targetType) {
-        if (conversionService.canConvert(source.getClass(), targetType))
+        if (conversionService.canConvert(TypeDescriptor.forObject(source), TypeDescriptor.valueOf(targetType)))
             return (T)conversionService.convert(source, targetType);
 
         return (T)source;
