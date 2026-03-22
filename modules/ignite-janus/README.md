@@ -5,4 +5,4 @@
 
 This project transforms JanusGraph into a distributed in-memory graph database at petabyte scale.
 
-The current version is 0.6.2 and is compliant with JanusGraph 0.6.2.
+The current version is 1.1.0 and is compliant with JanusGraph 1.1.0

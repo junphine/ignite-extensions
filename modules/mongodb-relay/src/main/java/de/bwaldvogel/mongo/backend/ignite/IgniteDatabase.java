@@ -49,12 +49,9 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
 	public static final String DEFAULT_DB_NAME = "default";
 	public static final String SYS_DB_NAME = "admin";
 	public static final String INDEX_DB_PREFIX = "INDEXES.";
-	
-	private static Map<UUID,Transaction> transactionsMap = new ConcurrentHashMap<>(); 
-	
+	private static Map<UUID,Transaction> transactionsMap = new ConcurrentHashMap<>();
     private Ignite mvStore;
     private IgniteBackend backend;
-    
     final boolean isKeepBinary;
     final boolean isGlobal;
     
@@ -125,22 +122,28 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     @Override
     protected Index<Object> openOrCreateSecondaryIndex(String collectionName, String indexName, List<IndexKey> keys, boolean sparse) {
     	IgniteBinaryCollection collection = (IgniteBinaryCollection)resolveCollection(collectionName,true);
-    	
+        IgniteEx ignite = (IgniteEx)mvStore;
     	if(keys.size()>0 && keys.get(0).isText() ) {
     		String indexType = (String)keys.get(0).textOptions().get("type");
+
     		if("knnVector".equalsIgnoreCase(indexType)) { // rnnVector
-	    		IgniteEx ignite = (IgniteEx)mvStore;
+                String vectorIndexType = keys.get(0).textOptions().getOrDefault("indexType", "").toString().toUpperCase();
+                if(!vectorIndexType.isBlank()) {
+                    if(vectorIndexType.startsWith("HNSW") || vectorIndexType.startsWith("IVF")) {
+                        IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse,true);
+                        return index;
+                    }
+                }
 	    		IgniteVectorIndex index = new IgniteVectorIndex(ignite.context(),collection,indexName,keys,sparse); 		
 	    		return index;
     		}
     		else if("text".equalsIgnoreCase(indexType)) { // text
-	    		IgniteEx ignite = (IgniteEx)mvStore;
+
 	    		IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse);    		
 	    		return index;
     		}
     	}
     	if(keys.size()>0) {
-    		IgniteEx ignite = (IgniteEx)mvStore;
     		IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse);    		
     		return index;
     	}

@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import org.apache.ignite.IgniteCache;
+import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteFileSystem;
 import org.apache.ignite.cache.CacheAtomicityMode;
 import org.apache.ignite.cache.CacheMode;
@@ -93,7 +94,9 @@ public class IgniteVectorIndex extends Index<Object> {
 	
 	private String tokenizerModelName = "tokenizers/chinese-xlnet-large";
 	
-	private String modelUrl = null;	
+	private String modelUrl = null;
+
+	private Set<Object> updatedDocs = new TreeSet<>();
 	
 	static class EmbeddingIntCoordObjectLabelVectorizer implements FeatureLabelExtractor<Object,Vector,Object>{
 		
@@ -129,7 +132,7 @@ public class IgniteVectorIndex extends Index<Object> {
 			
 			dimensions = Integer.parseInt(options.getOrDefault("dimensions", dimensions).toString());
 			
-			String similarity = options.getOrDefault("similarity", "").toString();
+			String similarity = options.getOrDefault("similarity", "cosine").toString();
 			if(similarity.equals("euclidean ")) {
 				this.distanceMeasure = new EuclideanDistance();
 			}
@@ -144,12 +147,13 @@ public class IgniteVectorIndex extends Index<Object> {
 					this.distanceMeasure = DistanceMeasure.of(similarity);
 				} catch (InstantiationException e) {
 					e.printStackTrace();
+					throw new IgniteException("KnnVectorIndex similarity not supported");
 				}
 			}			
 			
 			String indexType = options.getOrDefault("indexType", "").toString().toUpperCase();
 			if(!indexType.isBlank()) {
-				if(indexType.startsWith("ANN") || indexType.startsWith("IVF")) {
+				if(indexType.startsWith("ANN")) {
 					defaultANN =  true;
 				}
 				this.indexType = indexType;
@@ -203,7 +207,7 @@ public class IgniteVectorIndex extends Index<Object> {
 			synchronized(this){
 				if(this.knnModel==null) {
 					/** Index type. */
-				    SpatialIndexType idxType = SpatialIndexType.KD_TREE;
+				    SpatialIndexType idxType = SpatialIndexType.BALL_TREE;
 				    try {
 				    	if(indexType.startsWith("ANN") || indexType.startsWith("IVF")) {
 							defaultANN =  true;
@@ -226,6 +230,8 @@ public class IgniteVectorIndex extends Index<Object> {
 				            environment
 				        );
 					this.knnModel = new KNNClassificationModel<Object>(knnDataset,distanceMeasure,this.K, false);
+
+					this.updatedDocs.clear();
 				}
 			}			
 		}
@@ -248,16 +254,18 @@ public class IgniteVectorIndex extends Index<Object> {
 					annModel = annTrainer.update(annModel, datasetBuilder, vectorizer);
 					annModel.withWeighted(true);
 					annModel.withDistanceMeasure(distanceMeasure);
+
+					updatedDocs.clear();
 				}
 			}		
 		}
 		return annModel;
 	}
 	
-	
 	public Vector computeEmbedding(Document document,Object position) {
 		Vector vec = null;
-		List<String> sentences = new ArrayList<>();
+		List<String> sentences = new ArrayList<>(); // maybe is resource text path
+
 		for(String field : keys()) {
 			Object val = document.get(field);
 			if(val instanceof CharSequence) {
@@ -272,7 +280,6 @@ public class IgniteVectorIndex extends Index<Object> {
 		}
 		
 		if(!sentences.isEmpty()) {
-			
 			if(this.isSparse()) {
 				vec = EmbeddingUtil.textTwoGramVec(position,sentences,modelUrl);
 				
@@ -285,7 +292,6 @@ public class IgniteVectorIndex extends Index<Object> {
 	}	
 
 	public Vector computeValueEmbedding(Object val) {
-
 		Vector vec = null;
 		if(val instanceof float[]) {
 			float[] fdata = (float[])val;			
@@ -313,7 +319,6 @@ public class IgniteVectorIndex extends Index<Object> {
 		else if(val instanceof CharSequence) {
 			if(this.isSparse()) {
 				vec = EmbeddingUtil.textTwoGramVec(0L,Arrays.asList(val.toString()),modelUrl);
-				
 			}
 			else {			
 				vec = EmbeddingUtil.textXlmVec(0L,Arrays.asList(val.toString()),modelUrl);
@@ -325,11 +330,12 @@ public class IgniteVectorIndex extends Index<Object> {
 	  /** {@inheritDoc} */
     public List<LabeledVector<Object>> findKClosest(int k, Vector pnt, boolean ann) {
     	if(ann) {
+			// no vector index
     		List<LabeledVector<Object>> list = this.annModel().findKClosestLabels(k, pnt, this.vecIndex);
     		return list;
     	}
     	
-    	Collection<PointWithDistance<Object>> res = knnModel().findKClosest(k, pnt);   	
+    	Collection<PointWithDistance<Object>> res = this.knnModel().findKClosest(k, pnt);
 
         return res == null ? Collections.emptyList() : PointWithDistanceUtil.transformToListOrdered(res);
     }
@@ -360,6 +366,7 @@ public class IgniteVectorIndex extends Index<Object> {
 			}
 			
 			vecIndex.putAsync(position, vec);
+			updatedDocs.add(position);
 
 		} catch (Exception e) {			
 			e.printStackTrace();
@@ -401,7 +408,7 @@ public class IgniteVectorIndex extends Index<Object> {
 					if (isInQuery(queriedKeys)) {
 						// okay
 					} 
-					else if (queriedKeys.startsWith("$search") || queriedKeys.startsWith("$vectorSearch")) {						
+					else if (queriedKeys.startsWith("$search") || queriedKeys.startsWith("$vectorSearch")) {
 						return true;
 					}
 					else if (queriedKeys.startsWith("$knnVector") || queriedKeys.startsWith("$annVector")) {						
@@ -548,7 +555,6 @@ public class IgniteVectorIndex extends Index<Object> {
 				}
 
 			}
-
 			return allKeys;
 		}
 		else {
@@ -635,7 +641,7 @@ public class IgniteVectorIndex extends Index<Object> {
 	/**
 	 * 对字符串字段进行向量搜索查询，支持模糊匹配
 	 * 
-	 * @param text
+	 * @param indexKey
 	 * @return
 	 */
 	protected List<IdWithMeta> getVectorTextList(IndexKey indexKey, Object exp) {
@@ -659,7 +665,6 @@ public class IgniteVectorIndex extends Index<Object> {
 				else if(opt.containsKey("$search")) {
 					obj = opt.get("$search");
 				}
-							
 				
 				if(opt.containsKey("$limit")) {
 					limit = Integer.parseInt(opt.get("$limit").toString());
@@ -688,7 +693,6 @@ public class IgniteVectorIndex extends Index<Object> {
 			limit = (int) docs.size();
 			result = new ArrayList<>(limit);
 			for (int i = 0; i < limit; i++) {
-				
 				LabeledVector<Object> doc = docs.get(i);
 				float score = convertDistanceToSimilarity(doc.weight());
 				if(score>=scoreThreshold) { // 越大越好
@@ -697,7 +701,6 @@ public class IgniteVectorIndex extends Index<Object> {
 					
 					result.add(new IdWithMeta(k,true,new Document("vectorSearchScore",score)));
 				}
-				
 			}
 			
 		} catch (Exception e) {
@@ -721,8 +724,8 @@ public class IgniteVectorIndex extends Index<Object> {
     
     public float convertDistanceToSimilarity(float distance) {
     	if(distanceMeasure.getClass()==CosineSimilarity.class) {
-    		// 将余弦相似度转换为 [0, 1] 范围内的相似度
-    		return (1 + (1- distance)) / 2;
+    		// 将余弦距离[0,2] 转换为 [0, 1] 范围内的相似度
+    		return (1 + (1 - distance)) / 2;
     	}
     	// 使用高斯核函数将欧氏距离转换为相似度
     	double sigma = 1;

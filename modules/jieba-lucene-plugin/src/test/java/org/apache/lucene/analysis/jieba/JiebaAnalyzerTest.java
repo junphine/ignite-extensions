@@ -22,10 +22,11 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.RAMDirectory;
+
 
 import java.io.File;
 import java.io.StringReader;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Map;
@@ -63,7 +64,7 @@ public class JiebaAnalyzerTest extends TestCase
         Analyzer analyzer = new JiebaAnalyzer();////////////////////////////////////////////////////
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
         config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
-        Directory directory = new RAMDirectory();
+        Directory directory = FSDirectory.open(Path.of("target","data"));
         IndexWriter indexWriter = new IndexWriter(directory, config);
 
         Document document = new Document();

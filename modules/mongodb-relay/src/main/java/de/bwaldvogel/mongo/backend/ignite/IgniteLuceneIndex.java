@@ -1,25 +1,17 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
-
-
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.UUID;
 import java.util.regex.Matcher;
 
+import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
 import org.apache.ignite.IgniteCheckedException;
+import org.apache.ignite.IgniteException;
+import org.apache.ignite.IgniteFileSystem;
 import org.apache.ignite.cache.FullTextLucene;
 import org.apache.ignite.cache.LuceneIndexAccess;
+import org.apache.ignite.igfs.IgfsPath;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.binary.GridBinaryMarshaller;
 import org.apache.ignite.internal.processors.cache.CacheObjectContext;
@@ -34,37 +26,22 @@ import org.apache.ignite.internal.util.typedef.T3;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.lang.IgniteBiTuple;
 
+import org.apache.ignite.ml.math.distances.CosineSimilarity;
+import org.apache.ignite.ml.math.distances.DotProductSimilarity;
+import org.apache.ignite.ml.math.distances.EuclideanDistance;
+import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.document.BinaryDocValuesField;
-import org.apache.lucene.document.BinaryPoint;
-import org.apache.lucene.document.DoublePoint;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.FloatPoint;
-import org.apache.lucene.document.IntPoint;
-import org.apache.lucene.document.LongPoint;
-import org.apache.lucene.document.SortedDocValuesField;
-import org.apache.lucene.document.StoredField;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.TextField;
+import org.apache.lucene.document.*;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.index.SegmentCommitInfo;
 import org.apache.lucene.index.Term;
 
+import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.queryparser.simple.SimpleQueryParser;
-import org.apache.lucene.search.BooleanClause;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.RegexpQuery;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.*;
 import org.apache.lucene.search.SortField.Type;
-import org.apache.lucene.search.TermInSetQuery;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -102,7 +79,15 @@ public class IgniteLuceneIndex extends Index<Object> {
 	private IgniteH2Indexing igniteH2Indexing = null;
 	
 	private boolean isFirstIndex = false;
-	
+
+	private boolean isKnnVectorIndex = false;
+
+	private int dimensions = 0;
+
+	private String embeddingModelName = "text2vec-base-chinese-paraphrase";
+
+	private String modelUrl = null;
+
 	private Map<String, Float> weights = new HashMap<>();
 
 	private long docCount = 0;
@@ -115,11 +100,16 @@ public class IgniteLuceneIndex extends Index<Object> {
 	private String[] idxdFields = null;
 	private FieldType[] idxdTypes = null;
 
-	public IgniteLuceneIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,	boolean sparse) {
+	public IgniteLuceneIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,boolean sparse) {
+		this(ctx,collection,name,keys,sparse,false);
+	}
+
+	public IgniteLuceneIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,boolean sparse,boolean isKnnVectorIndex) {
 		super(name, keys, true);  // lucene index always is sparse
 		this.ctx = ctx;
 		this.cacheName = collection.getCollectionName();
 		this.idField = collection.idField;
+		this.isKnnVectorIndex = isKnnVectorIndex;
 		// init field weight
 		for(IndexKey indexKey: keys) {
 			if(indexKey.textOptions()!=null) {
@@ -149,9 +139,60 @@ public class IgniteLuceneIndex extends Index<Object> {
 				
 				Map<String, FieldType> fields = indexAccess.fields(typeName);
 				for (IndexKey ik : this.getKeys()) {
-					if (ik.isText()) {
+					if(this.isKnnVectorIndex){
+						Document options = ik.textOptions();
+						if(options==null) {
+							log.error("KnnVectorIndex must have dimensions and indexType options");
+							throw new IgniteException("KnnVectorIndex must have dimensions and indexType options");
+						}
+						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions", 0).toString());
+						String similarity = options.getOrDefault("similarity", "cosine").toString();
+						if(similarity.equals("euclidean ")) {
+							fields.putIfAbsent(ik.getKey(), KnnFloatVectorField.createFieldType(dimensions, VectorSimilarityFunction.EUCLIDEAN));
+						}
+						else if(similarity.equals("cosine")) {
+							fields.putIfAbsent(ik.getKey(), KnnFloatVectorField.createFieldType(dimensions, VectorSimilarityFunction.COSINE));
+						}
+						else if(similarity.equals("dotProduct")) {
+							fields.putIfAbsent(ik.getKey(), KnnFloatVectorField.createFieldType(dimensions, VectorSimilarityFunction.DOT_PRODUCT));
+						}
+						else if(similarity.equals("innerProduct")) {
+							fields.putIfAbsent(ik.getKey(), KnnFloatVectorField.createFieldType(dimensions, VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT));
+						}
+						else{
+							throw new IgniteException("KnnVectorIndex similarity not supported");
+						}
+
+						// 句向量模型
+						embeddingModelName = (String)options.getOrDefault("modelId", "chinese");
+						if(embeddingModelName.equals("chinese")) {
+							embeddingModelName = "text2vec-base-chinese-paraphrase";
+						}
+						else if(embeddingModelName.equals("multilingual")) {
+							embeddingModelName = "paraphrase-xlm-r-multilingual";
+						}
+
+
+						String igniteHome = ctx.grid().configuration().getIgniteHome();
+
+						try {
+							IgniteFileSystem fs = ctx.grid().fileSystem("models");
+							if(fs.exists(new IgfsPath(embeddingModelName))) {
+								modelUrl = "s3://models/" + (embeddingModelName);
+							}
+							else {
+								modelUrl = igniteHome+"/models/"+(embeddingModelName);
+							}
+						}
+						catch(IllegalArgumentException e) {
+							modelUrl = igniteHome+"/models/"+(embeddingModelName);
+						}
+
+					}
+					else if (ik.isText()) {
 						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
-					} else {
+					}
+					else {
 						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
 					}
 				}
@@ -196,7 +237,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 			return;
 		if(igniteH2Indexing!=null) {
 			// 获取当前文档的类型,优先使用_class字段，然后是Cache QueryEntity
-			
 			if(document.containsKey("_class")) {
 				String typeName = (String)document.get("_class");
 				
@@ -209,7 +249,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 					}
 				}
 			}
-
 			
 		}
 
@@ -249,7 +288,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 		if (!this.isFirstIndex)
 			return;
 		
-		
 		IgniteBinaryCollection coll = (IgniteBinaryCollection) collection;
 		
 		String typeName =  coll.getTypeName();	
@@ -285,7 +323,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 			//BytesRef keyByteRef = new BytesRef(keyBytes);
 			row[i] = fieldVal;
 		}
-		
 		
 		BytesRef keyByteRef = marshalKeyField(position);
 		Term term = new Term(KEY_FIELD_NAME, keyByteRef);
@@ -381,9 +418,11 @@ public class IgniteLuceneIndex extends Index<Object> {
 				for (String queriedKeys : queryDoc.keySet()) {
 					if (isInQuery(queriedKeys)) {
 						// okay
-					} 
+					}
+					else if (this.isKnnVectorIndex && (queriedKeys.startsWith("$knnSearch") || queriedKeys.startsWith("$vectorSearch"))) {
+						return true;
+					}
 					else if (this.isTextIndex() && (queriedKeys.startsWith("$search") || queriedKeys.startsWith("$text"))) {
-						// not yet supported
 						return true;
 					}
 					else if (queriedKeys.startsWith("$type") || queriedKeys.startsWith("$exists")
@@ -771,18 +810,29 @@ public class IgniteLuceneIndex extends Index<Object> {
 			
 			
 			String defaultTextField = null;
-			int n = 0;
+
 			for (IndexKey key : this.getKeys()) {				
 				if (key.isText() && defaultTextField==null) {
 					defaultTextField = key.getKey();
-				}				
-				n++;
+				}
 			}
-			
-			
 			if ($text!=null) {
-				Map<String, Object> opt = ((Map<String, Object>) $text);
+				Map<String, Object> opt =  $text;
 				Object obj = null;
+
+				if(opt.containsKey("$limit")) {
+					limit = Integer.parseInt(opt.get("$limit").toString());
+				}
+
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+
+				if(opt.containsKey("$sort")) {
+					String sortOpt = opt.get("$sort").toString();
+					sortField = new SortField(sortOpt,Type.DOUBLE, true);
+				}
+
 				if(opt.containsKey("$search")) {
 					obj = opt.get("$search"); // 更复杂，支持多种字段
 					
@@ -798,20 +848,14 @@ public class IgniteLuceneIndex extends Index<Object> {
 					parser.setDefaultOperator(BooleanClause.Occur.MUST);
 					Query textQuery = parser.parse(obj.toString());
 					query.add(textQuery, BooleanClause.Occur.MUST);
-				}					
-				
-				if(opt.containsKey("$limit")) {
-					limit = Integer.parseInt(opt.get("$limit").toString());
 				}
-				
-				if(opt.containsKey("$scoreThreshold")) {
-					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
+					obj = opt.get("$knnVector"); // 更复杂，支持多种字段
+					int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
+					float[] queryVector = computeValueEmbedding(obj);
+					KnnVectorQuery vecQuery = new KnnVectorQuery(defaultTextField, queryVector, k);
+					query.add(vecQuery, BooleanClause.Occur.MUST);
 				}
-				
-				if(opt.containsKey("$sort")) {
-					String sortOpt = opt.get("$sort").toString();
-					sortField = new SortField(sortOpt,Type.DOUBLE, true);
-				}				
 				
 			}
 			
@@ -835,7 +879,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			result = new ArrayList<>(limit);
 			for (int i = 0; i < limit; i++) {
 				ScoreDoc sd = docs.scoreDocs[i];
-				org.apache.lucene.document.Document doc = searcher.doc(sd.doc);
+				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
 				float score = sd.score;
 				if(score<scoreThreshold) {
 					continue;
@@ -843,7 +887,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
 				
-				Document meta = new Document("textScore",score);
+				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"textScore",score);
 				if(i==0) {
 					meta.append("totalHits", docs.totalHits.value);
 				}
@@ -860,7 +904,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	/**
 	 * 对指定的字符串字段进行搜索$search查询，支持模糊匹配
 	 * 
-	 * @param text 
+	 * @param indexKey
 	 * @return 字段值，_key
 	 */
 	protected List<IdWithMeta> getFullTextList(IndexKey indexKey, Object exp) {
@@ -894,6 +938,20 @@ public class IgniteLuceneIndex extends Index<Object> {
 			Query textQuery = null;
 			if (exp instanceof Map) {
 				Map<String, Object> opt = ((Map) exp);
+
+				if(opt.containsKey("$limit")) {
+					limit = Integer.parseInt(opt.get("$limit").toString());
+				}
+
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+
+				if(opt.containsKey("$sort")) {
+					String sortOpt = opt.get("$sort").toString();
+					sortField = new SortField(sortOpt,Type.DOUBLE, true);
+				}
+
 				if(opt.containsKey(BsonRegularExpression.REGEX)) {
 					text = opt.get(BsonRegularExpression.REGEX);
 					RegexpQuery regQuery = new RegexpQuery(new Term(field,text.toString()));					
@@ -912,18 +970,12 @@ public class IgniteLuceneIndex extends Index<Object> {
 					parser.setFieldsBoost(weights);
 					textQuery = parser.parse(text.toString(),field);					
 				}
-				
-				if(opt.containsKey("$limit")) {
-					limit = Integer.parseInt(opt.get("$limit").toString());
-				}
-				
-				if(opt.containsKey("$scoreThreshold")) {
-					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
-				}
-				
-				if(opt.containsKey("$sort")) {
-					String sortOpt = opt.get("$sort").toString();
-					sortField = new SortField(sortOpt,Type.DOUBLE, true);
+				else if(opt.containsKey("$knnVector")) {
+					text = opt.get("$knnVector"); // 更复杂，支持多种字段
+					int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
+					float[] queryVector = computeValueEmbedding(text);
+					KnnVectorQuery vecQuery = new KnnVectorQuery(field, queryVector, k);
+					textQuery = vecQuery;
 				}
 			}
 			if(textQuery==null) {
@@ -950,7 +1002,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			result = new ArrayList<>(limit);
 			for (int i = 0; i < limit; i++) {
 				ScoreDoc sd = docs.scoreDocs[i];
-				org.apache.lucene.document.Document doc = searcher.doc(sd.doc);
+				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
 				float score = sd.score;
 				if(score<scoreThreshold) {
 					continue;
@@ -959,7 +1011,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
 				String v = doc.get(field);
 				
-				Document meta = new Document("searchScore",score);
+				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"searchScore",score);
 				if(i==0) {
 					meta.append("totalHits", docs.totalHits.value);
 				}
@@ -971,6 +1023,48 @@ public class IgniteLuceneIndex extends Index<Object> {
 		}
 		return result;
 
+	}
+
+	public float[] computeValueEmbedding(Object val) {
+
+		float[] vec = null;
+		if(val instanceof float[]) {
+			float[] fdata = (float[])val;
+			vec = fdata;
+		}
+		else if(val instanceof double[]) {
+			double[] fdata = (double[])val;
+			float[] data = new float[fdata.length];
+			for(int i=0;i<fdata.length;i++) {
+				data[i] = (float)fdata[i];
+			}
+			vec = data;
+		}
+		else if(val instanceof Number[]) {
+			Number[] fdata = (Number[])val;
+			float[] data = new float[fdata.length];
+			for(int i=0;i<fdata.length;i++) {
+				data[i] = fdata[i].floatValue();
+			}
+			vec = data;
+		}
+		else if(val instanceof List) {
+			List<Number> fdata = (List<Number>)val;
+			float[] data = new float[fdata.size()];
+			for(int i=0;i<fdata.size();i++) {
+				data[i] = fdata.get(i).floatValue();
+			}
+			vec = data;
+		}
+		else if(val instanceof CharSequence) {
+			Vector fdata = EmbeddingUtil.textXlmVec(0L,Arrays.asList(val.toString()),modelUrl);
+			float[] data = new float[fdata.size()];
+			for(int i=0;i<fdata.size();i++) {
+				data[i] = (float)fdata.get(i);
+			}
+			vec = data;
+		}
+		return vec;
 	}
 
 	private static boolean isInQuery(String key) {

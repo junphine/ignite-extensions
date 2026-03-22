@@ -12,8 +12,8 @@
    		<encoding>UTF-8</encoding>
 
 		<ignite.version>2.16.999-SNAPSHOT</ignite.version>
-		<janus.version>1.1.0-20240712-100602.aaf21b1</janus.version>
-		<lucene-solr.version>8.11.2</lucene-solr.version>
+		<janus.version>1.1.0</janus.version>
+		<lucene.version>9.12.3</lucene.version>
 		<gremlin.version>3.7.2</gremlin.version>
 	</properties>
 
@@ -32,13 +32,20 @@
 		    <groupId>org.janusgraph</groupId>
 		    <artifactId>janusgraph-lucene</artifactId>
 		    <version>${janus.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.lucene</groupId>
+					<artifactId>*</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		
 		
 		<dependency>
 			<groupId>org.janusgraph</groupId>
 			<artifactId>janusgraph-inmemory</artifactId>
-			<version>${janus.version}</version>			
+			<version>${janus.version}</version>
+			<scope>test</scope>
 		</dependency>
 		
 		<dependency>
@@ -58,17 +65,35 @@
 		    <groupId>org.apache.tinkerpop</groupId>
 		    <artifactId>gremlin-console</artifactId>
 		    <version>${gremlin.version}</version>
-		</dependency>	
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-core</artifactId>
+			<version>${lucene.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-queryparser</artifactId>
+			<version>${lucene.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.lucene</groupId>
+			<artifactId>lucene-analysis-common</artifactId>
+			<version>${lucene.version}</version>
+		</dependency>
 
 		<dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-spatial-extras</artifactId>
-            <version>${lucene-solr.version}</version>
+            <version>${lucene.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-backward-codecs</artifactId>
-            <version>${lucene-solr.version}</version>
+            <version>${lucene.version}</version>
         </dependency>
         
 
