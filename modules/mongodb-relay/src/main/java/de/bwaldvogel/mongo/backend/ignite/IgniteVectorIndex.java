@@ -97,6 +97,8 @@ public class IgniteVectorIndex extends Index<Object> {
 	private String modelUrl = null;
 
 	private Set<Object> updatedDocs = new TreeSet<>();
+
+	private long updatedTime = System.currentTimeMillis();
 	
 	static class EmbeddingIntCoordObjectLabelVectorizer implements FeatureLabelExtractor<Object,Vector,Object>{
 		
@@ -203,9 +205,16 @@ public class IgniteVectorIndex extends Index<Object> {
 	}
 	
 	public KNNClassificationModel<Object> knnModel(){
+		if(this.knnModel!=null){
+			if(updatedDocs.size()>1000 || updatedDocs.size()>0 && System.currentTimeMillis()-updatedTime>1000*60*60){
+				knnModel.close();
+				knnModel = null;
+			}
+		}
 		if(this.knnModel==null) {
 			synchronized(this){
 				if(this.knnModel==null) {
+
 					/** Index type. */
 				    SpatialIndexType idxType = SpatialIndexType.BALL_TREE;
 				    try {
@@ -232,6 +241,7 @@ public class IgniteVectorIndex extends Index<Object> {
 					this.knnModel = new KNNClassificationModel<Object>(knnDataset,distanceMeasure,this.K, false);
 
 					this.updatedDocs.clear();
+					updatedTime = System.currentTimeMillis();
 				}
 			}			
 		}
@@ -239,9 +249,16 @@ public class IgniteVectorIndex extends Index<Object> {
 	}
 	
 	public ANNClassificationModel<Object> annModel() {
+		if(this.annModel!=null){
+			if(updatedDocs.size()>1000 || updatedDocs.size()>0 && System.currentTimeMillis()-updatedTime>1000*60*60){
+				annModel.close();
+				annModel = null;
+			}
+		}
 		if(this.annModel==null) {
 			synchronized(this){
 				if(this.annModel==null) {
+
 					EmbeddingIntCoordObjectLabelVectorizer vectorizer = new EmbeddingIntCoordObjectLabelVectorizer();
 					CacheBasedDatasetBuilder<Object, Vector> datasetBuilder = new CacheBasedDatasetBuilder<>(ctx.grid(), vecIndex);
 					int K = 2+(int)Math.sqrt(dimensions*2);
@@ -256,6 +273,7 @@ public class IgniteVectorIndex extends Index<Object> {
 					annModel.withDistanceMeasure(distanceMeasure);
 
 					updatedDocs.clear();
+					updatedTime = System.currentTimeMillis();
 				}
 			}		
 		}
@@ -302,17 +320,17 @@ public class IgniteVectorIndex extends Index<Object> {
 		}
 		else if(val instanceof Number[]) {
 			Number[] fdata = (Number[])val;
-			double[] data = new double[fdata.length];
+			float[] data = new float[fdata.length];
 			for(int i=0;i<fdata.length;i++) {
-				data[i] = fdata[i].doubleValue();
+				data[i] = fdata[i].floatValue();
 			}
 			vec = new DenseVector(data);
 		}
 		else if(val instanceof List) {
 			List<Number> fdata = (List<Number>)val;
-			double[] data = new double[fdata.size()];
+			float[] data = new float[fdata.size()];
 			for(int i=0;i<fdata.size();i++) {
-				data[i] = fdata.get(i).doubleValue();
+				data[i] = fdata.get(i).floatValue();
 			}
 			vec = new DenseVector(data);
 		}

@@ -62,21 +62,6 @@
             </modules>
         </profile>
         <profile>
-            <id>java-11+</id>
-            <activation>
-                <jdk>[11,17)</jdk>
-            </activation>
-            <modules>
-            	<module>modules/spring-boot-autoconfigure-ext</module>
-        		<module>modules/spring-boot-thin-client-autoconfigure-ext</module>    
-        		<module>modules/spring-data-commons</module>
-                <module>modules/spring-session-ext</module>
-                <module>modules/spring-cache-ext</module>
-                <module>modules/spring-data-ext</module>
-                <module>modules/spring-tx-ext</module>                
-            </modules>
-        </profile>
-        <profile>
             <id>java-17+</id>
             <activation>
                 <jdk>[17,)</jdk>

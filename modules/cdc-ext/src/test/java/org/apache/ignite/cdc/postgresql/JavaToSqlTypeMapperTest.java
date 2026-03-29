@@ -37,7 +37,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.cache.QueryEntity;
 import org.apache.ignite.cluster.ClusterState;
@@ -48,6 +48,8 @@ import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.internal.IgniteInternalFuture;
 import org.junit.Test;
+import org.postgresql.ds.PGSimpleDataSource;
+import javax.sql.DataSource;
 
 import static org.apache.ignite.testframework.GridTestUtils.waitForCondition;
 
@@ -81,7 +83,7 @@ public class JavaToSqlTypeMapperTest extends CdcPostgreSqlReplicationAbstractTes
     private IgniteEx src;
 
     /** */
-    private EmbeddedPostgres postgres;
+    private DataSource postgres;
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
@@ -124,7 +126,7 @@ public class JavaToSqlTypeMapperTest extends CdcPostgreSqlReplicationAbstractTes
     @Override protected void afterTest() throws Exception {
         stopAllGrids();
 
-        postgres.close();
+        //postgres.close();
 
         cleanPersistenceDir();
     }
@@ -139,7 +141,7 @@ public class JavaToSqlTypeMapperTest extends CdcPostgreSqlReplicationAbstractTes
         IgniteInternalFuture<?> fut = startIgniteToPostgreSqlCdcConsumer(
             src.configuration(),
             cachesToReplicate,
-            postgres.getPostgresDatabase()
+            postgres
         );
 
         valuesToReplicate.forEach(this::createCacheWithValue);

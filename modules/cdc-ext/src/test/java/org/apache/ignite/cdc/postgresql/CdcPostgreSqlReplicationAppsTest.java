@@ -31,7 +31,7 @@ public class CdcPostgreSqlReplicationAppsTest extends CdcPostgreSqlReplicationTe
         params.put("ONLY_PRIMARY", "true");
         params.put("CREATE_TABLE", String.valueOf(createTables));
 
-        params.put("DB_URL", postgres.getJdbcUrl("postgres", "postgres"));
+        params.put("DB_URL", getJdbcUrl("postgres", "postgres"));
         params.put("DB_USER", "postgres");
         params.put("DB_PASSWORD", "");
 

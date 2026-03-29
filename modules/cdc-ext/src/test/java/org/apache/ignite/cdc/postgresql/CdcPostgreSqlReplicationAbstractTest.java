@@ -19,14 +19,11 @@ package org.apache.ignite.cdc.postgresql;
 
 import java.io.File;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.List;
 import java.util.Set;
 import javax.sql.DataSource;
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.cache.query.FieldsQueryCursor;
@@ -40,6 +37,7 @@ import org.apache.ignite.internal.util.function.ThrowableFunction;
 import org.apache.ignite.internal.util.lang.GridAbsPredicate;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.testframework.junits.common.GridCommonAbstractTest;
+import org.postgresql.ds.PGSimpleDataSource;
 
 import static org.apache.ignite.testframework.GridTestUtils.runAsync;
 
@@ -69,16 +67,33 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
         U.delete(pgDir);
     }
 
-    /** */
-    protected EmbeddedPostgres initPostgres() throws IgniteCheckedException, IOException {
-        // Clean up and set PG data directory in order to overcome possible inconsistent cleanup of '/tmp'.
-        File pgDataDir = U.resolveWorkDirectory(pgDir.getAbsolutePath(), "data", true, false);
 
-        return EmbeddedPostgres.builder()
-            .setOverrideWorkingDirectory(pgDir)
-            .setDataDirectory(pgDataDir)
-            .setCleanDataDirectory(true)
-            .start();
+    protected DataSource initPostgres(){
+        PGSimpleDataSource dataSource = new PGSimpleDataSource();
+
+        String host="127.0.0.1";
+        int port = 5432;
+        String database = "test_db";
+        String username = "postgres";
+        String password = "postgres";
+
+        dataSource.setServerNames(new String[]{host});
+        dataSource.setPortNumbers(new int[]{port});
+        dataSource.setDatabaseName(database);
+        dataSource.setUser(username);
+        dataSource.setPassword(password);
+
+        // 可选配置
+        dataSource.setConnectTimeout(30);      // 连接超时（秒）
+        dataSource.setSocketTimeout(60);       // Socket超时（秒）
+        dataSource.setSsl(false);              // SSL配置
+
+        return dataSource;
+    }
+
+
+    protected String getJdbcUrl(String user,String pwd){
+        return String.format("jdbc:postgresql://127.0.0.1:5432/test_db?user={}&password={}",user,pwd);
     }
 
     /** */
@@ -91,8 +106,8 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
     }
 
     /** */
-    protected ResultSet selectOnPostgreSql(EmbeddedPostgres postgres, String qry) {
-        try (Connection conn = postgres.getPostgresDatabase().getConnection()) {
+    protected ResultSet selectOnPostgreSql(DataSource postgres, String qry) {
+        try (Connection conn = postgres.getConnection()) {
             PreparedStatement stmt = conn.prepareStatement(qry);
 
             return stmt.executeQuery();
@@ -104,11 +119,11 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
 
     /** */
     protected boolean selectOnPostgreSqlAndAct(
-        EmbeddedPostgres postgres,
+        DataSource postgres,
         String qry,
         ThrowableFunction<Boolean, ResultSet, SQLException> action
     ) {
-        try (Connection conn = postgres.getPostgresDatabase().getConnection()) {
+        try (Connection conn = postgres.getConnection()) {
             PreparedStatement stmt = conn.prepareStatement(qry);
 
             try (ResultSet rs = stmt.executeQuery()) {
@@ -121,8 +136,8 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
     }
 
     /** */
-    protected void executeOnPostgreSql(EmbeddedPostgres postgres, String qry) {
-        try (Connection conn = postgres.getPostgresDatabase().getConnection()) {
+    protected void executeOnPostgreSql(DataSource postgres, String qry) {
+        try (Connection conn = postgres.getConnection()) {
             PreparedStatement stmt = conn.prepareStatement(qry);
 
             stmt.executeUpdate();
@@ -134,7 +149,7 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
 
     /** */
     protected boolean checkRow(
-        EmbeddedPostgres postgres,
+        DataSource postgres,
         String tableName,
         String columnName,
         String expected,
@@ -157,7 +172,7 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
     }
 
     /** */
-    protected GridAbsPredicate waitForTablesCreatedOnPostgres(EmbeddedPostgres postgres, Set<String> caches) {
+    protected GridAbsPredicate waitForTablesCreatedOnPostgres(DataSource postgres, Set<String> caches) {
         return () -> {
             String sql = "SELECT EXISTS (" +
                 "  SELECT 1 FROM information_schema.tables " +
@@ -183,7 +198,7 @@ public abstract class CdcPostgreSqlReplicationAbstractTest extends GridCommonAbs
     }
 
     /** */
-    protected GridAbsPredicate waitForTableSize(EmbeddedPostgres postgres, String tableName, long expSz) {
+    protected GridAbsPredicate waitForTableSize(DataSource postgres, String tableName, long expSz) {
         return () -> {
             try (ResultSet res = selectOnPostgreSql(postgres, "SELECT COUNT(*) FROM " + tableName)) {
                 res.next();

@@ -34,7 +34,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.IgniteException;
@@ -52,6 +52,8 @@ import org.apache.ignite.internal.util.typedef.internal.A;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
+
+import javax.sql.DataSource;
 
 import static org.apache.ignite.cache.CacheAtomicityMode.ATOMIC;
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL;
@@ -92,7 +94,7 @@ public class CdcPostgreSqlReplicationTest extends CdcPostgreSqlReplicationAbstra
     protected IgniteEx src;
 
     /** */
-    protected EmbeddedPostgres postgres;
+    protected DataSource postgres;
 
     /** {@inheritDoc} */
     @Override protected IgniteConfiguration getConfiguration(String igniteInstanceName) throws Exception {
@@ -137,8 +139,6 @@ public class CdcPostgreSqlReplicationTest extends CdcPostgreSqlReplicationAbstra
         stopAllGrids();
 
         cleanPersistenceDir();
-
-        postgres.close();
     }
 
     /** */
@@ -405,7 +405,7 @@ public class CdcPostgreSqlReplicationTest extends CdcPostgreSqlReplicationAbstra
 
     /** */
     private IgniteInternalFuture<?> startCdc(Set<String> caches) throws IgniteInterruptedCheckedException {
-        IgniteInternalFuture<?> fut = startIgniteToPostgreSqlCdcConsumer(src.configuration(), caches, postgres.getPostgresDatabase());
+        IgniteInternalFuture<?> fut = startIgniteToPostgreSqlCdcConsumer(src.configuration(), caches, postgres);
 
         assertTrue(waitForCondition(waitForTablesCreatedOnPostgres(postgres, caches), getTestTimeout()));
 
@@ -490,7 +490,7 @@ public class CdcPostgreSqlReplicationTest extends CdcPostgreSqlReplicationAbstra
         IgniteInternalFuture<?> fut = startIgniteToPostgreSqlCdcConsumer(
             src.configuration(),
             new HashSet<>(Collections.singletonList(qryEntity.getTableName())),
-            postgres.getPostgresDatabase()
+            postgres
         );
 
         waitForCondition(fut::isDone, getTestTimeout());
