@@ -777,7 +777,6 @@ public class IgniteRepositoryQuery implements RepositoryQuery {
                 sqlFieldsQry.setCollocated(config.collocated());
                 sqlFieldsQry.setDistributedJoins(config.distributedJoins());
                 sqlFieldsQry.setEnforceJoinOrder(config.enforceJoinOrder());
-                sqlFieldsQry.setLazy(config.lazy());
                 sqlFieldsQry.setLocal(config.local());
 
                 if (config.parts() != null && config.parts().length > 0)

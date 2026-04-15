@@ -66,12 +66,6 @@
             <scope>test</scope>
         </dependency>
 
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>ignite-tools</artifactId>
-            <scope>test</scope>
-        </dependency>
-
         <!-- Cassandra and required dependencies -->
         <dependency>
             <groupId>com.datastax.cassandra</groupId>

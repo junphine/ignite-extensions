@@ -37,9 +37,6 @@ import org.apache.ignite.internal.binary.BinaryFieldMetadata;
 import org.apache.ignite.internal.binary.BinaryObjectImpl;
 import org.apache.ignite.internal.binary.BinaryTypeImpl;
 import org.apache.ignite.internal.binary.GridBinaryMarshaller;
-
-import org.apache.ignite.internal.processors.igfs.IgfsBaseBlockKey;
-
 import de.bwaldvogel.mongo.bson.ObjectId;
 import org.apache.ignite.lang.IgniteUuid;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
@@ -81,7 +78,7 @@ public class DocumentUtil {
 	              field.setAccessible(true);
 	              result = field.get(instance);
 	              if( result != null && !doc.containsKey(field.getName())) {
-	            	  if(result instanceof IgniteUuid || result instanceof IgfsBaseBlockKey) {
+	            	  if(result instanceof IgniteUuid) {
 	            		  result = result.toString();
 	            	  }
 	            	  try {
@@ -275,8 +272,8 @@ public class DocumentUtil {
 	
 	/**
 	 * Binary decoder value only support bson type
-	 * @param key
-	 * @param idField
+	 * @param $value
+	 * @param level
 	 * @return
 	 */
 	public static Object toBsonValue(Object $value,int level) {		
@@ -352,9 +349,6 @@ public class DocumentUtil {
 
 	/**
 	 * top decode
-	 * @param key
-	 * @param obj
-	 * @param idField document _id
 	 * @return
 	 */
 	public static Document binaryObjectToDocument(BinaryObject obj){
@@ -426,10 +420,9 @@ public class DocumentUtil {
     /**
      * 
      * @param igniteBinary
-     * @param keyValue
-     * @param obj
+     * @param doc
      * @param typeName 
-     * @param keyField BinaryObject id 
+     * @param idField key from which field
      * @return
      */
     public static BinaryObject documentToBinaryObject(IgniteBinary igniteBinary,String typeName, Document doc, String idField){	

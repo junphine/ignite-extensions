@@ -132,7 +132,7 @@ public class SimpleTest {
     @Order(2)
     @Test
     public void testSecondarySparseVectorIndex() throws Exception {
-        collection.createIndex(json("text: 'knnVector'"), new IndexOptions().unique(false).sparse(false));
+        collection.createIndex(json("text: {type:'knnVector',indexType:'HNSW'}"), new IndexOptions().unique(false).sparse(false));
 
         collection.insertOne(json("_id: 1, text: '中国人'"));
         collection.insertOne(json("_id: 2, text: 'define rule'"));

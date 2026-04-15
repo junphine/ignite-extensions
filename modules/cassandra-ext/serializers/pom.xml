@@ -79,11 +79,6 @@
             <version>${objenesis.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>ignite-tools</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
