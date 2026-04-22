@@ -16,7 +16,7 @@
  */
 package jakarta.fileupload;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 final class HttpServletRequestFactory {
 

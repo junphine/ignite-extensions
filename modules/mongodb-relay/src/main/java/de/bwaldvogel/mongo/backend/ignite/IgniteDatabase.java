@@ -1,7 +1,6 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
 import static de.bwaldvogel.mongo.backend.Constants.ID_FIELD;
-import static de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil.objectToDocument;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -126,8 +125,8 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     	if(keys.size()>0 && keys.get(0).isText() ) {
     		String indexType = (String)keys.get(0).textOptions().get("type");
 
-    		if("knnVector".equalsIgnoreCase(indexType)) { // rnnVector
-                String vectorIndexType = keys.get(0).textOptions().getOrDefault("indexType", "").toString().toUpperCase();
+    		if("knnVector".equalsIgnoreCase(indexType) || "vector".equalsIgnoreCase(indexType)) { // rnnVector
+                String vectorIndexType = keys.get(0).textOptions().getOrDefault("indexType", "HNSW").toString().toUpperCase();
                 if(!vectorIndexType.isBlank()) {
                     if(vectorIndexType.startsWith("HNSW") || vectorIndexType.startsWith("IVF")) {
                         IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse,true);

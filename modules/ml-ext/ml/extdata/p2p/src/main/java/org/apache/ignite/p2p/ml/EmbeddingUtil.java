@@ -163,13 +163,13 @@ public class EmbeddingUtil {
 		return predictor;
 	}
 	
-	public static SparseVector textTwoGramVec(String sentence,String modelId) {		
+	public static SparseVector textTwoGramVec(String sentence,String modelId, int dimensions) {
 		Path file = Paths.get(modelId);
 		HuggingFaceTokenizer tokenizer = (HuggingFaceTokenizer)tokenizer(file);
 		// perceive-xlm-large
 		int vocbSize = 61580;
 		SparseVector vec = new SparseVector(vocbSize*2);
-		Encoding tokens = tokenizer.encode(sentence,false);
+		Encoding tokens = tokenizer.encode(sentence,false, false);
 		int last = 0;
 		for(long id: tokens.getIds()) {
 			vec.set((int)id, 1.0);
@@ -190,7 +190,7 @@ public class EmbeddingUtil {
 		
 	}
 	
-	public static DenseVector textXlmVec(String sentence,String modelId) {
+	public static DenseVector textXlmVec(String sentence,String modelId,int dimensions) {
 		Predictor<String,float[]> predictor;
 		if(modelId.indexOf("://")>1) {
 			predictor = predictor(modelId);

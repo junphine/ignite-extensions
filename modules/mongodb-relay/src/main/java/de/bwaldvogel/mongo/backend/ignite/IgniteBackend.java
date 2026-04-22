@@ -2,41 +2,41 @@ package de.bwaldvogel.mongo.backend.ignite;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.ignite.Ignite;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.cluster.ClusterNode;
-import org.apache.ignite.internal.processors.mongo.MongoPluginConfiguration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.ignite.configuration.IgniteConfiguration;
+import org.apache.ignite.mongo.MongoPluginConfiguration;
+import org.apache.ignite.plugin.PluginConfiguration;
+
 
 import de.bwaldvogel.mongo.MongoDatabase;
 import de.bwaldvogel.mongo.backend.AbstractMongoBackend;
-import de.bwaldvogel.mongo.backend.Utils;
 import de.bwaldvogel.mongo.bson.Document;
-import de.bwaldvogel.mongo.bson.ObjectId;
 import de.bwaldvogel.mongo.exception.MongoServerException;
-import de.bwaldvogel.mongo.oplog.Oplog;
-import io.netty.channel.Channel;
 
 public class IgniteBackend extends AbstractMongoBackend {    
 
     private final Ignite admin; // admin store
     
-    private final MongoPluginConfiguration cfg;
+    private MongoPluginConfiguration cfg;
     
     private boolean isKeepBinary = true;
     
     long oldVersion = System.nanoTime();
 
-    public static IgniteBackend inMemory(MongoPluginConfiguration cfg) {
-    	
-    	Ignite mvStore = Ignition.start();
-    	
-        return new IgniteBackend(mvStore,cfg);
+    public static IgniteBackend inMemory() {
+        IgniteConfiguration cfg = new IgniteConfiguration();
+        cfg.setIgniteInstanceName("testdb");
+        cfg.setLocalHost("127.0.0.1");
+
+        MongoPluginConfiguration mongoCfg = new MongoPluginConfiguration();
+        cfg.setPluginConfigurations(mongoCfg);
+    	Ignite admin = Ignition.getOrStart(cfg);
+        return new IgniteBackend(admin,mongoCfg);
     }
     
 	public void commit() {      
@@ -44,24 +44,40 @@ public class IgniteBackend extends AbstractMongoBackend {
         log.debug("Committed MVStore (old: {} new: {})", oldVersion, newVersion);
     }
 
+    public IgniteBackend(Ignite mvStore) {
+        this.admin = mvStore;
+        var igniteCfg = mvStore.configuration();
+
+        if (igniteCfg.getPluginConfigurations() != null) {
+            for (PluginConfiguration pluginCfg : igniteCfg.getPluginConfigurations()) {
+                if (pluginCfg instanceof MongoPluginConfiguration) {
+                    cfg = (MongoPluginConfiguration)pluginCfg;
+                    setKeepBinary(cfg.isWithBinaryStorage());
+                    break;
+                }
+            }
+        }
+    }
+
     public IgniteBackend(Ignite mvStore,MongoPluginConfiguration cfg) {
         this.admin = mvStore;
-        this.cfg = cfg;        
+        this.cfg = cfg;
+        setKeepBinary(cfg.isWithBinaryStorage());
     }
 
-    public IgniteBackend(String fileName,MongoPluginConfiguration cfg) {
-        this(openMvStore(fileName),cfg);
+    public IgniteBackend(String fileName) {
+        this(openAdminStore(fileName));
     }
 
-    private static Ignite openMvStore(String fileName) {
+    private static Ignite openAdminStore(String fileName) {
         if (fileName == null) {
             log.info("opening ignite use default config");
         } else {
             log.info("opening ignite use config file '{}'", fileName);
         }
-        Ignite mvStore = Ignition.start(fileName);
-        return mvStore;
-    }    
+        Ignite admin = Ignition.start(fileName);
+        return admin;
+    }
 
     @Override
     protected MongoDatabase openOrCreateDatabase(String databaseName) {
@@ -70,10 +86,13 @@ public class IgniteBackend extends AbstractMongoBackend {
     		gridName = null;
     		databaseName = IgniteDatabase.DEFAULT_DB_NAME;
     	}
-    	if(databaseName==null || databaseName.isEmpty()) {
+    	else if(databaseName==null || databaseName.isEmpty()) {
     		gridName = null;
     		databaseName = IgniteDatabase.DEFAULT_DB_NAME;
     	}
+        else if(databaseName.equalsIgnoreCase("admin")){
+            gridName = this.admin.name();
+        }
     	
     	try {
 	    	Ignite mvStore = Ignition.ignite(gridName);

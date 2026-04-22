@@ -87,7 +87,7 @@ public final class DenseVector extends AbstractVector {
     }
     
     /**
-     * @param size Vector cardinality.
+     * @param sto VectorStorage.
      */
     public DenseVector(VectorStorage sto) {
        super(sto);

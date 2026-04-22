@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteLogger;
+import org.apache.ignite.Ignition;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteEx;
@@ -44,6 +45,8 @@ import org.apache.tinkerpop.gremlin.structure.util.GraphFactory;
 import org.jetbrains.annotations.Nullable;
 
 import de.kp.works.ignite.IgniteConnect;
+
+import static org.apache.ignite.spi.IgnitePortProtocol.TCP;
 
 
 /**
@@ -182,9 +185,10 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		// start gremlin server singerton when admin grid start
 		if (gremlinServer == null && settings != null) {
 			try {
-				ExecutorService workerPool = ((IgniteEx) IgniteConnect.defaultIgnite).context().pools().getRestExecutorService();
+				IgniteEx ignite = (IgniteEx) IgniteConnect.defaultIgnite;
+				ExecutorService workerPool = ignite.context().pools().getRestExecutorService();
 				if (workerPool == null) {
-					workerPool = ((IgniteEx) IgniteConnect.defaultIgnite).context().pools().getServiceExecutorService();
+					workerPool = ignite.context().pools().getServiceExecutorService();
 				}
 				gremlinServer = new GremlinServer(settings, workerPool);				
 
@@ -193,6 +197,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 
 				log.info("TinkerPop: {}\n", GremlinServer.getHeader());
 				log.info("GremlinServer", "listern on " + settings.host + ":" + settings.port);
+				ignite.context().ports().registerPort(settings.port, TCP, getClass());
 
 			} catch (Exception e) {
 				log.error("GremlinServer bind fail.", e);

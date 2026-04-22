@@ -29,7 +29,7 @@ import java.io.UnsupportedEncodingException;
  * <p> After retrieving an instance of this class from a {@link
  * jakarta.fileupload.FileUpload FileUpload} instance (see
  * {@link jakarta.fileupload.servlet.ServletFileUpload
- * #parseRequest(javax.servlet.http.HttpServletRequest)}), you may
+ * #parseRequest(jakarta.servlet.http.HttpServletRequest)}), you may
  * either request all contents of the file at once using {@link #get()} or
  * request an {@link InputStream InputStream} with
  * {@link #getInputStream()} and process the file without attempting to load

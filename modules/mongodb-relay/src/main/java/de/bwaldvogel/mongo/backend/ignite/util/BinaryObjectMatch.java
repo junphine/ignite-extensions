@@ -47,7 +47,7 @@ public class BinaryObjectMatch extends DefaultQueryMatcher implements IgniteBiPr
 	/**
 	 * 预过滤，不确定的情况下返回true
 	 * @param document
-	 * @param query
+	 * @param queryValue
 	 * @return
 	 */
     public boolean checkMatch(Object queryValue,List<String> keys, BinaryObject document) {       

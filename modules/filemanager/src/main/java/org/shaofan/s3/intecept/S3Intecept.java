@@ -1,8 +1,8 @@
 package org.shaofan.s3.intecept;
 
-import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
-import org.apache.ignite.internal.processors.rest.igfs.util.ConvertOp;
-import org.apache.ignite.internal.processors.rest.igfs.util.FileUtil;
+import org.apache.ignite.internal.rest.igfs.util.ConvertOp;
+import org.apache.ignite.internal.rest.igfs.util.FileUtil;
+import org.shaofan.s3.config.SystemConfig;
 import org.shaofan.s3.util.MiscUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -12,8 +12,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;

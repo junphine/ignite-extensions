@@ -1,7 +1,7 @@
 package org.shaofan.s3.util;
 
-import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
-import org.apache.ignite.internal.processors.rest.igfs.util.FileUtil;
+import org.apache.ignite.internal.rest.igfs.util.FileUtil;
+import org.shaofan.s3.config.SystemConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;

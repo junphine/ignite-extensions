@@ -4,38 +4,28 @@ package de.bwaldvogel.examples;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 
-import org.apache.ignite.internal.processors.mongo.MongoPluginConfiguration;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.bson.Document;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import com.mongodb.MongoWriteException;
-import com.mongodb.ServerAddress;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 
 import de.bwaldvogel.mongo.MongoServer;
-import de.bwaldvogel.mongo.backend.AbstractTest;
 import de.bwaldvogel.mongo.backend.ignite.IgniteBackend;
 import static de.bwaldvogel.mongo.backend.TestUtils.json;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 
@@ -53,7 +43,7 @@ public class SQLSimpleTest {
     	if(server!=null) {
     		return ;
     	}
-        server = new MongoServer(IgniteBackend.inMemory(new MongoPluginConfiguration()));
+        server = new MongoServer(IgniteBackend.inMemory());
 
         // bind on a random local port
         String serverAddress = server.bindAndGetConnectionString();

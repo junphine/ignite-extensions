@@ -196,7 +196,7 @@ public class RawTextEmbeddingModel implements EmbeddingModel {
 
 	@Override
 	public int dimensions() {
-		return defaultOptions.getDimensions() == null ? 768 : defaultOptions.getDimensions();
+		return defaultOptions.getDimensions() == null ? 1024 : defaultOptions.getDimensions();
 	}
 
 	public RawTextEmbeddingOptions options() {

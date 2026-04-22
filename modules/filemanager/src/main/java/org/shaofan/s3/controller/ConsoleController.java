@@ -3,7 +3,7 @@ package org.shaofan.s3.controller;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
-import org.apache.ignite.internal.processors.rest.igfs.util.ConvertOp;
+import org.apache.ignite.internal.rest.igfs.util.ConvertOp;
 import org.shaofan.s3.model.Result;
 import org.shaofan.s3.util.S3Util;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +14,7 @@ import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -39,9 +39,9 @@ public class ConsoleController {
     @ResponseBody
     public Result listBucket() {
         List<Bucket> bucketList = s3Util.getBucketList();
-        List<org.apache.ignite.internal.processors.rest.igfs.model.Bucket> bucketInfoList = new ArrayList<>();
+        List<org.apache.ignite.internal.rest.igfs.model.Bucket> bucketInfoList = new ArrayList<>();
         for (Bucket item : bucketList) {
-            org.apache.ignite.internal.processors.rest.igfs.model.Bucket bucket = new org.apache.ignite.internal.processors.rest.igfs.model.Bucket();
+            org.apache.ignite.internal.rest.igfs.model.Bucket bucket = new org.apache.ignite.internal.rest.igfs.model.Bucket();
             bucket.setName(item.name());
             bucket.setCreationDate(item.creationDate().toString());
             bucketInfoList.add(bucket);

@@ -1,12 +1,12 @@
 package org.shaofan.s3.util;
 
-import org.apache.ignite.internal.processors.rest.igfs.util.DateUtil;
-import org.apache.ignite.internal.processors.rest.igfs.util.EncryptUtil;
+import org.apache.ignite.internal.rest.igfs.util.DateUtil;
+import org.apache.ignite.internal.rest.igfs.util.EncryptUtil;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 
 public class MiscUtil {

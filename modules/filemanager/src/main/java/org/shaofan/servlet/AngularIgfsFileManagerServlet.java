@@ -34,10 +34,10 @@ import java.util.zip.ZipOutputStream;
 
 import javax.activation.MimetypesFileTypeMap;
 import javax.mail.internet.MimeUtility;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -48,8 +48,8 @@ import org.apache.ignite.Ignition;
 import org.apache.ignite.igfs.IgfsFile;
 import org.apache.ignite.igfs.IgfsPath;
 import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.processors.rest.igfs.util.DateUtil;
-import org.apache.ignite.internal.processors.rest.igfs.util.IgfsUtils;
+import org.apache.ignite.internal.rest.igfs.util.DateUtil;
+import org.apache.ignite.internal.rest.igfs.util.IgfsUtils;
 import org.shaofan.s3.FileManagerInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

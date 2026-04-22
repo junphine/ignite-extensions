@@ -55,6 +55,7 @@ import org.jetbrains.annotations.Nullable;
 
 import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
 import de.bwaldvogel.mongo.bson.Document;
+import org.apache.ignite.mongo.query.MongoQueryEngine;
 
 /**
  * Implementation of {@link CacheStore} backed by CSV File and POJO via reflection.

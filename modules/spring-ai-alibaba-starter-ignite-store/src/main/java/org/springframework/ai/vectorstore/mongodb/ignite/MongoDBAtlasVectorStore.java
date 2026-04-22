@@ -204,7 +204,7 @@ public class MongoDBAtlasVectorStore extends AbstractObservationVectorStore impl
 	private void createSearchIndex() {
 		try {
 			this.mongoTemplate.indexOps(this.collectionName).ensureIndex(createTextIndexDefinition());
-			this.mongoTemplate.executeCommand(createSearchIndexDefinition());
+			this.mongoTemplate.executeCommand(createVectorIndexDefinition());
 		}
 		catch (UncategorizedMongoDbException e) {
 			Throwable cause = e.getCause();
@@ -231,31 +231,26 @@ public class MongoDBAtlasVectorStore extends AbstractObservationVectorStore impl
 	/**
 	 * Provides the Definition for the search index
 	 */
-	private org.bson.Document createSearchIndexDefinition() {
-		List<org.bson.Document> vectorFields = new ArrayList<>();
-		String model = "chinese";
+	private org.bson.Document createVectorIndexDefinition() {
+		String modelUrl = "chinese";
 		if (this.embeddingModel instanceof RawTextEmbeddingModel) {
 			RawTextEmbeddingModel rawEmbedding = (RawTextEmbeddingModel) this.embeddingModel;
-			model = rawEmbedding.options().getModel();
+			modelUrl = rawEmbedding.options().getModel();
 		}
 
-		vectorFields.add(new org.bson.Document().append("type", "knnVector")
+		org.bson.Document indexDesc = new org.bson.Document().append("type", "knnVector")
 			.append("path", this.pathName)
-			.append("modelId", model)
-			.append("indexType", "ANN")
+			.append("modelUrl", modelUrl)
+			//.append("indexType", "HNSW")
 			.append("dimensions", this.embeddingModel.dimensions())
-			.append("similarity", "cosine"));
-
-		vectorFields.addAll(this.metadataFieldsToFilter.stream()
-			.map(fieldName -> new org.bson.Document().append("type", "filter").append("path", "metadata." + fieldName))
-			.toList());
+			.append("similarity", "cosine");
 
 		return new org.bson.Document().append("createIndexes", this.collectionName)
 			.append("indexes",
 					List.of(new org.bson.Document().append("name", this.vectorIndexName)
-						.append("type", "vectorSearch")
+						.append("type", "vector")
 						.append("sparse", false)
-						.append("key", new org.bson.Document(this.pathName, vectorFields.get(0)))));
+						.append("key", new org.bson.Document(this.pathName, indexDesc))));
 	}
 
 	/**
@@ -353,6 +348,11 @@ public class MongoDBAtlasVectorStore extends AbstractObservationVectorStore impl
 		}
 		var vectorSearch = new VectorSearchAggregation(queryEmbedding, this.pathName, this.numCandidates,
 				this.vectorIndexName, request.getTopK(), similarityThreshold, nativeFilterExpressions);
+
+		List<org.bson.Document> fitlers = this.metadataFieldsToFilter.stream()
+				.map(fieldName -> new org.bson.Document().append("type", "filter").append("path", "metadata." + fieldName))
+				.toList();
+
 		Aggregation aggregation = Aggregation.newAggregation(vectorSearch,
 				Aggregation.addFields()
 					.addField(SCORE_FIELD_NAME)

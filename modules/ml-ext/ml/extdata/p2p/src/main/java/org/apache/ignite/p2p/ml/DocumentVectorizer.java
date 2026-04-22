@@ -18,45 +18,52 @@
 package org.apache.ignite.p2p.ml;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.Map;
+
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 
 /**
- * 将文本列表向量化，元素是Vector，最终生成的是LabelVector<Vector>
+ * 将文档列表向量化，元素是Vector，最终生成的是LabelVector<Vector>
  */
-public class SentencesVectorizer extends Vectorizer<Object, List<String>, Integer, Vector> {	
+public class DocumentVectorizer extends Vectorizer<String, Map<String,Object>, String, Vector> {
 	
 	private static final long serialVersionUID = 2342048692680034785L;
 	
 	final String modelId;
+
+	final int dimensions;
+
+    private List<String> allCoordinates;
 	
-	public SentencesVectorizer(String modelId) {
+	public DocumentVectorizer(String modelId, int dimensions) {
 		super(new DenseVector(1));
-		this.modelId = modelId;		
+		this.modelId = modelId;
+		this.dimensions = dimensions;
+		this.labeled("_id");
 	}
+
+    public DocumentVectorizer(String modelId, int dimensions,List<String> fields) {
+        super(new DenseVector(1),fields.toArray(new String[]{}));
+        this.modelId = modelId;
+        this.dimensions = dimensions;
+        this.labeled("_id");
+    }
 	
     /** {@inheritDoc} */
-    @Override protected Serializable feature(Integer coord, Object key, List<String> value) {
-    	StringBuilder sb = new StringBuilder();
-    	for(int i=0;i<value.size();i++) {
-    		if(labelCoord != null && i==labelCoord) {
-    			continue;
-    		}
-    		sb.append(value.get(i));
-    		sb.append("\n");
-    	}
-        Vector vec = EmbeddingUtil.textXlmVec(sb.toString(), modelId);
+    @Override protected Serializable feature(String coord, String key, Map<String,Object> value) {
+    	Object sb = value.get(key);
+        Vector vec = EmbeddingUtil.textXlmVec(sb.toString(), modelId, dimensions);
         return vec;
     }
 
     /** {@inheritDoc} */
-    @Override protected Vector label(Integer coord, Object key, List<String> value) {
-        String text = value.get(coord);
-        Vector vec = EmbeddingUtil.textXlmVec(text, modelId);
+    @Override protected Vector label(String coord, String key, Map<String,Object> value) {
+        String text = (String)value.get(coord);
+        Vector vec = EmbeddingUtil.textXlmVec(text, modelId, dimensions);
         return vec;
         
     }
@@ -67,15 +74,9 @@ public class SentencesVectorizer extends Vectorizer<Object, List<String>, Intege
     }
 
     /** {@inheritDoc} */
-    @Override protected List<Integer> allCoords(Object key, List<String> value) {
-    	if(labelCoord != null) {
-    		if(labelCoord!=0)
-    			return List.of(0,labelCoord);
-    		return List.of(labelCoord,1);
-    	}
-    	if(lbCoordinateShortcut != null) {
-   		 	return List.of(0,1);
-    	}
-        return List.of(0);
+    @Override protected List<String> allCoords(String key, Map<String,Object> value) {
+        if(allCoordinates==null)
+            allCoordinates = new ArrayList<>(value.keySet());
+        return allCoordinates;
     }
 }

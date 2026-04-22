@@ -58,12 +58,12 @@ public class TransactionTest {
         for(String name:client.getDatabase(dbname).listCollectionNames()) {
         	System.out.println(name);
         }
-        collection = client.getDatabase(dbname).getCollection("test");
+        collection = client.getDatabase(dbname).getCollection("test2");
     }
 
     @AfterEach
     public void tearDown() {
-    	//collection.drop();
+    	collection.drop();
     	//client.getDatabase("testdb").drop();
         client.close();       
     }
@@ -82,13 +82,13 @@ public class TransactionTest {
         }
         cursor.close();
 
-        assertThatExceptionOfType(NoSuchElementException.class)
+        assertThatExceptionOfType(java.lang.IllegalStateException.class)
             .isThrownBy(cursor::next)
-            .withMessage(null);
+            .withMessage("Cursor has been closed");
 
     }
 
-    //@Test
+    @Test
     public void testBuildData() throws Exception {        
         
         ClientSession session = client.startSession();

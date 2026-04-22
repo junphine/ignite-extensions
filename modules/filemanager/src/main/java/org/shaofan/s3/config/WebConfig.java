@@ -1,10 +1,8 @@
 package org.shaofan.s3.config;
 
 
-import javax.servlet.MultipartConfigElement;
+import jakarta.servlet.MultipartConfigElement;
 
-import org.apache.ignite.internal.processors.rest.igfs.config.RangeConverter;
-import org.apache.ignite.internal.processors.rest.igfs.config.SystemConfig;
 import org.shaofan.s3.intecept.S3Intecept;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -21,7 +19,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableWebMvc
 public class WebConfig implements WebMvcConfigurer {
     @Autowired
-    private S3Intecept s3Intecept;   
+    private S3Intecept s3Intecept;
     
     
     @Override

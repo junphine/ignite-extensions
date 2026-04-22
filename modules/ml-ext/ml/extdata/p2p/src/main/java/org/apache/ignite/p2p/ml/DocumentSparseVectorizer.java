@@ -18,46 +18,51 @@
 package org.apache.ignite.p2p.ml;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.Map;
+
 import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
-import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.ignite.ml.math.primitives.vector.impl.SparseVector;
 
 /**
- * 将文本列表向量化，元素是Vector，最终生成的是LabelVector<Vector>
+ * 将文档向量化，元素是Vector，最终生成的是LabelVector<Vector>
  */
-public class SentencesSparseVectorizer extends Vectorizer<Object, List<String>, Integer, SparseVector> {
+public class DocumentSparseVectorizer extends Vectorizer<String, Map<String,Object>, String, SparseVector> {
 
 	private static final long serialVersionUID = 882779686951425867L;
 	
 	final String modelId;
+	final int dimensions;
+
+    private List<String> allCoordinates;
 	
-	public SentencesSparseVectorizer(String modelId) {
+	public DocumentSparseVectorizer(String modelId, int dimensions) {
 		super(new DenseVector(1));
 		this.modelId = modelId;
+		this.dimensions = dimensions;
+        this.labeled("_id");
 	}
+
+    public DocumentSparseVectorizer(String modelId, int dimensions,List<String> fields) {
+        super(new DenseVector(1),fields.toArray(new String[]{}));
+        this.modelId = modelId;
+        this.dimensions = dimensions;
+        this.labeled("_id");
+    }
 	
     /** {@inheritDoc} */
-    @Override protected Serializable feature(Integer coord, Object key, List<String> value) {
-    	StringBuilder sb = new StringBuilder();
-    	for(int i=0;i<value.size();i++) {
-    		if(labelCoord != null && i==labelCoord) {
-    			continue;
-    		}
-    		sb.append(value.get(i));
-    		sb.append("\n");
-    	}
-    	SparseVector vec = EmbeddingUtil.textTwoGramVec(sb.toString(), modelId);
+    @Override protected Serializable feature(String coord, String key, Map<String,Object> value) {
+    	String fieldValue = (String)value.get(key);
+    	SparseVector vec = EmbeddingUtil.textTwoGramVec(fieldValue, modelId, dimensions);
         return vec;
     }
 
     /** {@inheritDoc} */
-    @Override protected SparseVector label(Integer coord, Object key, List<String> value) {
-        String text = value.get(coord);
-        SparseVector vec = EmbeddingUtil.textTwoGramVec(text, modelId);
+    @Override protected SparseVector label(String coord, String key, Map<String,Object> value) {
+        String text = (String)value.get(coord);
+        SparseVector vec = EmbeddingUtil.textTwoGramVec(text, modelId,dimensions);
         return vec;
         
     }
@@ -68,15 +73,9 @@ public class SentencesSparseVectorizer extends Vectorizer<Object, List<String>, 
     }
 
     /** {@inheritDoc} */
-    @Override protected List<Integer> allCoords(Object key, List<String> value) {
-    	if(labelCoord != null) {
-    		if(labelCoord!=0)
-    			return List.of(0,labelCoord);
-    		return List.of(labelCoord,1);
-    	}
-    	if(lbCoordinateShortcut != null) {
-   		 	return List.of(0,1);
-    	}
-        return List.of(0);
+    @Override protected List<String> allCoords(String key, Map<String,Object> value) {
+        if(allCoordinates==null)
+            allCoordinates = new ArrayList<>(value.keySet());
+        return allCoordinates;
     }
 }

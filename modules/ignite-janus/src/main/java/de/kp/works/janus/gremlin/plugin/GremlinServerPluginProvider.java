@@ -129,7 +129,6 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		}
 
 		if (cfg != null) {
-			
 			databaseName = igniteCfg.getIgniteInstanceName();
 			gremlin.databaseName = databaseName;				
 			counter++;

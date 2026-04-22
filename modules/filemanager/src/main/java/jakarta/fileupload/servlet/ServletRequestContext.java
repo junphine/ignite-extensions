@@ -18,7 +18,7 @@ package jakarta.fileupload.servlet;
 
 import jakarta.fileupload.FileUploadBase;
 import jakarta.fileupload.UploadContext;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
 import java.io.InputStream;

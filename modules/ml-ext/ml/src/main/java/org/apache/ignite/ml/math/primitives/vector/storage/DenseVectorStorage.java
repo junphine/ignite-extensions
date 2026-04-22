@@ -106,7 +106,7 @@ public class DenseVectorStorage implements VectorStorage {
 
     /** {@inheritDoc}} */
     @Override public boolean isArrayBased() {
-        return true;
+        return false;
     }
 
     /** {@inheritDoc} */

@@ -1,43 +1,42 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
 import de.bwaldvogel.mongo.bson.Document;
+import org.jetbrains.annotations.NotNull;
 
-public final class IdWithMeta {
+import java.util.Comparator;
 
-    final Object key;
-    final boolean ascending;
-    final Document meta;
-    
-    Object indexValue;
+public final class IdWithMeta implements Comparable<IdWithMeta>{
 
-    public IdWithMeta(Object key, boolean ascending) {
-        this.key = key;
-        this.ascending = ascending;
-        this.meta = null;
+    public static Comparator scoreComparator(){
+        return (Object a,Object b)->{
+            if(a instanceof IdWithMeta){
+                if(b instanceof IdWithMeta) {
+                    return -((IdWithMeta) a).compareTo((IdWithMeta) b);
+                }
+                return -1;
+            }
+            else{
+                return 1;
+            }
+        };
     }
 
-    public IdWithMeta(Object key, boolean ascending,Document textOptions) {
+    final Object key;
+    final Document meta;
+
+    public IdWithMeta(Object key, Document meta) {
         this.key = key;
-        this.ascending = ascending;
-        this.meta = textOptions;
+        this.meta = meta;
     }
 
     public Object getKey() {
         return key;
     }
 
-    public boolean isAscending() {
-        return ascending;
-    }
-
-    public IdWithMeta indexValue(Object indexValue) {
-    	this.indexValue = indexValue;
-    	return this;
-    }
     
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "[key=" + key + " " + (ascending ? "ASC" : "DESC") + "]";
+        return getClass().getSimpleName() + "[key=" + key + ", meta=" + meta.toString() + "]";
     }
     
     public Document meta() {
@@ -69,6 +68,35 @@ public final class IdWithMeta {
 			return false;
 		return true;
 	}
-    
-    
+    @Override
+    public int compareTo(@NotNull IdWithMeta other) {
+        if(this.meta==null) return -1;
+        if(other.meta==null) return 1;
+        Float score = (Float)meta.getOrDefault("searchScore",0.0f);
+        Float vScore = (Float)meta.getOrDefault("vectorSearchScore",0.0f);
+        Float score2 = (Float)other.meta.getOrDefault("searchScore",0.0f);
+        Float vScore2 = (Float)other.meta.getOrDefault("vectorSearchScore",0.0f);
+        float r = (score + vScore) - (score2 + vScore2);
+        if(r>0) return 1;
+        if(r<0) return -1;
+        return 0;
+    }
+
+    public boolean mergeWith(IdWithMeta other){
+        if(meta!=null){
+            if(other.meta!=null){
+                Float score = (Float)meta.get("searchScore");
+                Float vScore = (Float)meta.get("vectorSearchScore");
+                this.meta.putAll(other.meta);
+                if(score!=null){
+                    this.meta.computeIfPresent("searchScore",(k,v)-> (Float)v+score );
+                }
+                if(vScore!=null){
+                    this.meta.computeIfPresent("vectorSearchScore",(k,v)-> (Float)v+vScore );
+                }
+                return true;
+            }
+        }
+        return false;
+    }
 }

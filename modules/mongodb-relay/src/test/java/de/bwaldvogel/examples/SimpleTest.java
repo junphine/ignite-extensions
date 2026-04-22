@@ -3,24 +3,18 @@ package de.bwaldvogel.examples;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 
-import java.net.InetSocketAddress;
 import java.util.Map;
 
-import org.apache.ignite.internal.processors.mongo.MongoPluginConfiguration;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.bson.Document;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.TestMethodOrder;
 
 import com.mongodb.MongoWriteException;
-import com.mongodb.ServerAddress;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -29,12 +23,9 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.IndexOptions;
 
 import de.bwaldvogel.mongo.MongoServer;
-import de.bwaldvogel.mongo.backend.AbstractTest;
 import de.bwaldvogel.mongo.backend.ignite.IgniteBackend;
 import static de.bwaldvogel.mongo.backend.TestUtils.json;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
-import org.apache.ignite.internal.processors.query.h2.sys.SystemViewH2Adapter;
 
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -49,14 +40,14 @@ public class SimpleTest {
     	if(server!=null) {
     		return ;
     	}
-        server = new MongoServer(IgniteBackend.inMemory(new MongoPluginConfiguration()));
+        server = new MongoServer(IgniteBackend.inMemory());
 
         // bind on a random local port
         String serverAddress = server.bindAndGetConnectionString();
 
         client = MongoClients.create(serverAddress);
         
-        for(String name:client.getDatabase("testdb").listCollectionNames()) {
+        for(String name : client.getDatabase("testdb").listCollectionNames()) {
         	System.out.println(name);
         }
         collection = client.getDatabase("testdb").getCollection("testcoll");
@@ -132,18 +123,20 @@ public class SimpleTest {
     @Order(2)
     @Test
     public void testSecondarySparseVectorIndex() throws Exception {
-        collection.createIndex(json("text: {type:'knnVector',indexType:'HNSW'}"), new IndexOptions().unique(false).sparse(false));
 
-        collection.insertOne(json("_id: 1, text: '中国人'"));
-        collection.insertOne(json("_id: 2, text: 'define rule'"));
+        collection.createIndex(json("text: 'text', title:'text'"), new IndexOptions().name("text_search").unique(false).sparse(true));
+        collection.createIndex(json("text_embedding: {type:'knnVector',indexType:'HNSW',dimensions:1024}"), new IndexOptions().name("text_embedding").sparse(false));
+
+        collection.insertOne(json("_id: 1, text: '中国人',text_embedding: '中国人',title:'title 1'"));
+        collection.insertOne(json("_id: 2, text: 'define rule',text_embedding: 'define rule',title:'title 2'"));
         collection.insertOne(json("_id: 3"));
         collection.insertOne(json("_id: 4"));
-        collection.insertOne(json("_id: 5, text: 'China people'"));
+        collection.insertOne(json("_id: 5, text: 'China people',text_embedding: 'China people',title:'title 5'"));
 
-        assertMongoWriteException(() -> collection.insertOne(json("_id: 6, text: '大秦帝国'")),
+        assertMongoWriteException(() -> collection.insertOne(json("_id: 3, text: '大秦帝国'")),
             11000, "DuplicateKey", "E11000 duplicate key error collection: testdb.testcoll index: text_1 dup key: { text: null }");
 
-        assertMongoWriteException(() -> collection.insertOne(json("_id: 7, text: '日本东京真繁华'")),
+        assertMongoWriteException(() -> collection.insertOne(json("_id: 4, text: '日本东京真繁华'")),
             11000, "DuplicateKey", "E11000 duplicate key error collection: testdb.testcoll index: text_1 dup key: { text: \"abc\" }");
 
         assertMongoWriteException(() -> collection.updateOne(json("_id: 2"), new Document("$set", json("text: null"))),
@@ -151,25 +144,39 @@ public class SimpleTest {
 
         collection.deleteOne(json("_id: 4"));
 
-        collection.updateOne(json("_id: 3"), new Document("$set", json("text: '瓷器国 China'")));
+        collection.updateOne(json("_id: 3"), new Document("$set", json("text: '瓷器国 China',text_embedding: '瓷器国 China'")));
         //collection.updateOne(json("_id: 1"), new Document("$set", json("text: 'def'")));
-        
-        for(int i=0;i<10;i++) {
-        	System.in.read();
-        }
-        
-        FindIterable<Document>  ret = collection.find(json("$text: {$search: 'China', $score: 1}"));
+
+        System.out.println("begin $text $knnVector text");
+        FindIterable<Document>  ret = collection.find(json("$text: {$knnVector: 'China', $scoreThreshold: 0.24}"));
         MongoCursor<Document> it = ret.cursor();
         while(it.hasNext()) {
         	Document doc = it.next();
         	System.out.println(doc);
         }
 
-        ret = collection.find(json("text: {$text: 'China', $score: 1}"));
+        System.out.println("begin field $knnVector text");
+        ret = collection.find(json("text_embedding: {$knnVector: 'China', $scoreThreshold: 0.24}"));
         it = ret.cursor();
         while(it.hasNext()) {
         	Document doc = it.next();
         	System.out.println(doc);
+        }
+
+        System.out.println("begin field $search text");
+        ret = collection.find(json("text: {$search: 'China', $scoreThreshold: 0.24},title:'title'"));
+        it = ret.cursor();
+        while(it.hasNext()) {
+            Document doc = it.next();
+            System.out.println(doc);
+        }
+
+        System.out.println("begin mixed $search and $knnVector text");
+        ret = collection.find(json("text: {$search: 'China'},text_embedding: {$knnVector: '中国人', $scoreThreshold: 0.24}"));
+        it = ret.cursor();
+        while(it.hasNext()) {
+            Document doc = it.next();
+            System.out.println(doc);
         }
     }
     
@@ -187,10 +194,10 @@ public class SimpleTest {
         collection.insertOne(json("_id: 4"));
         collection.insertOne(json("_id: 5, text: null"));
 
-        assertMongoWriteException(() -> collection.insertOne(json("_id: 6, text: null")),
+        assertMongoWriteException(() -> collection.insertOne(json("_id: 3, text: null")),
             11000, "DuplicateKey", "E11000 duplicate key error collection: testdb.testcoll index: text_1 dup key: { text: null }");
 
-        assertMongoWriteException(() -> collection.insertOne(json("_id: 7, text: 'abc'")),
+        assertMongoWriteException(() -> collection.insertOne(json("_id: 4, text: 'abc'")),
             11000, "DuplicateKey", "E11000 duplicate key error collection: testdb.testcoll index: text_1 dup key: { text: \"abc\" }");
 
         assertMongoWriteException(() -> collection.updateOne(json("_id: 2"), new Document("$set", json("text: null"))),

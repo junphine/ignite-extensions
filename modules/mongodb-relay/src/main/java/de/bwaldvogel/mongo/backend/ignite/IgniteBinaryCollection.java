@@ -43,7 +43,6 @@ import org.apache.ignite.predicate.FieldEqualsMatch;
 import com.github.vincentrussell.query.mongodb.sql.converter.FieldType;
 import com.github.vincentrussell.query.mongodb.sql.converter.ParseException;
 import com.github.vincentrussell.query.mongodb.sql.converter.QueryConverter;
-import com.google.common.collect.Sets;
 
 import de.bwaldvogel.mongo.backend.AbstractMongoCollection;
 import de.bwaldvogel.mongo.backend.CloseableIterator;
@@ -144,7 +143,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         if (idField != null) {
             key = document.get(idField);
         }
-        if (key == null && idField != "_id") {
+        if (key == null && !idField.equals("_id")) {
             key = document.get("_id");
         }
         
@@ -241,14 +240,13 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		}
 		
 		Collections.sort(enabledIndexes,TransformerUtil::indexCompareTo);
-		
+
 		for (Index<Object> index : enabledIndexes) {
 			Iterable<Object> positions = index.getPositions(query);
-			if(index.isUnique() || (positions instanceof List && ((List)positions).size()<=100)) {
+			indexResult.add(positions);
+			// empty results
+			if((positions instanceof List && ((List)positions).isEmpty())) {
 				return matchDocuments(query, positions, orderBy, numberToSkip, limit, batchSize, fieldSelector);
-			}
-			else {
-				indexResult.add(positions);
 			}
 		}
 		if(indexResult.size()==1) {
@@ -256,7 +254,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		}
 		else if(indexResult.size()>1) {			
 			final LinkedHashMap<Object,Object> resultMap = new LinkedHashMap<>();
-			HashSet<Object> ids = new HashSet<>();
+			HashSet<Object> deleteIds = new HashSet<>();
 			int n = 0;
 			for(Iterable<Object> positions: indexResult) {
 				for(Object position: positions) {
@@ -276,35 +274,34 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 								IdWithMeta idWithScore = (IdWithMeta)position;  
 								if(originPosition instanceof IdWithMeta) {
 									IdWithMeta idWithScoreOrigin = (IdWithMeta)originPosition;
-									if(idWithScoreOrigin.meta!=null) {
-										if(idWithScore.meta!=null)
-											idWithScoreOrigin.meta.putAll(idWithScore.meta);
-									}
-									else {
+									// compute final score
+									if(!idWithScoreOrigin.mergeWith(idWithScore)){
 										resultMap.put(rawPosition, position);
 									}
 								}
 								else {
 									resultMap.put(rawPosition, position);
 								}
-								
 							}
-							ids.add(rawPosition);
+						}
+						else{
+							deleteIds.add(rawPosition);
 						}
 					}						
 				}					
 				
 				if(n>0) {
-					Set<Object> removes = Sets.difference(resultMap.keySet(),ids);
-					Sets.newCopyOnWriteArraySet(removes).forEach(id->{
-						resultMap.remove(id);
-					});
-					ids.clear();
+					deleteIds.forEach(resultMap::remove);
+					deleteIds.clear();
 				}					
 				n++;
 			}
-			
-			return matchDocuments(query, resultMap.values(), orderBy, numberToSkip, limit, batchSize, fieldSelector);
+
+			List<Object> result = new ArrayList<>(resultMap.values());
+			if(orderBy==null){
+				result.sort(IdWithMeta.scoreComparator());
+			}
+			return matchDocuments(query, result, orderBy, numberToSkip, limit, batchSize, fieldSelector);
 		}
 		
 		return matchDocuments(query, orderBy, numberToSkip, limit, batchSize, fieldSelector);
@@ -366,9 +363,8 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 	    		return TransformerUtil.mapListField(cursor,this.idField);
        	 	}
         	else {
-        		QueryConverter queryConverter;
 				try {
-					queryConverter = new QueryConverter.Builder()
+					QueryConverter queryConverter = new QueryConverter.Builder()
 							.sqlString(sqlQ.getSql())
 							.aggregationBatchSize(sqlQ.getPageSize())
 							.aggregationAllowDiskUse(false)
@@ -508,9 +504,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		return tableName;
 	}
     /**
-     * 
-     * @param dataMap
-     * @param obj
+     *
      * @return schema,typeName,keyField
      */
     public String getTypeName() {

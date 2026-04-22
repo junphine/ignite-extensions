@@ -20,7 +20,7 @@ import jakarta.fileupload.Constants;
 import jakarta.fileupload.FileItem;
 import jakarta.fileupload.MockHttpServletRequest;
 import jakarta.fileupload.disk.DiskFileItemFactory;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.Test;
 
 import java.util.List;

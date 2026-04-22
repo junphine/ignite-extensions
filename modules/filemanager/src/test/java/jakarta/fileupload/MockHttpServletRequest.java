@@ -27,23 +27,15 @@ import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Map;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.DispatcherType;
-import javax.servlet.ReadListener;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletInputStream;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletMapping;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpUpgradeHandler;
-import javax.servlet.http.Part;
-import javax.servlet.http.PushBuilder;
+import jakarta.servlet.*;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletMapping;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpUpgradeHandler;
+import jakarta.servlet.http.Part;
+import jakarta.servlet.http.PushBuilder;
 
 public class MockHttpServletRequest implements HttpServletRequest {
 
@@ -634,7 +626,12 @@ public class MockHttpServletRequest implements HttpServletRequest {
    
     public String getProtocolRequestId() {
         return null;
-    }   
+    }
+
+    @Override
+    public ServletConnection getServletConnection() {
+        return null;
+    }
 
     /**
      * @see jakarta.servlet.ServletRequest#getRemotePort()

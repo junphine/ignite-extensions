@@ -16,7 +16,7 @@
  */
 package jakarta.fileupload;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.fileupload.FileUploadBase.FileUploadIOException;
 import jakarta.fileupload.FileUploadBase.SizeException;
 import jakarta.fileupload.disk.DiskFileItemFactory;
