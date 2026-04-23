@@ -9,7 +9,7 @@
 	</parent>
 	
     <groupId>org.elasticsearch.relay</groupId>
-	<artifactId>elasticsearch-relay</artifactId>
+	<artifactId>ignite-elasticsearch-relay</artifactId>
 	<version>2.16.999-SNAPSHOT</version>
 	<packaging>jar</packaging>
 	<build>
@@ -17,6 +17,12 @@
 	</build>
     
 	<dependencies>
+		<dependency>
+			<groupId>jakarta.servlet</groupId>
+			<artifactId>jakarta.servlet-api</artifactId>
+			<version>6.0.0</version>
+			<scope>provided</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.apache.ignite</groupId>
 			<artifactId>ignite-core</artifactId>
