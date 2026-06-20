@@ -24,12 +24,6 @@
 		var loginUrl = '/login';
 		var storageHost = '';
 		var servicePath = '/filemanager/s3-rest/';
-
-	    const currentStorageHost = localStorage.getItem('currentStorageHost');
-	    if (currentStorageHost) {     
-	        storageHost = currentStorageHost;
-	    }
-
 		var storageUrl = storageHost+ servicePath;
 	    
     	var xhr0 = $.ajax({
@@ -57,8 +51,8 @@
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {
             var defaults = config.$get();
             config.set({
-				        ticket: ticket,
-                appName: 'File Manager',
+				ticket: ticket,
+                appName: 'S3 File Manager',
                 defaultLang: 'zh',
                 listUrl: storageUrl+'list/',
                 uploadUrl: storageUrl+'upload/',

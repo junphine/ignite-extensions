@@ -23,7 +23,7 @@
 		var authUrl = '/api/v1/user';
 		var loginUrl = '/login';
 		var storageHost = '';
-		var servicePath = '/filemanager/file/';
+		var servicePath = '/filemanager/file';
 	    const currentStorageHost = localStorage.getItem('currentStorageHost');
 	    if (currentStorageHost) {     
 	        storageHost = currentStorageHost;
@@ -55,22 +55,22 @@
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {
             var defaults = config.$get();
             config.set({
-				        ticket: ticket,
-                appName: 'File Manager',
+				ticket: ticket,
+                appName: 'Advance File Manager',
                 defaultLang: 'zh',
-                listUrl: storageUrl+'list/',
-                uploadUrl: storageUrl+'upload/',
-                downloadFileUrl: storageUrl+'preview/',
-                createFolderUrl: storageUrl+'createFolder/',
-                permissionsUrl: storageUrl+'changePermissions/',
-                copyUrl: storageUrl+'copy/',
-                moveUrl: storageUrl+'move/',
-                removeUrl: storageUrl+'remove/',
-                renameUrl: storageUrl+'rename/',
-                getContentUrl: storageUrl+'getContent/',
-                editUrl: storageUrl+'edit/',
-                compressUrl: storageUrl+'compress/',
-                extractUrl: storageUrl+'extract/',
+                listUrl: storageUrl,
+                uploadUrl: storageUrl,
+                downloadFileUrl: storageUrl,
+                createFolderUrl: storageUrl,
+                permissionsUrl: storageUrl,
+                copyUrl: storageUrl,
+                moveUrl: storageUrl,
+                removeUrl: storageUrl,
+                renameUrl: storageUrl,
+                getContentUrl: storageUrl,
+                editUrl: storageUrl,
+                compressUrl: storageUrl,
+                extractUrl: storageUrl,
                 documentViewUrl: storageUrl+'office/',
                 pickCallback: function (item) {
 				    if(item.type!='file')
@@ -83,7 +83,7 @@
 					  return ;
 					}
 					else if(item.name.endsWith('.ipynb') ){
-					  var msg = 'Use %s "filemanager/s3-rest%s" as url for import external jupiter nodebook to zeppelin'
+              var msg = 'Use %s "filemanager/file%s" as url for import external jupiter nodebook to zeppelin'
                             .replace('%s', item.type)
                             .replace('%s', item.fullPath());
 					  window.alert(msg);
@@ -95,7 +95,7 @@
 					}
 					
 					
-					var msg = 'Picked %s "filemanager/s3%s" for external use'
+            var msg = 'Picked %s "filemanager/file%s" for external use'
                             .replace('%s', item.type)
                             .replace('%s', item.fullPath());
                     window.alert(msg);

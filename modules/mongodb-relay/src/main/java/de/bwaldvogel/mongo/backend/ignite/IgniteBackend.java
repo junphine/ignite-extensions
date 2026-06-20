@@ -5,10 +5,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import de.bwaldvogel.mongo.bson.ObjectId;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.Ignition;
 import org.apache.ignite.cluster.ClusterNode;
 import org.apache.ignite.configuration.IgniteConfiguration;
+import org.apache.ignite.internal.util.IgniteExceptionRegistry;
 import org.apache.ignite.mongo.MongoPluginConfiguration;
 import org.apache.ignite.plugin.PluginConfiguration;
 
@@ -26,7 +28,7 @@ public class IgniteBackend extends AbstractMongoBackend {
     
     private boolean isKeepBinary = true;
     
-    long oldVersion = System.nanoTime();
+    long oldVersion = System.currentTimeMillis();
 
     public static IgniteBackend inMemory() {
         IgniteConfiguration cfg = new IgniteConfiguration();
@@ -40,8 +42,10 @@ public class IgniteBackend extends AbstractMongoBackend {
     }
     
 	public void commit() {      
-        long newVersion = System.nanoTime();
+        long newVersion = System.currentTimeMillis();
         log.debug("Committed MVStore (old: {} new: {})", oldVersion, newVersion);
+        admin.snapshot().createSnapshot("ts-"+newVersion);
+        oldVersion = newVersion;
     }
 
     public IgniteBackend(Ignite mvStore) {
@@ -108,9 +112,9 @@ public class IgniteBackend extends AbstractMongoBackend {
         return Ignition.allGrids().stream().map(Ignite::name).map(n -> n==null?"default":n).collect(Collectors.toSet());
     }
     
-    @Override
-    protected Document getServerDescription(){
-    	long topV = admin.cluster().topologyVersion();
+    //@Override
+    protected Document _getServerDescription(){
+        IgniteExceptionRegistry registry;
     	List<String> hostSet = new ArrayList<>();
     	StringBuilder primary = new StringBuilder("");
     	for(ClusterNode node: admin.cluster().nodes()) {
@@ -120,10 +124,10 @@ public class IgniteBackend extends AbstractMongoBackend {
     		}
     	}
     	Document response = super.getServerDescription();
-    	//ObjectId processId = new ObjectId(admin.cluster().id().toString().replaceAll("-", "").substring(0,24));
-    	//response.append("topologyVersion", processId);
-    	//response.append("hosts", hostSet);
-    	//response.put("primary",primary);
+    	ObjectId processId = new ObjectId(admin.cluster().id().toString().replaceAll("-", "").substring(0,24));
+    	response.append("topologyVersion", processId);
+    	response.append("hosts", hostSet);
+    	response.put("primary",primary);
     	return response;
     }
 

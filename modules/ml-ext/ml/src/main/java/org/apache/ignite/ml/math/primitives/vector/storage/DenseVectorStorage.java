@@ -177,9 +177,5 @@ public class DenseVectorStorage implements VectorStorage {
         int res = Arrays.hashCode(rawData);        
         return res;
     }
-    
-    public Serializable[] getData() {
-    	return rawData;
-    }
    
 }

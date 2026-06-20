@@ -69,7 +69,7 @@ public class DenseMatrixStorage implements MatrixStorage {
         this.data = new double[rows * cols];
         this.rows = rows;
         this.cols = cols;
-        idxMapper = indexMapper(stoMode);
+        this.idxMapper = indexMapper(stoMode);
         this.stoMode = stoMode;
     }
 
@@ -97,7 +97,7 @@ public class DenseMatrixStorage implements MatrixStorage {
         this.data = data;
         this.rows = rows;
         this.cols = data.length / rows;
-        idxMapper = indexMapper(stoMode);
+        this.idxMapper = indexMapper(stoMode);
         this.stoMode = stoMode;
 
         assert rows > 0;

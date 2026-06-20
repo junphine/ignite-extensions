@@ -3,6 +3,7 @@ package de.bwaldvogel.mongo.backend.ignite;
 import java.io.IOException;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 
 import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
@@ -60,6 +61,8 @@ import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.bson.ObjectId;
 import de.bwaldvogel.mongo.exception.KeyConstraintError;
 
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8ValueEmbedding;
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
 import static org.apache.ignite.internal.processors.query.QueryUtils.KEY_FIELD_NAME;
 
 public class IgniteLuceneIndex extends Index<Object> {
@@ -82,8 +85,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 	private int dimensions = 0;
 
 	private VectorSimilarityFunction vectorSimilarityFunction;
-
-	private String embeddingModelName = "text2vec-base-chinese-paraphrase";
 
 	private String modelUrl = null;
 
@@ -135,6 +136,8 @@ public class IgniteLuceneIndex extends Index<Object> {
 				marshaller = cacheObjProc.marshaller();				
 				
 				typeName =  coll.getTypeName();
+
+				String embeddingModelName = "BAAI/bge-m3";
 				
 				Map<String, FieldType> fields = indexAccess.fields(typeName);
 				for (IndexKey ik : this.getKeys()) {
@@ -163,12 +166,9 @@ public class IgniteLuceneIndex extends Index<Object> {
 						}
 
 						// 句向量模型
-						embeddingModelName = (String)options.getOrDefault("modelUrl", "chinese");
+						embeddingModelName = (String)options.getOrDefault("modelUrl", embeddingModelName);
 						if(embeddingModelName.equals("chinese")) {
-							embeddingModelName = "text2vec-base-chinese-paraphrase";
-						}
-						else if(embeddingModelName.equals("multilingual")) {
-							embeddingModelName = "paraphrase-xlm-r-multilingual";
+							embeddingModelName = "BAAI/bge-m3";
 						}
 
 						String igniteHome = ctx.grid().configuration().getIgniteHome();
@@ -303,6 +303,30 @@ public class IgniteLuceneIndex extends Index<Object> {
 		return fields;
 	}
 
+	public Object computeDocumentEmbedding(String field, FieldType fieldType,Document document,String modelUrl) {
+		Object val = document.get(field);
+		int dimensions = fieldType.vectorDimension();
+		if(val instanceof CharSequence) {
+			if(!val.toString().isBlank()) {
+				Vector vec = EmbeddingUtil.textXlmVec(field,document,modelUrl,dimensions);
+				if(vec!=null) {
+					Object data = vec.getStorage().rawData();
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						return computeInt8ValueEmbedding(data,modelUrl,dimensions);
+					}
+					return computeValueEmbedding(data,modelUrl,dimensions);
+				}
+			}
+		}
+		else if(val!=null){
+			if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+				return computeInt8ValueEmbedding(val,modelUrl,dimensions);
+			}
+			return computeValueEmbedding(val,modelUrl,dimensions);
+		}
+		return null;
+	}
+
 	@Override
 	public void add(Document document, Object position, MongoCollection<Object> collection) {
 		if (!this.isFirstIndex)
@@ -329,47 +353,47 @@ public class IgniteLuceneIndex extends Index<Object> {
 			}
 		}
 
-		org.apache.lucene.document.Document doc = new org.apache.lucene.document.Document();
+		CompletableFuture.runAsync(()->{
+			org.apache.lucene.document.Document doc = new org.apache.lucene.document.Document();
 
-		boolean stringsFound = false;
+			Object[] row = new Object[idxdFields.length];
 
-		Object[] row = new Object[idxdFields.length];
-		
-		for (int i = 0, last = idxdFields.length; i < last; i++) {
-			Object fieldVal = document.get(idxdFields[i]);
-			if(idxdTypes[i].vectorDimension()>0){
-				String modelUrl = idxdTypes[i].getAttributes().get("modelUrl");
-				fieldVal = computeValueEmbedding(fieldVal,modelUrl,idxdTypes[i].vectorDimension());
+			for (int i = 0, last = idxdFields.length; i < last; i++) {
+				Object fieldVal = document.get(idxdFields[i]);
+				if(idxdTypes[i].vectorDimension()>0){
+					String modelUrl = idxdTypes[i].getAttributes().get("modelUrl");
+					fieldVal = computeDocumentEmbedding(idxdFields[i],idxdTypes[i],document,modelUrl);
+				}
+				//byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(fieldVal), false);
+				//BytesRef keyByteRef = new BytesRef(keyBytes);
+				row[i] = fieldVal;
 			}
-			
-			//byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(fieldVal), false);
-			//BytesRef keyByteRef = new BytesRef(keyBytes);
-			row[i] = fieldVal;
-		}
-		
-		BytesRef keyByteRef = marshalKeyField(position);
-		Term term = new Term(KEY_FIELD_NAME, keyByteRef);
-		// build doc body
-		try {
-			stringsFound = FullTextLucene.buildDocument(doc, idxdFields, idxdTypes, null, row);
-			if (!stringsFound) {
-				indexAccess.writer.deleteDocuments(term);
 
-				return; // We did not find any strings to be indexed, will not store data at all.
+			BytesRef keyByteRef = marshalKeyField(position);
+			Term term = new Term(KEY_FIELD_NAME, keyByteRef);
+			// build doc body
+			try {
+				boolean stringsFound = FullTextLucene.buildDocument(doc, idxdFields, idxdTypes, null, row);
+				if (!stringsFound) {
+					indexAccess.writer.deleteDocuments(term);
+
+					return; // We did not find any strings to be indexed, will not store data at all.
+				}
+
+				doc.add(new StringField(KEY_FIELD_NAME, keyByteRef, Field.Store.YES));
+				doc.add(new StoredField(FullTextLucene.FIELD_TABLE, typeName));
+
+				// Next implies remove than add atomically operation.
+				docCount = indexAccess.writer.updateDocument(term, doc);
+
+				indexAccess.increment();
+
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
-			
-			doc.add(new StringField(KEY_FIELD_NAME, keyByteRef, Field.Store.YES));
-			doc.add(new StoredField(FullTextLucene.FIELD_TABLE, typeName));
 
-			// Next implies remove than add atomically operation.
-			docCount = indexAccess.writer.updateDocument(term, doc);
-			
-			indexAccess.increment();
-
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		});
 	}
 
 	@Override
@@ -893,10 +917,11 @@ public class IgniteLuceneIndex extends Index<Object> {
 			
 			
 			String defaultTextField = null;
-
+			FieldType fieldType = TextField.TYPE_NOT_STORED;
 			for (IndexKey key : this.getKeys()) {				
 				if (key.isText() && defaultTextField==null) {
 					defaultTextField = key.getKey();
+					fieldType = access.fields(typeName).getOrDefault(defaultTextField,fieldType);
 				}
 			}
 			if ($text!=null) {
@@ -937,23 +962,46 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 				}
 				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
-					obj = opt.get("$knnVector"); // 指定字段
-					float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
-					KnnVectorQuery vecQuery = new KnnVectorQuery(defaultTextField, queryVector, k);
-					query.add(vecQuery, BooleanClause.Occur.MUST);
+					Object text = opt.get("$knnVector"); // 指定字段
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
+						query.add(vecQuery, BooleanClause.Occur.MUST);
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
+						query.add(vecQuery, BooleanClause.Occur.MUST);
+					}
 				}
 				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
-					obj = opt.get("$vectorSearch"); // 支持多个字段
-					float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+					Object text = opt.get("$vectorSearch"); // 支持多个字段
+
 					if(this.getKeys().size()==1) {
-						KnnVectorQuery vecQuery = new KnnVectorQuery(defaultTextField, queryVector, k);
-						query.add(vecQuery, BooleanClause.Occur.MUST);
+						if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+							byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+							KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
+							query.add(vecQuery, BooleanClause.Occur.MUST);
+						}
+						else {
+							float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+							KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
+							query.add(vecQuery, BooleanClause.Occur.MUST);
+						}
 					}
 					else{
 						for(IndexKey key: this.getKeys()){
 							if(key.isText()){
-								KnnVectorQuery vecQuery = new KnnVectorQuery(key.getKey(), queryVector, k);
-								query.add(vecQuery, BooleanClause.Occur.SHOULD);
+								if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+									byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+									KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(key.getKey(), queryVector, k);
+									query.add(vecQuery, BooleanClause.Occur.SHOULD);
+								}
+								else {
+									float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+									KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(key.getKey(), queryVector, k);
+									query.add(vecQuery, BooleanClause.Occur.SHOULD);
+								}
 							}
 						}
 					}
@@ -1013,6 +1061,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		List<IdWithMeta> result = new ArrayList<>();
 		try {
 			String field = indexKey.getKey();
+			FieldType fieldType = this.indexAccess.fields(typeName).getOrDefault(field,StringField.TYPE_STORED);
 			String cacheName = access.cacheName();
 			ClassLoader ldr = null;
 
@@ -1076,17 +1125,30 @@ public class IgniteLuceneIndex extends Index<Object> {
 				}
 				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
 					text = opt.get("$vectorSearch");
-
-					float[] queryVector = computeValueEmbedding(text,this.modelUrl,this.dimensions);
-					KnnVectorQuery vecQuery = new KnnVectorQuery(field, queryVector, k);
-					textQuery = vecQuery;
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
 				}
 				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
 					text = opt.get("$knnVector");
 
-					float[] queryVector = computeValueEmbedding(text,this.modelUrl,this.dimensions);
-					KnnVectorQuery vecQuery = new KnnVectorQuery(field, queryVector, k);
-					textQuery = vecQuery;
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
 				}
 			}
 			if(textQuery!=null) {
@@ -1132,48 +1194,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 		}
 		return result;
 
-	}
-
-	public static float[] computeValueEmbedding(Object val,String modelUrl,int dimensions) {
-
-		float[] vec = null;
-		if(val instanceof float[]) {
-			float[] fdata = (float[])val;
-			vec = fdata;
-		}
-		else if(val instanceof double[]) {
-			double[] fdata = (double[])val;
-			float[] data = new float[fdata.length];
-			for(int i=0;i<fdata.length;i++) {
-				data[i] = (float)fdata[i];
-			}
-			vec = data;
-		}
-		else if(val instanceof Number[]) {
-			Number[] fdata = (Number[])val;
-			float[] data = new float[fdata.length];
-			for(int i=0;i<fdata.length;i++) {
-				data[i] = fdata[i].floatValue();
-			}
-			vec = data;
-		}
-		else if(val instanceof List) {
-			List<Number> fdata = (List<Number>)val;
-			float[] data = new float[fdata.size()];
-			for(int i=0;i<fdata.size();i++) {
-				data[i] = fdata.get(i).floatValue();
-			}
-			vec = data;
-		}
-		else if(val instanceof CharSequence) {
-			Vector fdata = EmbeddingUtil.textXlmVec(val.toString(),modelUrl,dimensions);
-			float[] data = new float[fdata.size()];
-			for(int i=0;i<fdata.size();i++) {
-				data[i] = (float)fdata.get(i);
-			}
-			vec = data;
-		}
-		return vec;
 	}
 
 	private static boolean isInQuery(String key) {

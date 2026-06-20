@@ -120,8 +120,8 @@ public class DenseDoubleVectorStorage implements VectorStorage {
     }
 
     /** {@inheritDoc} */
-    @Override public Serializable[] rawData() {
-    	return toGenericArray();        
+    @Override public double[] rawData() {
+    	return data;
     }
     
     public void clear() {
@@ -168,8 +168,5 @@ public class DenseDoubleVectorStorage implements VectorStorage {
         int res = Arrays.hashCode(data);        
         return res;
     }
-    
-    public double[] getData() {
-    	return data;
-    }
+
 }

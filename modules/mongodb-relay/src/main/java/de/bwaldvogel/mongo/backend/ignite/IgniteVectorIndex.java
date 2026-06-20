@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.IgniteFileSystem;
@@ -87,12 +90,9 @@ public class IgniteVectorIndex extends Index<Object> {
 	private int dimensions = 1024;
 	
 	private boolean defaultANN = false;
-	
-	private String tokenizerUrl = "tokenizers/chinese-xlnet-large";
-	
 	private String modelUrl = null;
 
-	private Set<Object> updatedDocs = new TreeSet<>();
+	private ConcurrentLinkedQueue<Object> updatedDocs = new ConcurrentLinkedQueue<>();
 
 	private long updatedTime = System.currentTimeMillis();
 	
@@ -125,7 +125,7 @@ public class IgniteVectorIndex extends Index<Object> {
 			indexType = SpatialIndexType.ARRAY.name();
 		}
 
-		String embeddingModelName = "text2vec-base-chinese-paraphrase";
+		String embeddingModelName = "BAAI/bge-m3";
 		Document options = keys.get(0).textOptions();
 		if(options!=null) {
 			
@@ -161,15 +161,11 @@ public class IgniteVectorIndex extends Index<Object> {
 			}
 			
 			// 句向量模型
-			embeddingModelName = (String)options.getOrDefault("modelUrl", "chinese");
+			embeddingModelName = (String)options.getOrDefault("modelUrl", embeddingModelName);
 			if(embeddingModelName.equals("chinese")) {
-				embeddingModelName = "text2vec-base-chinese-paraphrase";
+				embeddingModelName = "BAAI/bge-m3";
 			}
-			else if(embeddingModelName.equals("multilingual")) {
-				embeddingModelName = "paraphrase-xlm-r-multilingual";
-			}	
-			// IDF词典模型
-			tokenizerUrl= (String)options.getOrDefault("tokenizerUrl", tokenizerUrl);
+
 		}
 		
 		String igniteHome = ctx.grid().configuration().getIgniteHome();
@@ -282,36 +278,36 @@ public class IgniteVectorIndex extends Index<Object> {
 	
 	public Vector computeEmbedding(Document document,Object position) {
 		Vector vec = null;
-		List<String> sentences = new ArrayList<>(); // maybe is resource text path
-
 		for(String field : keys()) {
 			Object val = document.get(field);
 			if(val instanceof CharSequence) {
-				sentences.add(val.toString());
+				if(!val.toString().isBlank()) {
+					if(this.isSparse()) {
+						vec = EmbeddingUtil.textSparseVec(field,document,modelUrl,dimensions);
+					}
+					else {
+						vec = EmbeddingUtil.textXlmVec(field,document,modelUrl,dimensions);
+					}
+					if(vec!=null) {
+						return vec;
+					}
+				}
 			}
 			else if(val!=null){
 				vec = computeValueEmbedding(val);
 				if(vec!=null) {
 					return vec;
 				}
-			}			
-		}
-		
-		if(!sentences.isEmpty()) {
-			if(this.isSparse()) {
-				vec = EmbeddingUtil.textTwoGramVec(String.join("\n",sentences),modelUrl,dimensions);
-			}
-			else {			
-				vec = EmbeddingUtil.textXlmVec(String.join("\n",sentences),modelUrl,dimensions);
 			}
 		}
+
 		return vec;
-	}	
+	}
 
 	public Vector computeValueEmbedding(Object val) {
 		Vector vec = null;
 		if(val instanceof float[]) {
-			float[] fdata = (float[])val;			
+			float[] fdata = (float[])val;
 			vec = new DenseVector(fdata);
 		}
 		else if(val instanceof double[]) {
@@ -335,10 +331,10 @@ public class IgniteVectorIndex extends Index<Object> {
 		}
 		else if(val instanceof CharSequence) {
 			if(this.isSparse()) {
-				vec = EmbeddingUtil.textTwoGramVec(val.toString(),this.tokenizerUrl,dimensions);
+				vec = EmbeddingUtil.textSparseVec(val.toString(),null,this.modelUrl,dimensions);
 			}
-			else {			
-				vec = EmbeddingUtil.textXlmVec(val.toString(),this.modelUrl,dimensions);
+			else {
+				vec = EmbeddingUtil.textXlmVec(val.toString(),null,this.modelUrl,dimensions);
 			}
 		}
 		return vec;
@@ -373,21 +369,22 @@ public class IgniteVectorIndex extends Index<Object> {
 
 	@Override
 	public void add(Document document, Object position, MongoCollection<Object> collection) {
-		
-		// build doc body
-		try {
-			Vector vec = this.computeEmbedding(document,position);
-			if(vec==null) {
-				vecIndex.removeAsync(position);
-				return ;
-			}
-			
-			vecIndex.putAsync(position, vec);
-			updatedDocs.add(position);
+		CompletableFuture.runAsync(()-> {
+			// build doc body
+			try {
+				Vector vec = this.computeEmbedding(document, position);
+				if (vec == null) {
+					vecIndex.removeAsync(position);
+					return;
+				}
 
-		} catch (Exception e) {			
-			e.printStackTrace();
-		}
+				vecIndex.putAsync(position, vec);
+				updatedDocs.add(position);
+
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
 	}
 
 	@Override

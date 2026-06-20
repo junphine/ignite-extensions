@@ -1,0 +1,2 @@
+org.apache.ignite.p2p.api.DocumentDenseVectorizer$Factory
+org.apache.ignite.p2p.api.DocumentSparseVectorizer$Factory

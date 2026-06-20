@@ -17,6 +17,7 @@
 
 package org.apache.ignite.ml.math.primitives.vector.impl;
 
+import java.io.Serializable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -38,20 +39,17 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Local on-heap sparse vector based on hash map storage.
  */
-public class SparseVector extends AbstractVector implements StorageConstants {
-    /**
-     *
-     */
+public class SparseVector extends AbstractVector {
+
     public SparseVector() {
         // No-op.
     }
 
     /**
      * @param map Underlying map.
-     * @param cp Should given map be copied.
      */
-    public SparseVector(Map<Integer, Double> map, boolean cp) {
-        setStorage(new SparseVectorStorage(map, cp));
+    public SparseVector(Map<Integer, ? extends Serializable> map) {
+        setStorage(new SparseVectorStorage(map));
     }
 
     /**
@@ -137,13 +135,10 @@ public class SparseVector extends AbstractVector implements StorageConstants {
      */
     protected double dotSelf() {
         double sum = 0.0;
-        int len = size();
-        
         for (Element elment : nonZeroes()) {
             double v = elment.get();
             sum += v * v;
         }
-
         return sum;
     }
 

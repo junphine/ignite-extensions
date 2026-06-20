@@ -165,6 +165,14 @@ public class VectorizedViewMatrixStorage implements VectorStorage {
 
         return res;
     }
+
+    @Override public Serializable rawData() {
+        if(rowStride==0)
+            return parent.getRow(row).getStorage().rawData();
+        if(colStride==0)
+            return parent.getCol(col).getStorage().rawData();
+        throw new UnsupportedOperationException();
+    }
     
     public void clear() {
     	parent.assign(0);

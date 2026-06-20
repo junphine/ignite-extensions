@@ -2,17 +2,7 @@ package de.bwaldvogel.mongo.backend.ignite;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -143,7 +133,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         if (idField != null) {
             key = document.get(idField);
         }
-        if (key == null && !idField.equals("_id")) {
+        if (key == null && !Objects.equals(idField, "_id")) {
             key = document.get("_id");
         }
         
@@ -151,7 +141,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
             key = UUID.randomUUID();
         }        
         
-    	String typeName = this.getTypeName();	
+    	String typeName = this.getTypeName();
     	
     	IgniteDatabase database = (IgniteDatabase)this.getDatabase();
     	try {
@@ -170,7 +160,6 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	catch(IgniteException e) {
     		throw new BadValueException(e.getMessage());
     	}
-       
         
     }
 
@@ -239,7 +228,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 			}
 		}
 		
-		Collections.sort(enabledIndexes,TransformerUtil::indexCompareTo);
+		enabledIndexes.sort(TransformerUtil::indexCompareTo);
 
 		for (Index<Object> index : enabledIndexes) {
 			Iterable<Object> positions = index.getPositions(query);
@@ -415,8 +404,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     public void drop() {
     	if(readOnly) {
     		throw new IllegalOperationException("This collection is read only!");
-    	}    	
-    	dataMap.clear();
+    	}
     	if(!this.getCollectionName().startsWith("system.")) {    		
     		dataMap.destroy();
     	}
@@ -451,20 +439,23 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
     @Override
     protected Stream<DocumentWithPosition<Object>> streamAllDocumentsWithPosition() {
-    	// Get the data streamer reference and stream data.    	
-    	
+    	// Get the data streamer reference and stream data.
     	 ScanQuery<Object, BinaryObject> scan = new ScanQuery<>();
-    		 
     	 QueryCursor<Cache.Entry<Object, BinaryObject>>  cursor = dataMap.query(scan);
     	
-    	 return StreamSupport.stream(cursor.spliterator(),false).map(entry -> new DocumentWithPosition<>(objectToDocument(entry.getKey(),entry.getValue(),this.idField), entry.getKey()));		
-         
+    	 return StreamSupport.stream(cursor.spliterator(),false).map(
+				 entry ->
+						 new DocumentWithPosition<>(
+								 objectToDocument(entry.getKey(),entry.getValue(),this.idField), entry.getKey()
+						 )
+		 );
     }
    
     public String getTableName() {
     	if(tableName!=null) {
     		return tableName;
     	}
+
     	CacheConfiguration<Object,BinaryObject> cfg = dataMap.getConfiguration(CacheConfiguration.class);
     	String schema = cfg.getSqlSchema();
     	if(schema==null) {

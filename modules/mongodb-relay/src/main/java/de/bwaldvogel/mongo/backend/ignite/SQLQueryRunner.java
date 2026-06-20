@@ -113,13 +113,11 @@ public class SQLQueryRunner {
 
 	/**
      * @param mongoDatabase the database to run the query against.
-     * @param <T>           variable based on the type of query run.
      * @return When query does a find will return QueryResultIterator&lt;{@link org.bson.Document}&gt;
      * When query does a count will return a Long
      * When query does a distinct will return QueryResultIterator&lt;{@link java.lang.String}&gt;
      * @throws ParseException when the sql query cannot be parsed
      */
-    @SuppressWarnings("unchecked")
     public CloseableIterator<de.bwaldvogel.mongo.bson.Document> run(final IgniteDatabase mongoDatabase) throws ParseException {
         MongoDBQueryHolder mongoDBQueryHolder = queryConverter.getMongoQuery();
         String collectionName = mongoDBQueryHolder.getCollection();

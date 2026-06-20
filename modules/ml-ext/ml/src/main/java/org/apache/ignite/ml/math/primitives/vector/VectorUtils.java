@@ -39,7 +39,7 @@ public class VectorUtils {
 
     /** Create new */
     public static DenseVector zeroes(int n) {
-        return (DenseVector)new DenseVector(n).assign(0.0);
+        return new DenseVector(new double[n]);
     }
 
     /**
@@ -50,7 +50,7 @@ public class VectorUtils {
      * @return New vector of specified size n with specified value.
      */
     public static DenseVector fill(double val, int n) {
-        return (DenseVector)new DenseVector(n).assign(val);
+        return (DenseVector)new DenseVector(new double[n]).assign(val);
     }
 
     /**

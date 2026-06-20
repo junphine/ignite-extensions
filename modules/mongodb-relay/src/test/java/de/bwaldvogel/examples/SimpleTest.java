@@ -125,7 +125,7 @@ public class SimpleTest {
     public void testSecondarySparseVectorIndex() throws Exception {
 
         collection.createIndex(json("text: 'text', title:'text'"), new IndexOptions().name("text_search").unique(false).sparse(true));
-        collection.createIndex(json("text_embedding: {type:'knnVector',indexType:'HNSW',dimensions:1024}"), new IndexOptions().name("text_embedding").sparse(false));
+        collection.createIndex(json("text_embedding: {type:'knnVector',indexType:'HNSW',dimensions:1024,modelUrl:'http://127.0.0.1:7777'}"), new IndexOptions().name("text_embedding").sparse(false));
 
         collection.insertOne(json("_id: 1, text: '中国人',text_embedding: '中国人',title:'title 1'"));
         collection.insertOne(json("_id: 2, text: 'define rule',text_embedding: 'define rule',title:'title 2'"));

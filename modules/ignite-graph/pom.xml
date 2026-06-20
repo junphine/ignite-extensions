@@ -19,8 +19,8 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <ignite.version>2.16.999-SNAPSHOT</ignite.version>
-        <tinkerpop.version>3.7.2</tinkerpop.version>
-		<gremlin.version>3.7.2</gremlin.version>
+        <tinkerpop.version>3.7.3</tinkerpop.version>
+		<gremlin.version>3.7.3</gremlin.version>
 
      </properties>
 

@@ -124,8 +124,8 @@ public class DenseFloatVectorStorage implements VectorStorage {
     }
 
     /** {@inheritDoc} */
-    @Override public Serializable[] rawData() {
-    	return toGenericArray();        
+    @Override public float[] rawData() {
+    	return data;
     }
     
     public void clear() {
@@ -171,9 +171,5 @@ public class DenseFloatVectorStorage implements VectorStorage {
     @Override public int hashCode() {
         int res = Arrays.hashCode(data);        
         return res;
-    }
-    
-    public float[] getData() {
-    	return data;
     }
 }

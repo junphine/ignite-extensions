@@ -17,6 +17,7 @@
 
 package org.apache.ignite.ml.dataset.feature.extractor;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -154,6 +155,19 @@ public abstract class Vectorizer<K, V, C extends Serializable, L> implements Fea
         this.labelCoord = labelCoord;
         this.lbCoordinateShortcut = null;
         return this;
+    }
+
+    /**
+     * add@byron support if val is null ,so key is value
+     * @param key Key.
+     * @param val Value.
+     * @return
+     */
+    public L extractLabel(K key, V val) {
+        if(val==null){
+            return label(null, key, val);
+        }
+        return extract(key, val).label();
     }
 
     /**

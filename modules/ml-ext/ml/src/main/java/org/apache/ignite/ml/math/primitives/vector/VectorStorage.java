@@ -74,9 +74,10 @@ public interface VectorStorage extends Externalizable, StorageOpsMetrics, Destro
      * @return Underlying array of serializable objects {@link StorageOpsMetrics#isArrayBased()} returns {@code true}.
      * Returns {@code null} if in other cases.
      */
-    public default Serializable[] rawData() {
+    public default Serializable rawData() {
         return null;
     }
+
     
     public void clear();
 }

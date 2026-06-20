@@ -4,6 +4,7 @@ import static de.bwaldvogel.mongo.backend.Constants.ID_FIELD;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,10 +24,7 @@ import org.apache.ignite.cache.CacheMode;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
-import org.apache.ignite.configuration.DataStorageConfiguration;
 import org.apache.ignite.internal.IgniteEx;
-import org.apache.ignite.plugin.IgnitePlugin;
-import org.apache.ignite.stream.StreamVisitor;
 import org.apache.ignite.transactions.Transaction;
 
 import de.bwaldvogel.mongo.MongoCollection;
@@ -158,7 +156,7 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
             	!name.startsWith("system.")          
             )
             //.map(mvStore::openMap)
-            .collect(Collectors.toList());
+            .toList();
 
         for (String cacheName : maps) {
             mvStore.destroyCache(cacheName);
@@ -241,49 +239,51 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
 
     @Override
     protected long getStorageSize() {
-    	DataRegionMetrics fileStore = mvStore.dataRegionMetrics(DataStorageConfiguration.DFLT_DATA_REG_DEFAULT_NAME);
-        if (fileStore != null) {
+        long fileSize = 0;
+        Collection<DataRegionMetrics> fileStores = mvStore.dataRegionMetrics();
+        for (DataRegionMetrics fileStore:fileStores) {
             try {
-                return fileStore.getTotalUsedSize();
+                fileSize += fileStore.getTotalAllocatedSize();
             } catch (Exception e) {
-                throw new RuntimeException("Failed to calculate filestore size", e);
+                throw new RuntimeException("Failed to calculate Total Allocated Size", e);
             }
-        } else {
-            return 0;
         }
+        return fileSize;
     }
 
     @Override
     protected long getFileSize() {
-    	DataRegionMetrics fileStore = mvStore.dataRegionMetrics(DataStorageConfiguration.DFLT_DATA_REG_DEFAULT_NAME);
-        if (fileStore != null) {
+        long fileSize = 0;
+    	Collection<DataRegionMetrics> fileStores = mvStore.dataRegionMetrics();
+        for (DataRegionMetrics fileStore:fileStores) {
             try {
-                return fileStore.getTotalUsedPages();
+                fileSize += fileStore.getTotalUsedSize();
             } catch (Exception e) {
-                throw new RuntimeException("Failed to calculate filestore size", e);
+                throw new RuntimeException("Failed to calculate Total Used Size", e);
             }
-        } else {
-            return 0;
         }
+        return fileSize;
     }
 
     @Override
     public void dropCollection(String collectionName,Oplog oplog) {
         super.dropCollection(collectionName,oplog);
+
         String fullCollectionName = getCacheName(databaseName ,collectionName);
         List<String> maps = mvStore.cacheNames().stream()
                 .filter(name -> 
 	                name.equals(fullCollectionName)  
 	                ||  name.startsWith(getIndexCacheName(databaseName,collectionName,""))                 
                 )              
-                .collect(Collectors.toList());
+                .toList();
        
         for (String cacheName : maps) {
         	if(!cacheName.startsWith("system.")) {
         		mvStore.destroyCache(cacheName);
+                this.collections.remove(cacheName);
         	}            
         }
-        
+        this.collections.remove(collectionName);
     }
 
     @Override

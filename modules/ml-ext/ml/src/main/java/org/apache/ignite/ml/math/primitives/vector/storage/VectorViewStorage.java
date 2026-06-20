@@ -110,7 +110,7 @@ public class VectorViewStorage implements VectorStorage {
     }
 
     /** {@inheritDoc} */
-    @Override public Serializable[] rawData() {
+    @Override public Serializable rawData() {
         return sto.rawData();
     }
 

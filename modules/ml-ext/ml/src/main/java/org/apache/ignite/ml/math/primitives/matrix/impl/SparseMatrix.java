@@ -28,6 +28,7 @@ import org.apache.ignite.ml.math.functions.IgniteTriFunction;
 import org.apache.ignite.ml.math.primitives.matrix.AbstractMatrix;
 import org.apache.ignite.ml.math.primitives.matrix.Matrix;
 import org.apache.ignite.ml.math.primitives.matrix.MatrixStorage;
+import org.apache.ignite.ml.math.primitives.matrix.OrderedMatrix;
 import org.apache.ignite.ml.math.primitives.matrix.storage.SparseMatrixStorage;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.impl.SparseVector;
@@ -35,7 +36,7 @@ import org.apache.ignite.ml.math.primitives.vector.impl.SparseVector;
 /**
  * Sparse local onheap matrix with {@link SparseVector} as rows.
  */
-public class SparseMatrix extends AbstractMatrix implements StorageConstants {
+public class SparseMatrix extends AbstractMatrix implements OrderedMatrix {
     /**
      *
      */
@@ -141,5 +142,10 @@ public class SparseMatrix extends AbstractMatrix implements StorageConstants {
     /** {@inheritDoc} */
     @Override public void compute(int row, int col, IgniteTriFunction<Integer, Integer, Double, Double> f) {
         ((SparseMatrixStorage)getStorage()).compute(row, col, f);
+    }
+
+    @Override
+    public int accessMode() {
+        return getStorage().accessMode();
     }
 }

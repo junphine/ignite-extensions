@@ -35,7 +35,7 @@ import org.apache.ignite.ml.math.primitives.vector.VectorStorage;
 /**
  * Sparse, local, on-heap vector storage.
  */
-public class SparseVectorStorage implements VectorStorage, StorageConstants {
+public class SparseVectorStorage implements VectorStorage {
     /** */
     private int size;
 
@@ -50,7 +50,7 @@ public class SparseVectorStorage implements VectorStorage, StorageConstants {
     }
 
     /** */
-    public SparseVectorStorage(Map<Integer, ? extends Serializable> map, boolean cp) {
+    public SparseVectorStorage(Map<Integer, ? extends Serializable> map) {
         assert !map.isEmpty();
 
         this.size = map.size();
@@ -152,10 +152,8 @@ public class SparseVectorStorage implements VectorStorage, StorageConstants {
     }
 
     /** {@inheritDoc} */
-    @Override public Serializable[] rawData() {
-        Serializable[] res = new Serializable[size];
-        sto.forEach((i, v) -> res[i] = v);
-        return res;
+    @Override public Serializable rawData() {
+        return sto;
     }
 
     /** {@inheritDoc} */

@@ -63,7 +63,6 @@
                     <execution>
                         <id>flatten</id>
                         <inherited>false</inherited>
-                        <phase/>
                     </execution>
                 </executions>
             </plugin>

@@ -23,7 +23,7 @@
 		var authUrl = '/api/v1/user';
 		var loginUrl = '/login';
 		var storageHost = '';
-		var servicePath = '/filemanager/file/';
+		var servicePath = '/filemanager/file';
 	    const currentStorageHost = localStorage.getItem('currentStorageHost');
 	    if (currentStorageHost) {     
 	        storageHost = currentStorageHost;
@@ -55,22 +55,22 @@
         angular.module('FileManagerApp').config(['fileManagerConfigProvider', function (config) {
             var defaults = config.$get();
             config.set({
-				        ticket: ticket,
+				ticket: ticket,
                 appName: 'File Manager',
                 defaultLang: 'zh',
-                listUrl: storageUrl+'list/',
-                uploadUrl: storageUrl+'upload/',
-                downloadFileUrl: storageUrl+'preview/',
-                createFolderUrl: storageUrl+'createFolder/',
-                permissionsUrl: storageUrl+'changePermissions/',
-                copyUrl: storageUrl+'copy/',
-                moveUrl: storageUrl+'move/',
-                removeUrl: storageUrl+'remove/',
-                renameUrl: storageUrl+'rename/',
-                getContentUrl: storageUrl+'getContent/',
-                editUrl: storageUrl+'edit/',
-                compressUrl: storageUrl+'compress/',
-                extractUrl: storageUrl+'extract/',
+                listUrl: storageUrl,
+                uploadUrl: storageUrl,
+                downloadFileUrl: storageUrl,
+                createFolderUrl: storageUrl,
+                permissionsUrl: storageUrl,
+                copyUrl: storageUrl,
+                moveUrl: storageUrl,
+                removeUrl: storageUrl,
+                renameUrl: storageUrl,
+                getContentUrl: storageUrl,
+                editUrl: storageUrl,
+                compressUrl: storageUrl,
+                extractUrl: storageUrl,
                 documentViewUrl: storageUrl+'office/',
                 pickCallback: function (item) {
 				    if(item.type!='file')
@@ -90,7 +90,7 @@
 					  return false;
 					}
 					else if(item.name.endsWith('.sheet') || item.name.endsWith('.csv') || item.name.endsWith('.tsv') ){
-					  window.location='dist/xspreadsheet/?ref='+storageUrl+'view'+item.fullPath();
+              window.location='dist/xspreadsheet/?ref='+storageUrl+item.fullPath();
 					  return false;
 					}
 					

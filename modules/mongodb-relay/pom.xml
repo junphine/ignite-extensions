@@ -12,7 +12,7 @@
 		<relativePath>../../parent-internal/pom.xml</relativePath>
 	</parent>
 
-	<version>1.45.0-SNAPSHOT</version>
+	<version>1.48.0-SNAPSHOT</version>
 	<artifactId>ignite-mongodb-relay</artifactId>
 
 	<url>http://ignite.apache.org</url>
@@ -22,15 +22,15 @@
 		<dependency>
 			<groupId>de.bwaldvogel</groupId>
 			<artifactId>mongo-java-server-core</artifactId>
-			<version>1.45.0-SNAPSHOT</version>
+			<version>1.48.0-SNAPSHOT</version>
 		</dependency>
 		
 		<dependency>
 	        <groupId>io.netty</groupId>
 	        <artifactId>netty-transport</artifactId>
-	        <version>4.1.97.Final</version>
+	        <version>4.1.101.Final</version>
 	        <scope>provided</scope>
-	      </dependency>
+		</dependency>
 
 
 		<!-- Ignite dependencies -->
@@ -61,7 +61,7 @@
 
 		<dependency>
 			<groupId>org.apache.ignite</groupId>
-        	<artifactId>ignite-ml-p2p-ext</artifactId>
+			<artifactId>ignite-ml-embedding-api-client-ext</artifactId>
 			<version>1.1.0-SNAPSHOT</version>
 			<scope>provided</scope>
 		</dependency>
@@ -70,6 +70,7 @@
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 			<version>${slf4j.version}</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->

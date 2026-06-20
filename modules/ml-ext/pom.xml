@@ -34,14 +34,15 @@
     <version>1.1.0-SNAPSHOT</version>
 
     <properties>
-        <dev.ludovic.netlib.version>3.0.3</dev.ludovic.netlib.version>
+
     </properties>
 
     <modules>
         <module>ml</module>
         <module>ml/catboost-model-parser</module>        
         <module>ml/xgboost-model-parser</module>
-        <!--<module>ml/extdata/p2p</module>-->
+        <module>extdata/p2p</module>
+        <module>extdata/embedding_api_client</module>
         <module>examples</module>
     </modules>
 
@@ -56,7 +57,6 @@
                 <executions>
                     <execution>
                         <id>bundle-manifest</id>
-                        <phase/>
                     </execution>
                 </executions>
             </plugin>
@@ -75,7 +75,6 @@
                     <execution>
                         <id>flatten</id>
                         <inherited>false</inherited>
-                        <phase/>
                     </execution>
                 </executions>
             </plugin>
