@@ -525,12 +525,9 @@ public final class HadoopIgfsInputStream extends InputStream implements Seekable
             // If read start position is within cached boundaries.
             if (contains(pos)) {
                 byte[] data = readFut.get();
-
                 int srcPos = (int)(pos - this.pos);
                 int cpLen = Math.min(len, data.length - srcPos);
-
-                U.arrayCopy(data, srcPos, dst, dstOff, cpLen);
-
+                System.arraycopy(data, srcPos, dst, dstOff, cpLen);
                 return cpLen;
             }
 

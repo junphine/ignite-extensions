@@ -50,9 +50,6 @@ Here is an example of log printout when 2 nodes join topology:
 
     ... Topology snapshot [nodes=2, CPUs=8, hash=0xD551B245]
 
-You can also start Ignite Management Console, called Visor, and observe started nodes. To startup Visor, you should execute the following script:
-
-    /bin/ignitevisorcmd.{sh|bat}
 
 3. Configuration
 ================
@@ -111,12 +108,3 @@ A job can be ran on multiple nodes on localhost or in cluster environment the sa
 switch Apache Hadoop client to a cluster are to fix host in default DFS URI in `core-site.xml` and host in job tracker
 address in `mapred-site.xml`.
 
-5. Management & Monitoring with Visor
-=====================================
-Ignite comes with CLI (command) based DevOps Managements Console, called Visor, delivering advance set of management and monitoring capabilities.
-
-To start Visor in console mode you should execute the following command:
-
-    `bin/ignitevisorcmd.sh`
-
-On Windows, run the same commands with `.bat` extension.

@@ -43,7 +43,7 @@
         <spring-boot.version>3.4.5</spring-boot.version>
         <spring.data.version>3.4.5</spring.data.version>
         <spring6.version>6.1.14</spring6.version>
-
+        <hadoop.version>3.4.1</hadoop.version>
     </properties>
 
     <scm>

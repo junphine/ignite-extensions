@@ -1,0 +1,16 @@
+logs
+.DS_Store
+*.iml
+*.ipr
+*.iws
+*.orig
+*.rej
+**/.keep
+*.patch
+.idea
+.svn
+.classpath
+.project
+.settings
+target
+dependency-reduced-pom.xml

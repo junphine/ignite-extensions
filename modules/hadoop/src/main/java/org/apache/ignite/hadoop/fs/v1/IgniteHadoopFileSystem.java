@@ -35,9 +35,10 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.InvalidPathException;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.permission.FsPermission;
-import org.apache.hadoop.hdfs.DFSUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Progressable;
+import org.apache.hadoop.util.Shell;
+import org.apache.hadoop.util.StringUtils;
 import org.apache.ignite.igfs.IgfsBlockLocation;
 import org.apache.ignite.igfs.IgfsException;
 import org.apache.ignite.igfs.IgfsFile;
@@ -665,7 +666,7 @@ public class IgniteHadoopFileSystem extends FileSystem {
 
             String res = fixedNewPath.toUri().getPath();
 
-            if (!DFSUtil.isValidName(res))
+            if (!isValidName(res))
                 throw new IllegalArgumentException("Invalid DFS directory name " + res);
 
             workingDir = fixedNewPath;
@@ -924,5 +925,32 @@ public class IgniteHadoopFileSystem extends FileSystem {
      */
     public String user() {
         return user;
+    }
+
+    public static boolean isValidName(String src) {
+        if (!src.startsWith("/")) {
+            return false;
+        } else {
+            String[] components = StringUtils.split(src, '/');
+
+            for(int i = 0; i < components.length; ++i) {
+                String element = components[i];
+                if (!Shell.WINDOWS || i != 1 || !element.endsWith(":")) {
+                    if (element.equals(".") || element.contains(":") || element.contains("/")) {
+                        return false;
+                    }
+
+                    if (element.equals("..")) {
+                        if (components.length <= 4 || !components[1].equals(".reserved") || !components[2].equals(".inodes")) {
+                            return false;
+                        }
+                    } else if (element.isEmpty() && i != components.length - 1 && i != 0) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
     }
 }

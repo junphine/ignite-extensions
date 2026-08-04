@@ -411,29 +411,7 @@ public class HadoopIgfsWrapper implements HadoopIgfs {
             }
         }
 
-        // 4. Try connecting using shmem.
-        boolean skipLocShmem = parameter(conf, PARAM_IGFS_ENDPOINT_NO_LOCAL_SHMEM, authority, false);
-
-        if (curDelegate == null && !skipLocShmem && !U.isWindows()) {
-            HadoopIgfsEx hadoop = null;
-
-            try {
-                hadoop = new HadoopIgfsOutProc(endpoint.port(), endpoint.igfs(), log, userName);
-
-                curDelegate = new Delegate(hadoop, hadoop.handshake(logDir));
-            }
-            catch (IOException | IgniteCheckedException e) {
-                if (e instanceof HadoopIgfsCommunicationException)
-                    hadoop.close(true);
-
-                if (log.isDebugEnabled())
-                    log.debug("Failed to connect to IGFS using shared memory [port=" + endpoint.port() + ']', e);
-
-                errShmem = e;
-            }
-        }
-
-        // 5. Try local TCP connection.
+        // 4. Try local TCP connection.
         boolean skipLocTcp = parameter(conf, PARAM_IGFS_ENDPOINT_NO_LOCAL_TCP, authority, false);
 
         if (curDelegate == null && !skipLocTcp) {
@@ -457,7 +435,7 @@ public class HadoopIgfsWrapper implements HadoopIgfs {
             }
         }
 
-        // 6. Try remote TCP connection.
+        // 5. Try remote TCP connection.
         boolean skipRmtTcp = parameter(conf, PARAM_IGFS_ENDPOINT_NO_REMOTE_TCP, authority, false);
 
         if (curDelegate == null && !skipRmtTcp && (skipLocTcp || !Objects.equals(LOCALHOST, endpoint.host()))) {

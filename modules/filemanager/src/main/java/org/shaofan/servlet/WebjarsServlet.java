@@ -77,9 +77,6 @@ public class WebjarsServlet extends HttpServlet {
 	        }
     	}
         
-        
-       
-        
         if (inputStream != null) {
             if (!disableCache) {
                 prepareCacheHeaders(response, webjarsResourceURI);

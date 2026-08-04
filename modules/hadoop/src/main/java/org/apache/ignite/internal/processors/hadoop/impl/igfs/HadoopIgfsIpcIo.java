@@ -33,12 +33,17 @@ import org.apache.ignite.internal.igfs.common.IgfsStreamControlRequest;
 import org.apache.ignite.internal.util.GridConcurrentHashSet;
 import org.apache.ignite.internal.util.GridStripedLock;
 import org.apache.ignite.internal.util.ipc.IpcEndpoint;
-import org.apache.ignite.internal.util.ipc.IpcEndpointFactory;
 
+
+import org.apache.ignite.internal.util.ipc.loopback.IpcClientTcpEndpoint;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.BufferedOutputStream;
@@ -63,8 +68,7 @@ public class HadoopIgfsIpcIo implements HadoopIgfsIo {
     private final Logger log;
 
     /** Request futures map. */
-    private ConcurrentMap<Long, HadoopIgfsFuture> reqMap =
-        new ConcurrentHashMap<>();
+    private ConcurrentMap<Long, HadoopIgfsFuture> reqMap =  new ConcurrentHashMap<>();
 
     /** Request ID counter. */
     private AtomicLong reqIdCnt = new AtomicLong();
@@ -255,8 +259,9 @@ public class HadoopIgfsIpcIo implements HadoopIgfsIo {
         boolean success = false;
 
         try {
-            endpoint = IpcEndpointFactory.connectEndpoint(
-                endpointAddr, new GridLoggerProxy(new HadoopIgfsJclLogger(log), null, null, ""));
+            //- var logger = new GridLoggerProxy(new HadoopIgfsJclLogger(log), null, null, "");
+            URI url = new URI("tcp://"+endpointAddr);
+            endpoint = new IpcClientTcpEndpoint(url.getHost(),url.getPort());
 
             out = new IgfsDataOutputStream(new BufferedOutputStream(endpoint.outputStream()));
 
@@ -268,11 +273,11 @@ public class HadoopIgfsIpcIo implements HadoopIgfsIo {
             reader.start();
 
             success = true;
-        }
-        catch (IgniteCheckedException e) {
+        } catch (IgniteCheckedException e) {
             throw e;
-        }
-        finally {
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        } finally {
             if (!success)
                 stop();
         }

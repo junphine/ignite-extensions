@@ -139,19 +139,6 @@ public class HadoopIgfsOutProc implements HadoopIgfsEx, HadoopIgfsIpcIoListener 
     }
 
     /**
-     * Constructor for shmem endpoint.
-     *
-     * @param port Port.
-     * @param igfs IGFS name.
-     * @param log Client logger.
-     * @param user User name.
-     * @throws IOException If failed.
-     */
-    public HadoopIgfsOutProc(int port, String igfs, Logger log, String user) throws IOException {
-        this(null, port, igfs, true, log, user);
-    }
-
-    /**
      * Constructor.
      *
      * @param host Host.
