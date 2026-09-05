@@ -72,8 +72,7 @@ public class HCFSFuse {
       LOG.info("mounting to {}", opts.getMountPoint());
       HCFSFuseFileSystem fs = new HCFSFuseFileSystem(tfs, opts, conf);
       try {
-        fs.mount(Paths.get(opts.getMountPoint()), true, opts.isDebug(),
-                fuseOpts.toArray(new String[0]));
+        fs.mount(Paths.get(opts.getMountPoint()), true, opts.isDebug(), fuseOpts.toArray(new String[0]));
       } catch (Exception e) {
         LOG.error("Failed to mount {}", opts.getMountPoint(), e);
         // only try to umount file system when exception occurred.
@@ -159,16 +158,6 @@ public class HCFSFuse {
 
       String mntPointValue = cli.getOptionValue("m");
       String rootValue = cli.getOptionValue("r");
-
-      List<String> fuseOpts = new ArrayList<>();
-      if (cli.hasOption("o")) {
-        String[] fopts = cli.getOptionValues("o");
-        // keep the -o
-        for (final String fopt : fopts) {
-          fuseOpts.add("-o " + fopt);
-        }
-      }
-
       boolean fuseDebug = false;
       if (cli.hasOption("debug")) {
         fuseDebug = true;
@@ -176,6 +165,17 @@ public class HCFSFuse {
       boolean jniFuseEnable = false;
       if (cli.hasOption("jniFuse")) {
         jniFuseEnable = true;
+      }
+
+      List<String> fuseOpts = new ArrayList<>();
+      if (cli.hasOption("o")) {
+        String[] fopts = cli.getOptionValues("o");
+        for (final String fopt : fopts) {
+          if(jniFuseEnable)
+            fuseOpts.add(fopt);
+          else // keep the -o
+            fuseOpts.add("-o"+fopt);
+        }
       }
       return new FuseOptions(mntPointValue, rootValue, fuseDebug,
           fuseOpts, configFiles, jniFuseEnable);

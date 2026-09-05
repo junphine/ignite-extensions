@@ -27,10 +27,14 @@ setIgniteHome
 
 #
 # Set router service environment.
-# set JVM_OPTS=-agentlib:jdwp=transport=dt_socket,address=0.0.0.0:19003,server=y,suspend=n
+# set JVM_OPTS=-agentlib:jdwp=transport=dt_socket,address=0.0.0.0:19007,server=y,suspend=n
 
-export JVM_OPTS=" -Djni.debug=true -agentlib:jdwp=transport=dt_socket,address=0.0.0.0:19007,server=y,suspend=n "
-export DEFAULT_CONFIG="-c config/core-site.ignite.xml -m /home/zhangjunfeng/igfs -r /test/ -debug"
+#-o allow_other,big_writes
+
+#export JVM_OPTS="-agentlib:jdwp=transport=dt_socket,server=n,address=0.0.0.0:19007,suspend=n "
+export JVM_OPTS="$JVM_OPTS -Dlog4j.configurationFile=config/log4j2-console.xml -Dhcfs.fuse.write.type=CACHE_THROUGH -Dhcfs.fuse.cache.enabled=true -Dhcfs.fuse.random.access.enabled=true"
+export DEFAULT_CONFIG="-c config/core-site.xml -m /home/zhangjunfeng/igfs -r igfs://igfs@localhost:10500/ -jniFuse -debug"
+#export DEFAULT_CONFIG="-c config/core-site.xml -m /home/zhangjunfeng/igfs -r file:///mnt/d/Data//uploads/  -debug"
 export MAIN_CLASS=hcfsfuse.fuse.HCFSFuse
 export USER_LIBS=${IGNITE_HOME_TMP}/hadoop/*
 #

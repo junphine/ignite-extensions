@@ -15,6 +15,7 @@ set JAVA_HOME=D:\IDE\IDEA\jbr
 ::
 set DEFAULT_CONFIG=-c config/core-site.ignite.xml -m /Users/igfs -r file:///tmp/
 set MAIN_CLASS=hcfsfuse.fuse.HCFSFuse
+set USER_LIBS=hadoop/*
 SET work=%CD%
 
 IF [%work:~-3%]==[bin] CD ..
