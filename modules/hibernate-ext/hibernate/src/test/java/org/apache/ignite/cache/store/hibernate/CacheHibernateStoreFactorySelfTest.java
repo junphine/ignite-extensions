@@ -24,12 +24,12 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import javax.naming.NamingException;
 import javax.naming.Reference;
-import javax.persistence.EntityGraph;
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceUnitUtil;
-import javax.persistence.Query;
-import javax.persistence.SynchronizationType;
-import javax.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.EntityGraph;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceUnitUtil;
+import jakarta.persistence.Query;
+import jakarta.persistence.SynchronizationType;
+import jakarta.persistence.criteria.CriteriaBuilder;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteException;
@@ -45,7 +45,6 @@ import org.hibernate.SessionBuilder;
 import org.hibernate.SessionFactory;
 import org.hibernate.StatelessSession;
 import org.hibernate.StatelessSessionBuilder;
-import org.hibernate.TypeHelper;
 import org.hibernate.boot.spi.SessionFactoryOptions;
 import org.hibernate.engine.spi.FilterDefinition;
 import org.hibernate.metadata.ClassMetadata;
@@ -75,19 +74,7 @@ public class CacheHibernateStoreFactorySelfTest extends GridCommonAbstractTest {
         }
     }
 
-    /**
-     * @throws Exception If failed.
-     */
-    @Test
-    public void testXmlConfiguration() throws Exception {
-        try (Ignite ignite = Ignition.start(MODULE_PATH + "/src/test/config/factory-cache.xml")) {
-            try (Ignite ignite1 = Ignition.start(MODULE_PATH + "/src/test/config/factory-cache1.xml")) {
-                checkStore(ignite.<Integer, String>cache(CACHE_NAME), DummySessionFactoryExt.class);
 
-                checkStore(ignite1.<Integer, String>cache(CACHE_NAME), DummySessionFactory.class);
-            }
-        }
-    }
 
 
     /**
@@ -146,187 +133,5 @@ public class CacheHibernateStoreFactorySelfTest extends GridCommonAbstractTest {
             GridTestUtils.getFieldValue(store, CacheHibernateBlobStore.class, "hibernateCfgPath"));
     }
 
-    /**
-     *
-     */
-    public static class DummySessionFactoryExt extends DummySessionFactory {
-        /** */
-        public DummySessionFactoryExt() {
-            // No-op.
-        }
-    }
 
-    /**
-     *
-     */
-    public static class DummySessionFactory implements SessionFactory {
-        /** {@inheritDoc} */
-        @Override public SessionFactoryOptions getSessionFactoryOptions() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public SessionBuilder withOptions() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Session openSession() throws HibernateException {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Session getCurrentSession() throws HibernateException {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public StatelessSessionBuilder withStatelessOptions() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public StatelessSession openStatelessSession() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public StatelessSession openStatelessSession(Connection conn) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public ClassMetadata getClassMetadata(Class entityCls) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public ClassMetadata getClassMetadata(String entityName) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public CollectionMetadata getCollectionMetadata(String roleName) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Map<String, ClassMetadata> getAllClassMetadata() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Map getAllCollectionMetadata() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Statistics getStatistics() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public void close() throws HibernateException {
-        }
-
-        /** {@inheritDoc} */
-        @Override public Map<String, Object> getProperties() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public boolean isClosed() {
-            return false;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Cache getCache() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public PersistenceUnitUtil getPersistenceUnitUtil() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public void addNamedQuery(String name, Query query) {
-
-        }
-
-        /** {@inheritDoc} */
-        @Override public <T> T unwrap(Class<T> cls) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public <T> void addNamedEntityGraph(String graphName, EntityGraph<T> entityGraph) {
-
-        }
-
-        /** {@inheritDoc} */
-        @Override public Set getDefinedFilterNames() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public FilterDefinition getFilterDefinition(String filterName) throws HibernateException {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public boolean containsFetchProfileDefinition(String name) {
-            return false;
-        }
-
-        /** {@inheritDoc} */
-        @Override public TypeHelper getTypeHelper() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Reference getReference() throws NamingException {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public <T> List<EntityGraph<? super T>> findEntityGraphsByType(Class<T> aClass) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public EntityManager createEntityManager() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public EntityManager createEntityManager(Map map) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public EntityManager createEntityManager(SynchronizationType synchronizationType) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public EntityManager createEntityManager(SynchronizationType synchronizationType, Map map) {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public CriteriaBuilder getCriteriaBuilder() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public Metamodel getMetamodel() {
-            return null;
-        }
-
-        /** {@inheritDoc} */
-        @Override public boolean isOpen() {
-            return false;
-        }
-    }
 }

@@ -17,13 +17,8 @@
 package org.apache.ignite.springdata.repository.support;
 
 import java.io.Serializable;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
+import java.lang.reflect.InvocationTargetException;
+import java.util.*;
 import javax.cache.Cache;
 import javax.cache.expiry.ExpiryPolicy;
 import org.apache.ignite.Ignite;
@@ -62,6 +57,7 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
      * Ignite instance bound to the repository
      */
     private final IgniteProxy ignite;
+
 
     /**
      * Repository constructor.
@@ -126,6 +122,15 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
      * Not implemented.
      */
     @Override public <S extends V> S save(S entity) {
+        if(IdExtractor.isEnable()) {
+            Object key = IdExtractor.getId(entity);
+            if (key != null) {
+                cache.put((K) key, entity);
+                return entity;
+            } else {
+                throw new IllegalArgumentException("Entity Id is null!");
+            }
+        }
         throw new UnsupportedOperationException("Use IgniteRepository.save(key,value) method instead.");
     }
 
@@ -133,6 +138,20 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
      * Not implemented.
      */
     @Override public <S extends V> Iterable<S> saveAll(Iterable<S> entities) {
+        if(IdExtractor.isEnable()) {
+            Map<K,S> kv = new TreeMap<>();
+            for (S entity : entities) {
+                Object key = IdExtractor.getId(entity);
+                if (key != null) {
+                    kv.put((K) key, entity);
+                }
+                else{
+                    throw new IllegalArgumentException("Entity Id is null!");
+                }
+            }
+            cache.putAll(kv);
+            return entities;
+        }
         throw new UnsupportedOperationException("Use IgniteRepository.save(Map<keys,value>) method instead.");
     }
 
@@ -201,11 +220,35 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
 
     /** {@inheritDoc} */
     @Override public void delete(V entity) {
+        if(IdExtractor.isEnable()) {
+            Object key = IdExtractor.getId(entity);
+            if(key!=null) {
+                cache.remove((K)key);
+                return;
+            }
+            else{
+                throw new IllegalArgumentException("Entity Id is null!");
+            }
+        }
         throw new UnsupportedOperationException("Use IgniteRepository.deleteById(key) method instead.");
     }
 
     /** {@inheritDoc} */
     @Override public void deleteAll(Iterable<? extends V> entities) {
+        TreeSet<K> keys = new TreeSet<>();
+        if(IdExtractor.isEnable()) {
+            for (V entity : entities) {
+                Object key = IdExtractor.getId(entity);
+                if (key != null) {
+                    keys.add((K) key);
+                }
+                else{
+                    throw new IllegalArgumentException("Entity Id is null!");
+                }
+            }
+            cache.removeAll(keys);
+            return;
+        }
         throw new UnsupportedOperationException("Use IgniteRepository.deleteAllById(keys) method instead.");
     }
 

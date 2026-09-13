@@ -203,7 +203,7 @@ public class IgniteQueryGenerator {
         if (prperty.getType() != domainType)
             return domainType.getSimpleName() + "." + prperty.getSegment();
         else
-            return part.toString();
+            return prperty.getSegment();
     }
 
     /**

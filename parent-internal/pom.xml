@@ -26,7 +26,7 @@
             the latest released version prior to an extension release.
         -->
         <ignite-spring-data-ext.release.version>3.2.0</ignite-spring-data-ext.release.version>
-        <ignite-spring-data-commons.release.version>1.2.0</ignite-spring-data-commons.release.version>
+        <ignite-spring-data-commons.release.version>3.2.0</ignite-spring-data-commons.release.version>
         <paho.version>1.2.5</paho.version>
         <guava.retrying.version>2.0.0</guava.retrying.version>
         <dev.ludovic.netlib.version>3.0.3</dev.ludovic.netlib.version>

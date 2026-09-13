@@ -21,8 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.cache.Cache;
-import javax.persistence.Cacheable;
-import javax.persistence.Id;
+import jakarta.persistence.Cacheable;
+import jakarta.persistence.Id;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.internal.IgniteKernal;
@@ -240,12 +240,12 @@ public class HibernateL2CacheStrategySelfTest extends GridCommonAbstractTest {
         Session ses = sesFactory.openSession();
 
         try {
-            List<Entity1> list1 = ses.createCriteria(ENTITY1_NAME).list();
+            List<Entity1> list1 = ses.createQuery(sesFactory.getCriteriaBuilder().createQuery(Entity1.class)).list();
 
             for (Entity1 e1 : list1)
                 assertNotNull(e1.getName());
 
-            List<Entity2> list2 = ses.createCriteria(ENTITY2_NAME).list();
+            List<Entity2> list2 = ses.createQuery(sesFactory.getCriteriaBuilder().createQuery(Entity2.class)).list();
 
             for (Entity2 e2 : list2)
                 assertNotNull(e2.getName());
@@ -322,7 +322,7 @@ public class HibernateL2CacheStrategySelfTest extends GridCommonAbstractTest {
     /**
      * Test Hibernate entity1.
      */
-    @javax.persistence.Entity
+    @jakarta.persistence.Entity
     @SuppressWarnings({"PublicInnerClass", "UnnecessaryFullyQualifiedName"})
     @Cacheable
     public static class Entity1 {
@@ -381,7 +381,7 @@ public class HibernateL2CacheStrategySelfTest extends GridCommonAbstractTest {
     /**
      * Test Hibernate entity2.
      */
-    @javax.persistence.Entity
+    @jakarta.persistence.Entity
     @SuppressWarnings({"PublicInnerClass", "UnnecessaryFullyQualifiedName"})
     @Cacheable
     public static class Entity2 {
@@ -440,7 +440,7 @@ public class HibernateL2CacheStrategySelfTest extends GridCommonAbstractTest {
     /**
      * Test Hibernate entity3.
      */
-    @javax.persistence.Entity
+    @jakarta.persistence.Entity
     @SuppressWarnings({"PublicInnerClass", "UnnecessaryFullyQualifiedName"})
     @Cacheable
     public static class Entity3 {
@@ -499,7 +499,7 @@ public class HibernateL2CacheStrategySelfTest extends GridCommonAbstractTest {
     /**
      * Test Hibernate entity4.
      */
-    @javax.persistence.Entity
+    @jakarta.persistence.Entity
     @SuppressWarnings({"PublicInnerClass", "UnnecessaryFullyQualifiedName"})
     @Cacheable
     public static class Entity4 {

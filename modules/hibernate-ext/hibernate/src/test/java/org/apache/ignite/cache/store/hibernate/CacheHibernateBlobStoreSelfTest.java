@@ -19,6 +19,8 @@ package org.apache.ignite.cache.store.hibernate;
 
 import java.io.File;
 import java.net.URL;
+
+import jakarta.persistence.FlushModeType;
 import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.testframework.junits.cache.GridAbstractCacheStoreSelfTest;
 import org.hibernate.FlushMode;
@@ -50,7 +52,7 @@ public class CacheHibernateBlobStoreSelfTest extends
 
         try {
             s.createQuery("delete from " + CacheHibernateBlobStoreEntry.class.getSimpleName())
-                    .setFlushMode(FlushMode.ALWAYS).executeUpdate();
+                    .setFlushMode(FlushModeType.AUTO).executeUpdate();
 
             Transaction hTx = s.getTransaction();
 

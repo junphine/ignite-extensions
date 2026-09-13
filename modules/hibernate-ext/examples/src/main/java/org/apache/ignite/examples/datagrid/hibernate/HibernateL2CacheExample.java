@@ -34,7 +34,9 @@ import org.hibernate.Transaction;
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cache.spi.access.AccessType;
-import org.hibernate.stat.SecondLevelCacheStatistics;
+import org.hibernate.stat.CacheRegionStatistics;
+import org.hibernate.stat.EntityStatistics;
+
 import static org.apache.ignite.cache.CacheAtomicityMode.ATOMIC;
 import static org.apache.ignite.cache.CacheAtomicityMode.TRANSACTIONAL;
 import static org.apache.ignite.cache.CacheWriteSynchronizationMode.FULL_SYNC;
@@ -252,8 +254,8 @@ public class HibernateL2CacheExample {
         for (String entityName : ENTITY_NAMES) {
             System.out.println("\tEntity: " + entityName);
 
-            SecondLevelCacheStatistics stats =
-                sesFactory.getStatistics().getSecondLevelCacheStatistics(entityName);
+            CacheRegionStatistics stats =
+                sesFactory.getStatistics().getCacheRegionStatistics(entityName);
 
             System.out.println("\t\tPuts: " + stats.getPutCount());
             System.out.println("\t\tHits: " + stats.getHitCount());

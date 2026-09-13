@@ -95,9 +95,9 @@ public class HibernateCacheProxy implements IgniteInternalCache<Object, Object> 
         return delegate.get().skipStore();
     }
 
-    /** {@inheritDoc} */
-    @Override public IgniteInternalCache setSkipStore(boolean skipStore) {
-        return delegate.get().setSkipStore(skipStore);
+    @Override
+    public IgniteInternalCache<Object, Object> withSkipStore() {
+        return delegate.get().withSkipStore();
     }
 
     /** {@inheritDoc} */
@@ -454,6 +454,26 @@ public class HibernateCacheProxy implements IgniteInternalCache<Object, Object> 
         return delegate.get().isLocked(keyTransformer.transform(key));
     }
 
+    @Override
+    public boolean lockTxEntry(CacheEntry<Object, Object> entry, long waitTimeout) throws IgniteCheckedException {
+        return false;
+    }
+
+    @Override
+    public boolean lockTxEntries(Collection<CacheEntry<Object, Object>> cacheEntries, long waitTimeout) throws IgniteCheckedException {
+        return false;
+    }
+
+    @Override
+    public IgniteInternalFuture<Boolean> lockTxEntryAsync(CacheEntry<Object, Object> entry, long waitTimeout) {
+        return null;
+    }
+
+    @Override
+    public IgniteInternalFuture<Boolean> lockTxEntriesAsync(Collection<CacheEntry<Object, Object>> cacheEntries, long waitTimeout) {
+        return null;
+    }
+
     /** {@inheritDoc} */
     @Override public boolean isLockedByThread(Object key) {
         return delegate.get().isLockedByThread(keyTransformer.transform(key));
@@ -597,6 +617,11 @@ public class HibernateCacheProxy implements IgniteInternalCache<Object, Object> 
     /** {@inheritDoc} */
     @Override public IgniteInternalCache withExpiryPolicy(ExpiryPolicy plc) {
         return delegate.get().withExpiryPolicy(plc);
+    }
+
+    @Override
+    public IgniteInternalCache<Object, Object> withKeepBinaryInInterceptor() {
+        return null;
     }
 
     /** {@inheritDoc} */

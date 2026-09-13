@@ -44,6 +44,7 @@ import org.springframework.context.expression.StandardBeanExpressionResolver;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.data.convert.CustomConversions;
+import org.springframework.data.mapping.context.PersistentEntities;
 import org.springframework.data.repository.core.EntityInformation;
 import org.springframework.data.repository.core.RepositoryInformation;
 import org.springframework.data.repository.core.RepositoryMetadata;
@@ -143,6 +144,7 @@ public class IgniteRepositoryFactory extends RepositoryFactorySupport {
                     + ". Please, add a cache configuration to ignite configuration"
                     + " or pass autoCreateCache=true to " + RepositoryConfig.class.getName() + " annotation.");
         }
+
     }
     
     private Class<?>[] getKeyValueTypes(Class<?> repoInterface){
@@ -172,12 +174,22 @@ public class IgniteRepositoryFactory extends RepositoryFactorySupport {
         return new AbstractEntityInformation<T, ID>(domainClass) {
             /** {@inheritDoc} */
             @Override public ID getId(T entity) {
-                return null;
+                try {
+                    return (ID) IdExtractor.getId(entity);
+                }
+                catch (Exception e){
+                    return null;
+                }
             }
 
             /** {@inheritDoc} */
             @Override public Class<ID> getIdType() {
-                return null;
+                try {
+                    return (Class<ID>) IdExtractor.getIdType(domainClass);
+                }
+                catch (Exception e){
+                    return null;
+                }
             }
         };
     }

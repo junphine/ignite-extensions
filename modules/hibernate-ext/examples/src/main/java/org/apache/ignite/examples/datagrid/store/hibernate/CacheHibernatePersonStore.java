@@ -99,7 +99,7 @@ public class CacheHibernatePersonStore extends CacheStoreAdapter<Long, Person> {
         try {
             int cnt = 0;
 
-            List list = hibSes.createCriteria(Person.class).
+            List list = hibSes.createQuery(hibSes.getCriteriaBuilder().createQuery(Person.class)).
                 setMaxResults(entryCnt).
                 list();
 
