@@ -434,12 +434,16 @@ public class IgniteLuceneIndex extends Index<Object> {
 			}
 		}
 
-		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
-			return false;
+		if (!query.keySet().containsAll(keySet())) {
+		    return false;
 		}
 
-		if (isSparse() && query.values().stream().allMatch(Objects::isNull)) {
-			return false;
+		if (isSparse()) {
+			boolean allIndexFieldsNull = keySet().stream()
+		        .allMatch(k -> query.get(k) == null);
+		    if (allIndexFieldsNull) {
+		        return false;
+		    }
 		}
 
 		if(this.isKnnVectorIndex){
