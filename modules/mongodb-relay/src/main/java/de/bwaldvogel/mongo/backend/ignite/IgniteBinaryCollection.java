@@ -231,6 +231,9 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		enabledIndexes.sort(TransformerUtil::indexCompareTo);
 
 		for (Index<Object> index : enabledIndexes) {
+			if (!index.canHandle(query)) {
+				continue;
+			}
 			Iterable<Object> positions = index.getPositions(query);
 			indexResult.add(positions);
 			// empty results

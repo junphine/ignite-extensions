@@ -17,9 +17,9 @@
 
 package org.apache.ignite.springframework.boot.autoconfigure;
 
-import org.apache.ignite.Ignition;
 import org.apache.ignite.client.IgniteClient;
 import org.apache.ignite.configuration.ClientConfiguration;
+import org.apache.ignite.internal.client.thin.TcpIgniteClient;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -95,6 +95,6 @@ public class IgniteClientAutoConfiguration {
     @ConditionalOnBean(ClientConfiguration.class)
     @Bean
     public IgniteClient igniteClient(ClientConfiguration cfg) {
-        return Ignition.startClient(cfg);
+        return TcpIgniteClient.start(cfg);
     }
 }

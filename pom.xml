@@ -31,7 +31,6 @@
         <module>parent-internal</module>
         <module>modules/flink-ext</module>
         <module>modules/pub-sub-ext</module>
-          
        
         <module>modules/mqtt-ext</module>
         <module>modules/jms11-ext</module>
@@ -55,12 +54,6 @@
     </modules>
 
     <profiles>
-        <profile>
-            <id>use-ignite-src</id>
-            <modules>
-                <module>../ignite</module>
-            </modules>
-        </profile>
         <profile>
             <id>java-17+</id>
             <activation>

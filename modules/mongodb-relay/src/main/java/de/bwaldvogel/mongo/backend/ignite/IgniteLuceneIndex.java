@@ -65,6 +65,9 @@ import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8V
 import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
 import static org.apache.ignite.internal.processors.query.QueryUtils.KEY_FIELD_NAME;
 
+/**
+ * 如果是复合索引，不论是否Text索引，每个字段各自索引。
+ */
 public class IgniteLuceneIndex extends Index<Object> {
 	private static final Logger log = LoggerFactory.getLogger(IgniteLuceneIndex.class);
 
@@ -338,6 +341,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		
 		// 使用Ignite自己的Luence索引
 		if(!this.isKnnVectorIndex && hasIgniteLuenceIndex(typeName)) {
+			log.warn("Type {} has ignite text index itself,ignore mongo index.",typeName);
 			return ;
 		}
 
@@ -401,7 +405,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		if(!this.isFirstIndex) {
 			return null;
 		}
-		IgniteBinaryCollection coll = (IgniteBinaryCollection) collection;
+
 		Object key = getPosition(document);
 		try {
 			
@@ -434,13 +438,12 @@ public class IgniteLuceneIndex extends Index<Object> {
 			}
 		}
 
-		if (!query.keySet().containsAll(keySet())) {
-		    return false;
+		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
+			return false;
 		}
 
-		if (isSparse()) {
-			boolean allIndexFieldsNull = keySet().stream()
-		        .allMatch(k -> query.get(k) == null);
+		if (isSparse()) { // always sparse
+			boolean allIndexFieldsNull = keySet().stream().allMatch(k -> query.get(k) == null);
 		    if (allIndexFieldsNull) {
 		        return false;
 		    }
@@ -550,60 +553,50 @@ public class IgniteLuceneIndex extends Index<Object> {
 		for (Object queriedKey : queriedKeys.iterator()) {
 			IndexKey indexKey = this.getKeys().get(n);
 			if (queriedKey instanceof Document) {
-				if (isCompoundIndex() && !this.isTextIndex()) {
-					throw new UnsupportedOperationException("Not yet implemented");
-				}
 				Document keyObj = (Document) queriedKey;
 				if (Utils.containsQueryExpression(keyObj)) {
-					Set<String> expression = keyObj.keySet();
-					
-					if (expression.contains(QueryOperator.IN.getValue())) {						
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.IN.getValue()), QueryOperator.IN);					
-						queryBuider.add(termQuery, BooleanClause.Occur.MUST);						
-						query.remove(indexKey.getKey());
+					for(String expression: keyObj.keySet()) {
+						if (expression.equals(QueryOperator.IN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.IN.getValue()), QueryOperator.IN);
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.NOT_IN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_IN.getValue()), QueryOperator.NOT_IN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.EQUAL.getValue()), QueryOperator.EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.NOT_EQUALS.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_EQUALS.getValue()), QueryOperator.NOT_EQUALS);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.GREATER_THAN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN.getValue()), QueryOperator.GREATER_THAN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.GREATER_THAN_OR_EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN_OR_EQUAL.getValue()), QueryOperator.GREATER_THAN_OR_EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.LESS_THAN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN.getValue()), QueryOperator.LESS_THAN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.LESS_THAN_OR_EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN_OR_EQUAL.getValue()), QueryOperator.LESS_THAN_OR_EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						}
 					}
-					else if (expression.contains(QueryOperator.NOT_IN.getValue())) {						
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.NOT_IN.getValue()), QueryOperator.NOT_IN);					
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);						
-						query.remove(indexKey.getKey());
-					}
-					else if (expression.contains(QueryOperator.EQUAL.getValue())) {
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.EQUAL.getValue()), QueryOperator.EQUAL);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-						query.remove(indexKey.getKey());						
-					}
-					else if (expression.contains(QueryOperator.NOT_EQUALS.getValue())) {											
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.NOT_EQUALS.getValue()), QueryOperator.NOT_EQUALS);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
-						query.remove(indexKey.getKey());						
-					}
-					else if (expression.contains(QueryOperator.GREATER_THAN.getValue())) {
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.GREATER_THAN.getValue()), QueryOperator.GREATER_THAN);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-						query.remove(indexKey.getKey());						
-					}
-					else if (expression.contains(QueryOperator.GREATER_THAN_OR_EQUAL.getValue())) {
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.GREATER_THAN_OR_EQUAL.getValue()), QueryOperator.GREATER_THAN_OR_EQUAL);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-						query.remove(indexKey.getKey());						
-					}
-					else if (expression.contains(QueryOperator.LESS_THAN.getValue())) {
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.LESS_THAN.getValue()), QueryOperator.LESS_THAN);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-						query.remove(indexKey.getKey());						
-					}
-					else if (expression.contains(QueryOperator.LESS_THAN_OR_EQUAL.getValue())) {
-						Query termQuery = getQueryValueForExpression(indexKey,keyObj.get(QueryOperator.LESS_THAN_OR_EQUAL.getValue()), QueryOperator.LESS_THAN_OR_EQUAL);
-						
-						queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-						query.remove(indexKey.getKey());						
-					}					
 				}				
 			}
 			else if (queriedKey instanceof String) {					
@@ -1221,9 +1214,9 @@ public class IgniteLuceneIndex extends Index<Object> {
 	
 	public int getPriority() {
 		if(this.isTextIndex()) {
-			return Math.min(99, 10 + (int)docCount/10000);
+			return 100 + (int)docCount/100 + getKeys().size();
 		}
-        return 100 + (int)docCount/10000;
+		return 10 + (int)docCount/1000 + getKeys().size();
     }
 
 }

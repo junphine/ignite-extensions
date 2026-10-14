@@ -39,7 +39,7 @@
     <dependencies>
         <dependency>
             <groupId>org.apache.ignite</groupId>
-            <artifactId>ignite-core</artifactId>
+            <artifactId>ignite-thin-client-impl</artifactId>
             <scope>provided</scope>
         </dependency>
 

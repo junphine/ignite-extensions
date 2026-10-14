@@ -1,23 +1,14 @@
 package de.bwaldvogel.mongo.backend.ignite.util;
 
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.List;
-import java.util.ServiceLoader;
-
 import de.bwaldvogel.mongo.bson.Document;
 import org.apache.ignite.ml.dataset.feature.extractor.DocumentVectorizerFactory;
-import org.apache.ignite.ml.dataset.feature.extractor.Vectorizer;
 import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.ignite.ml.math.primitives.vector.impl.DenseVector;
 import org.apache.ignite.ml.math.primitives.vector.impl.SparseVector;
-import org.apache.ignite.ml.math.primitives.vector.storage.DenseDoubleVectorStorage;
-import org.apache.ignite.ml.structures.LabeledVector;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.ServiceLoader;
 
 
 public class EmbeddingUtil {
@@ -49,7 +40,7 @@ public class EmbeddingUtil {
 					return labelVec;
 				}
 
-				Vector docVec = (Vector) vectorizer.create(modelId, dimensions, key.split(",")).extractFeatures(key, sentence);
+				Vector docVec = vectorizer.create(modelId, dimensions, key.split(",")).extractFeatures(key, sentence);
 
 				return docVec.getRaw(0);
 
@@ -85,7 +76,7 @@ public class EmbeddingUtil {
 					return labelVec;
 				}
 				// for colpus doc
-				Vector docVec = (Vector) vectorizer.create(modelId, dimensions, key.split(",")).extractFeatures(key, sentence);
+				Vector docVec =  vectorizer.create(modelId, dimensions, key.split(",")).extractFeatures(key, sentence);
 
 				return docVec.getRaw(0);
 			}
@@ -96,14 +87,11 @@ public class EmbeddingUtil {
 		return null;
 	}
 
-
-
 	public static float[] computeValueEmbedding(Object val,String modelUrl,int dimensions) {
 
 		float[] vec = null;
 		if(val instanceof float[]) {
-			float[] fdata = (float[])val;
-			vec = fdata;
+            vec = (float[])val;
 		}
 		else if(val instanceof double[]) {
 			double[] fdata = (double[])val;
@@ -146,8 +134,7 @@ public class EmbeddingUtil {
 
 		byte[] vec = null;
 		if(val instanceof byte[]) {
-			byte[] fdata = (byte[])val;
-			vec = fdata;
+            vec = (byte[])val;
 		}
 		else if(val instanceof float[]) {
 			float[] fdata = (float[])val;

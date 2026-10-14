@@ -61,7 +61,9 @@ import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
 import de.bwaldvogel.mongo.exception.KeyConstraintError;
 
-
+/**
+ * 如果是复合索引，如果不是文本字段，谁先有值，先索引谁，剩下的字段忽略，如果是文本字段，所有字段按顺序加起来形成embedding
+ */
 public class IgniteVectorIndex extends Index<Object> {
 	
 	/** Learning environment builder. */
@@ -278,19 +280,13 @@ public class IgniteVectorIndex extends Index<Object> {
 	
 	public Vector computeEmbedding(Document document,Object position) {
 		Vector vec = null;
+		String fields = null;
 		for(String field : keys()) {
 			Object val = document.get(field);
 			if(val instanceof CharSequence) {
 				if(!val.toString().isBlank()) {
-					if(this.isSparse()) {
-						vec = EmbeddingUtil.textSparseVec(field,document,modelUrl,dimensions);
-					}
-					else {
-						vec = EmbeddingUtil.textXlmVec(field,document,modelUrl,dimensions);
-					}
-					if(vec!=null) {
-						return vec;
-					}
+					if(fields==null) fields = field;
+					else fields+=","+field;
 				}
 			}
 			else if(val!=null){
@@ -301,6 +297,12 @@ public class IgniteVectorIndex extends Index<Object> {
 			}
 		}
 
+		if(this.isSparse() && fields!=null) {
+			vec = EmbeddingUtil.textSparseVec(fields,document,modelUrl,dimensions);
+		}
+		else if(fields!=null) {
+			vec = EmbeddingUtil.textXlmVec(fields,document,modelUrl,dimensions);
+		}
 		return vec;
 	}
 
@@ -414,12 +416,9 @@ public class IgniteVectorIndex extends Index<Object> {
 		    return false;
 		}
 
-		if (isSparse()) {
-			boolean allIndexFieldsNull = keySet().stream()
-		        .allMatch(k -> query.get(k) == null);
-		    if (allIndexFieldsNull) {
-		        return false;
-		    }
+		boolean allIndexFieldsNull = keySet().stream().allMatch(k -> query.get(k) == null);
+		if (allIndexFieldsNull) {
+			return false;
 		}
 
 		for (String key : keys()) {

@@ -59,41 +59,40 @@
 			<artifactId>janusgraph-driver</artifactId>
 			<version>${janus.version}</version>				
 		</dependency>
-		
-		<!-- https://mvnrepository.com/artifact/org.apache.tinkerpop/gremlin-console -->
-		<dependency>
-		    <groupId>org.apache.tinkerpop</groupId>
-		    <artifactId>gremlin-console</artifactId>
-		    <version>${gremlin.version}</version>
-		</dependency>
 
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-core</artifactId>
 			<version>${lucene.version}</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-queryparser</artifactId>
 			<version>${lucene.version}</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
 			<artifactId>lucene-analysis-common</artifactId>
 			<version>${lucene.version}</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-spatial-extras</artifactId>
             <version>${lucene.version}</version>
+			<scope>provided</scope>
         </dependency>
+
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-backward-codecs</artifactId>
             <version>${lucene.version}</version>
+			<scope>provided</scope>
         </dependency>
         
 
