@@ -150,7 +150,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 							log.error("KnnVectorIndex must have dimensions and indexType options");
 							throw new IgniteException("KnnVectorIndex must have dimensions and indexType options");
 						}
-						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions", 1024).toString());
+						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions", options.getOrDefault("numDimensions", 1024)).toString());
 						String similarity = options.getOrDefault("similarity", "cosine").toString();
 						if(similarity.equals("euclidean ")) {
 							vectorSimilarityFunction = VectorSimilarityFunction.EUCLIDEAN;
