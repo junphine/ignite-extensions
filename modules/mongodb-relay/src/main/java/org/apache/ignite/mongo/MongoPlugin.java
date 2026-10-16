@@ -20,8 +20,7 @@ import de.bwaldvogel.mongo.bson.Document;
 
 public class MongoPlugin implements IgnitePlugin {
 	IgniteBackend backend;
-	String databaseName;	
-	
+	String databaseName;
 	
 	public IgniteDatabase database() {
 		return (IgniteDatabase)backend.resolveDatabase(databaseName);

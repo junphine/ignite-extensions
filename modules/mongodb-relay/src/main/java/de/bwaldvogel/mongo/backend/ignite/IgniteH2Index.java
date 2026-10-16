@@ -1,0 +1,1202 @@
+package de.bwaldvogel.mongo.backend.ignite;
+
+import de.bwaldvogel.mongo.MongoCollection;
+import de.bwaldvogel.mongo.backend.*;
+import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
+import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
+import de.bwaldvogel.mongo.bson.BsonRegularExpression;
+import de.bwaldvogel.mongo.bson.Document;
+import de.bwaldvogel.mongo.bson.ObjectId;
+import de.bwaldvogel.mongo.exception.KeyConstraintError;
+import org.apache.ignite.IgniteCheckedException;
+import org.apache.ignite.IgniteException;
+import org.apache.ignite.IgniteFileSystem;
+import org.apache.ignite.cache.FullTextLucene;
+import org.apache.ignite.cache.LuceneIndexAccess;
+import org.apache.ignite.igfs.IgfsPath;
+import org.apache.ignite.internal.GridKernalContext;
+import org.apache.ignite.internal.binary.GridBinaryMarshaller;
+import org.apache.ignite.internal.processors.cache.GridCacheAdapter;
+import org.apache.ignite.internal.processors.cache.binary.CacheObjectBinaryProcessorImpl;
+import org.apache.ignite.internal.processors.query.h2.IgniteH2Indexing;
+import org.apache.ignite.internal.processors.query.h2.opt.GridLuceneIndex;
+import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
+import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.lucene.document.*;
+import org.apache.lucene.document.Field.Store;
+import org.apache.lucene.index.SegmentCommitInfo;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.index.VectorEncoding;
+import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
+import org.apache.lucene.queryparser.simple.SimpleQueryParser;
+import org.apache.lucene.search.*;
+import org.apache.lucene.search.SortField.Type;
+import org.apache.lucene.util.BytesRef;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8ValueEmbedding;
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
+import static org.apache.ignite.internal.processors.query.QueryUtils.KEY_FIELD_NAME;
+
+/**
+ * 如果是复合索引，不论是否Text索引，每个字段各自索引。
+ */
+public class IgniteH2Index extends Index<Object> {
+	private static final Logger log = LoggerFactory.getLogger(IgniteH2Index.class);
+
+	private final IgniteBinaryCollection collection;
+
+	private LuceneIndexAccess indexAccess;
+
+	private final GridKernalContext ctx;
+
+	private GridBinaryMarshaller marshaller;
+
+	private IgniteH2Indexing igniteH2Indexing = null;
+
+	private boolean isFirstIndex = false;
+
+	private boolean isKnnVectorIndex = false;
+
+	private int dimensions = 1024;
+
+	private VectorSimilarityFunction vectorSimilarityFunction;
+
+	private String modelUrl = null;
+
+	private Map<String, Float> weights = new HashMap<>();
+
+	private long docCount = 0;
+
+	/** */
+	private String[] idxdFields = null;
+	private FieldType[] idxdTypes = null;
+
+	public IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys, boolean sparse) {
+		this(ctx,collection,name,keys,sparse,false);
+	}
+
+	public IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys, boolean sparse, boolean isKnnVectorIndex) {
+		super(name, keys, true);  // lucene index always is sparse
+		this.ctx = ctx;
+		this.collection = collection;
+		this.isKnnVectorIndex = isKnnVectorIndex;
+		// init field weight
+		for(IndexKey indexKey: keys) {
+			if(indexKey.textOptions()!=null) {
+				if(indexKey.textOptions().containsKey("weight")) {
+					float w = Float.valueOf(indexKey.textOptions().get("weight").toString());
+					weights.put(indexKey.getKey(), w);
+				}
+				else {
+					weights.put(indexKey.getKey(), 1.0f);
+				}
+			}
+		}
+		igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
+		if(igniteH2Indexing==null){
+			throw new UnsupportedOperationException("Use IgniteH2Index must dependecy ignite-indexed.jar");
+		}
+		init();
+	}
+
+	public void init() {
+		if (indexAccess == null) {
+			try {
+				indexAccess = LuceneIndexAccess.getIndexAccess(ctx, collection.getCollectionName());
+
+				CacheObjectBinaryProcessorImpl cacheObjProc = (CacheObjectBinaryProcessorImpl) ctx.cacheObjects();
+
+				marshaller = cacheObjProc.marshaller();				
+				
+				String typeName =  collection.getTypeName();
+
+				String embeddingModelName = "BAAI/bge-m3";
+				
+				Map<String, FieldType> fields = indexAccess.fields(typeName);
+				for (IndexKey ik : this.getKeys()) {
+					if(ik.isText() && this.isKnnVectorIndex){
+						Document options = ik.textOptions();
+						if(options==null) {
+							log.error("KnnVectorIndex must have dimensions and indexType options");
+							throw new IgniteException("KnnVectorIndex must have dimensions and indexType options");
+						}
+						Object numDimensions = options.getOrDefault("numDimensions", this.dimensions);
+						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions",numDimensions).toString());
+						String similarity = options.getOrDefault("similarity", "cosine").toString();
+						if(similarity.equals("euclidean ")) {
+							vectorSimilarityFunction = VectorSimilarityFunction.EUCLIDEAN;
+						}
+						else if(similarity.equals("cosine")) {
+							vectorSimilarityFunction = VectorSimilarityFunction.COSINE;
+						}
+						else if(similarity.equals("dotProduct")) {
+							vectorSimilarityFunction = VectorSimilarityFunction.DOT_PRODUCT;
+						}
+						else if(similarity.equals("innerProduct")) {
+							vectorSimilarityFunction = VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
+						}
+						else{
+							vectorSimilarityFunction = VectorSimilarityFunction.valueOf(similarity);
+						}
+
+						// 句向量模型
+						embeddingModelName = (String)options.getOrDefault("modelUrl", embeddingModelName);
+						if(embeddingModelName.equals("chinese")) {
+							embeddingModelName = "BAAI/bge-m3";
+						}
+
+						String igniteHome = ctx.grid().configuration().getIgniteHome();
+
+						// is openai api
+						String lowerUrl = embeddingModelName.toLowerCase();
+						if(lowerUrl.startsWith("http://") || lowerUrl.startsWith("https://")){
+							modelUrl = embeddingModelName;
+						}
+						else {  // is local model
+
+							try {
+								IgniteFileSystem fs = ctx.grid().fileSystem("models");
+								if (fs.exists(new IgfsPath(embeddingModelName))) {
+									modelUrl = "s3://models/" + (embeddingModelName);
+								} else {
+									modelUrl = igniteHome + "/models/" + (embeddingModelName);
+								}
+							} catch (IllegalArgumentException e) {
+								modelUrl = igniteHome + "/models/" + (embeddingModelName);
+							}
+						}
+
+						FieldType fieldType = new FieldType();
+						fieldType.setVectorAttributes(dimensions, VectorEncoding.FLOAT32, vectorSimilarityFunction);
+						fieldType.putAttribute("modelUrl",this.modelUrl);
+						fieldType.freeze();
+						fields.putIfAbsent(ik.getKey(), fieldType);
+
+					}
+					else if (ik.isText()) {
+						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
+					}
+					else {
+						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
+					}
+				}
+				
+
+			} catch (IOException e) {
+				log.error("create luence index failed:",e);
+			}
+		}
+		this.idxdFields = null;
+		this.idxdTypes = null;
+	}
+
+	private boolean hasIgniteLuenceIndex(String typeName) {
+		if(igniteH2Indexing==null) {
+			return false;
+		}
+		@Nullable
+		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(this.collection.getCollectionName());
+		for(TableDescriptor table: tables) {
+			if (table.type().name().equalsIgnoreCase(typeName) && table.type().textIndex() != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	@Override
+	public Object getPosition(Document document) {
+		// Set<KeyValue> keyValues = getKeyValues(document);
+		Object key = document.getOrDefault("_id", null);
+		if (key != null) {
+			return DocumentUtil.toBinaryKey(key);
+		}
+		return null;
+	}	
+
+	@Override
+	public void checkAdd(Document document, MongoCollection<Object> collection) {
+		if(igniteH2Indexing!=null) {
+			// 获取当前文档的类型,优先使用_class字段，然后是Cache QueryEntity
+			if(document.containsKey("_class")) {
+				String typeName = (String)document.get("_class");
+				
+				Map<String, FieldType> fields = indexAccess.fields(typeName);
+				for (IndexKey ik : this.getKeys()) {
+					if(this.isKnnVectorIndex){
+						FieldType fieldType = new FieldType();
+						fieldType.setVectorAttributes(dimensions, VectorEncoding.FLOAT32, vectorSimilarityFunction);
+						fieldType.putAttribute("modelUrl",this.modelUrl);
+						fieldType.freeze();
+						fields.putIfAbsent(ik.getKey(), fieldType);
+					}
+					else if (ik.isText()) {
+						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
+					} else {
+						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
+					}
+				}
+			}
+		}
+
+	}
+	
+	private BytesRef marshalKeyField(Object key) {		
+		byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(key), false);		
+		return new BytesRef(keyBytes);
+	}
+	
+	private Object unmarshalKeyField(BytesRef bytes, GridCacheAdapter cache, ClassLoader ldr) throws IgniteCheckedException {
+		byte[] keyBytes = bytes.bytes;
+		Object k = ctx.cacheObjects().unmarshal(cache.context().cacheObjectContext(), keyBytes, ldr);
+		return k;
+	}
+
+	public Map<String, FieldType> fieldsMapping(IgniteBinaryCollection collection) {
+		Map<String, FieldType> fields = indexAccess.fields(collection.getTypeName());
+		for (Index<Object> idx : collection.getIndexes()) {
+			if (idx instanceof IgniteH2Index) {
+				IgniteH2Index igniteIndex = (IgniteH2Index) idx;
+				igniteIndex.init();
+				for (IndexKey ik : idx.getKeys()) {
+					if(igniteIndex.isKnnVectorIndex){
+						FieldType fieldType = new FieldType();
+						fieldType.setVectorAttributes(igniteIndex.dimensions, VectorEncoding.FLOAT32, igniteIndex.vectorSimilarityFunction);
+						fieldType.putAttribute("modelUrl",igniteIndex.modelUrl);
+						fieldType.freeze();
+						fields.putIfAbsent(ik.getKey(), fieldType);
+					} else if (ik.isText()) {
+						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
+					} else {
+						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
+					}
+				}
+			}
+		}
+		return fields;
+	}
+
+	public Object computeDocumentEmbedding(String field, FieldType fieldType,Document document,String modelUrl) {
+		Object val = document.get(field);
+		int dimensions = fieldType.vectorDimension();
+		if(val instanceof CharSequence) {
+			if(!val.toString().isBlank()) {
+				Vector vec = EmbeddingUtil.textXlmVec(field,document,modelUrl,dimensions);
+				if(vec!=null) {
+					Object data = vec.getStorage().rawData();
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						return computeInt8ValueEmbedding(data,modelUrl,dimensions);
+					}
+					return computeValueEmbedding(data,modelUrl,dimensions);
+				}
+			}
+		}
+		else if(val!=null){
+			if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+				return computeInt8ValueEmbedding(val,modelUrl,dimensions);
+			}
+			return computeValueEmbedding(val,modelUrl,dimensions);
+		}
+		return null;
+	}
+
+	@Override
+	public void add(Document document, Object position, MongoCollection<Object> collection) {
+		if (!this.isFirstIndex)
+			return;
+		
+		IgniteBinaryCollection coll = (IgniteBinaryCollection) collection;
+		
+		String typeName =  coll.getTypeName();
+		
+		// 使用Ignite自己的Luence索引
+		if(!this.isKnnVectorIndex && hasIgniteLuenceIndex(typeName)) {
+			log.warn("Type {} has ignite text index itself,ignore mongo index.",typeName);
+			return ;
+		}
+
+		// index all field
+		if (idxdFields == null || idxdFields.length==0) {
+			Map<String, FieldType> fields = fieldsMapping(coll);
+			idxdFields = new String[fields.size()];
+			idxdTypes = new FieldType[fields.size()];
+			int i = 0;
+			for (Entry<String, FieldType> ft : fields.entrySet()) {
+				idxdFields[i] = ft.getKey();
+				idxdTypes[i++] = ft.getValue();
+			}
+		}
+
+		CompletableFuture.runAsync(()->{
+			org.apache.lucene.document.Document doc = new org.apache.lucene.document.Document();
+
+			Object[] row = new Object[idxdFields.length];
+
+			for (int i = 0, last = idxdFields.length; i < last; i++) {
+				Object fieldVal = document.get(idxdFields[i]);
+				if(idxdTypes[i].vectorDimension()>0){
+					String modelUrl = idxdTypes[i].getAttributes().get("modelUrl");
+					fieldVal = computeDocumentEmbedding(idxdFields[i],idxdTypes[i],document,modelUrl);
+				}
+				//byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(fieldVal), false);
+				//BytesRef keyByteRef = new BytesRef(keyBytes);
+				row[i] = fieldVal;
+			}
+
+			BytesRef keyByteRef = marshalKeyField(position);
+			Term term = new Term(KEY_FIELD_NAME, keyByteRef);
+			// build doc body
+			try {
+				boolean stringsFound = FullTextLucene.buildDocument(doc, idxdFields, idxdTypes, null, row);
+				if (!stringsFound) {
+					indexAccess.writer.deleteDocuments(term);
+
+					return; // We did not find any strings to be indexed, will not store data at all.
+				}
+
+				doc.add(new StringField(KEY_FIELD_NAME, keyByteRef, Store.YES));
+				doc.add(new StoredField(FullTextLucene.FIELD_TABLE, typeName));
+
+				// Next implies remove than add atomically operation.
+				docCount = indexAccess.writer.updateDocument(term, doc);
+
+				indexAccess.increment();
+
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+		});
+	}
+
+	@Override
+	public Object remove(Document document, MongoCollection<Object> collection) {		
+		if(!this.isFirstIndex) {
+			return null;
+		}
+
+		Object key = getPosition(document);
+		try {
+			
+			if (key != null) {				
+				BytesRef keyByteRef = marshalKeyField(key);
+				Term term = new Term(KEY_FIELD_NAME, keyByteRef);
+				long seq = indexAccess.writer.deleteDocuments(term);
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			indexAccess.increment();
+		}
+		return null;
+	}
+
+	@Override
+	public boolean canHandle(Document query) {
+		if(this.isTextIndex()) {
+			if (query.containsKey("$text")) {
+				if(!this.isKnnVectorIndex && query.getDocument("$text").containsKey("$search")) {
+					return true;
+				}
+				if(this.isKnnVectorIndex && query.getDocument("$text").containsKey("$vectorSearch")) {
+					return true;
+				}
+				if(this.isKnnVectorIndex && query.getDocument("$text").containsKey("$knnVector")) {
+					return true;
+				}
+			}
+		}
+
+		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
+			return false;
+		}
+
+		if (isSparse()) { // always sparse
+			boolean allIndexFieldsNull = keySet().stream().allMatch(k -> query.get(k) == null);
+		    if (allIndexFieldsNull) {
+		        return false;
+		    }
+		}
+
+		if(this.isKnnVectorIndex){
+			for (String key : keys()) {
+				Object queryValue = query.get(key);
+				if (queryValue instanceof Document) {
+					Document queryDoc = (Document) queryValue;
+					for (String queriedKey : queryDoc.keySet()) {
+						if (isInQuery(queriedKey)) {
+							// okay
+							return true;
+						}
+						else if (queriedKey.equals("$vectorSearch")) {
+							return true;
+						}
+						else if (queriedKey.equals("$knnVector") || queriedKey.equals("$annVector")) {
+							return true;
+						}
+						else if (queriedKey.startsWith("$")) {
+							// continue check
+						}
+					}
+				}
+			}
+			return false;
+		}
+		
+		Document $expr = query.getDocument("$expr");
+        if($expr!=null && $expr.containsKey("$eq")){
+            List args = (List) $expr.get("$eq");
+            for (String key : keys()){
+                String ekey = "$"+key;
+                if (args.contains(ekey)){
+                    args.remove(ekey);
+                    query.remove("$expr");
+                    query.put(key, args.get(0));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+		// 排除不支持的操作
+		for (String key : keys()) {
+			Object queryValue = query.get(key);
+			if (this.isTextIndex() && BsonRegularExpression.isRegularExpression(queryValue)) {
+				return true;
+			}
+			if (this.isTextIndex() && BsonRegularExpression.isTextSearchExpression(queryValue)) {
+				return true;
+			}
+			if (queryValue instanceof Document) {
+				Document queryDoc = (Document) queryValue;
+
+				for (String queriedKey : queryDoc.keySet()) {
+					if (isInQuery(queriedKey)) {
+						// okay
+					}
+					else if (queriedKey.startsWith("$type") || queriedKey.startsWith("$exists")
+						    || queriedKey.startsWith("$mod")|| queriedKey.startsWith("$size") ) {
+						// not yet supported
+						if(queryDoc.size()==1) {
+							return false;
+						}
+					}
+					else if(queriedKey.startsWith("$")){
+						// continue
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	@Override
+	public Iterable<Object> getPositions(Document query) {
+		final KeyValue queriedKeys = getQueriedKeys(query);
+
+		Set<Object> all = null;
+		BooleanQuery.Builder queryBuider = new BooleanQuery.Builder();
+		Document textDoc = null;
+
+		// for { $text : { $search: 'keyword' } } || { $text : { $knnVector: [0.1,0.4,0.6] } }
+		if(this.isTextIndex() && query.containsKey("$text")) {
+			Object queriedKey = query.get("$text");
+			if (queriedKey instanceof Document) {
+				textDoc = query.getDocument("$text");
+				if (!this.isKnnVectorIndex && BsonRegularExpression.isTextSearchExpression(queriedKey)){
+					// is { $text : { $search: 'keyword' } }
+				}
+				else if(this.isKnnVectorIndex && IgniteVectorIndex.isVectorSearchExpression(textDoc)) {
+					// is { $text : { $knnVector: [0.1,0.4,0.6] } }
+				}
+				else{
+					textDoc = null;
+				}
+			}
+			else {
+				throw new UnsupportedOperationException("unsupported $text expression: " + queriedKey);
+			}
+			query.remove("$text");
+		}
+		int n = 0;
+		for (Object queriedKey : queriedKeys.iterator()) {
+			IndexKey indexKey = this.getKeys().get(n);
+			if (queriedKey instanceof Document) {
+				Document keyObj = (Document) queriedKey;
+				if (Utils.containsQueryExpression(keyObj)) {
+					for(String expression: keyObj.keySet()) {
+						if (expression.equals(QueryOperator.IN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.IN.getValue()), QueryOperator.IN);
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.NOT_IN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_IN.getValue()), QueryOperator.NOT_IN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.EQUAL.getValue()), QueryOperator.EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.NOT_EQUALS.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_EQUALS.getValue()), QueryOperator.NOT_EQUALS);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.GREATER_THAN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN.getValue()), QueryOperator.GREATER_THAN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.GREATER_THAN_OR_EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN_OR_EQUAL.getValue()), QueryOperator.GREATER_THAN_OR_EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.LESS_THAN.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN.getValue()), QueryOperator.LESS_THAN);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						} else if (expression.equals(QueryOperator.LESS_THAN_OR_EQUAL.getValue())) {
+							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN_OR_EQUAL.getValue()), QueryOperator.LESS_THAN_OR_EQUAL);
+
+							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
+							query.remove(indexKey.getKey());
+						}
+					}
+				}				
+			}
+			else if (queriedKey instanceof String) {					
+				String keyString = (String) queriedKey;
+				if (!keyString.isEmpty()) {
+					if(this.isTextIndex()) {
+						SimpleQueryParser parser = new SimpleQueryParser(indexAccess.analyzerWrapper, indexKey.getKey()); // 定义查询分析器
+						parser.setDefaultOperator(BooleanClause.Occur.MUST);
+						Query textQuery = parser.parse(keyString);
+						queryBuider.add(textQuery, BooleanClause.Occur.MUST);
+						query.remove(indexKey.getKey());
+					}
+					else {
+						Query termQuery = getQueryValueForExpression(indexKey,keyString, QueryOperator.EQUAL);						
+						queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+						query.remove(indexKey.getKey());		
+					}
+				}
+			}
+			else if (queriedKey instanceof Number) {					
+				Number keyValue = (Number) queriedKey;
+				if (keyValue!=null) {
+					Query termQuery = getQueryValueForExpression(indexKey,keyValue, QueryOperator.EQUAL);						
+					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+					query.remove(indexKey.getKey());
+				}
+			}
+			else if (queriedKey instanceof Collection) {					
+				Collection querySet = (Collection) queriedKey;
+				if (querySet.size()>0) {
+					Query termQuery = getQueryValueForExpression(indexKey,querySet, QueryOperator.IN);					
+					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
+					query.remove(indexKey.getKey());
+				}
+			}
+			n++;
+		}
+
+		if(textDoc!=null) {
+			List<IdWithMeta> positions = getPosition(queryBuider, textDoc);
+			return (List)positions;
+		}
+		n = 0;
+		for (Object queriedKey : queriedKeys.iterator()) {
+			IndexKey indexKey = this.getKeys().get(n);
+			// for $text value  { textField : { $text: 'keyword' } }
+			if (!this.isKnnVectorIndex && BsonRegularExpression.isRegularExpression(queriedKey)) { // { textField : { $regex: 'keyword' } }
+
+				Set<Object> positions = new HashSet<>();
+				for (IdWithMeta obj : getFullTextList(indexKey, queryBuider,queriedKey)) {
+					if (obj.key != null) { // k, score, v
+						Object v = obj.meta().get("indexValue");
+						if (v != null) {
+							BsonRegularExpression regularExpression = BsonRegularExpression.convertToRegularExpression(queriedKey);
+							Matcher matcher = regularExpression.matcher(v.toString());
+							if (matcher.find()) {
+								positions.add(obj.key);
+							}
+						}
+					}
+				}
+				query.remove(indexKey.getKey());
+				if (all == null) {
+					all = positions;
+				} else {
+					all.retainAll(positions);
+				}
+
+			}
+			else if (!this.isKnnVectorIndex && BsonRegularExpression.isTextSearchExpression(queriedKey)) { // { textField : { $text: 'keyword' } }
+
+				List<IdWithMeta> positions = getFullTextList(indexKey, queryBuider, queriedKey);
+				query.remove(indexKey.getKey());
+				if (all == null) {
+					all = new HashSet<>(positions);
+				} else {
+					all.retainAll(positions);
+				}
+			}
+			else if (this.isKnnVectorIndex && IgniteVectorIndex.isVectorSearchExpression(queriedKey)) { // { textField : { $knnVector: 'keyword' } }
+
+				List<IdWithMeta> positions = getFullTextList(indexKey, queryBuider, queriedKey);
+				query.remove(indexKey.getKey());
+				if (all == null) {
+					all = new HashSet<>(positions);
+				} else {
+					all.retainAll(positions);
+				}
+			}
+		}
+		if(all==null){
+			List<IdWithMeta> positions = getPosition(queryBuider, textDoc);
+			return (List)positions;
+		}
+		return all;
+	}
+
+	@Override
+	public long getCount() {
+		if(docCount>0) {
+			return docCount;
+		}
+		return indexAccess.writer.getDocStats().numDocs;
+	}
+
+	@Override
+	public long getDataSize() {
+		long siz = 0;
+		for(SegmentCommitInfo seg: indexAccess.writer.getMergingSegments()) {
+			try {
+				siz += seg.sizeInBytes();
+			} 
+			catch (IOException e) {
+			}
+		}
+		return siz;
+	}
+
+	@Override
+	public void checkUpdate(Document oldDocument, Document newDocument, MongoCollection<Object> collection) {
+		
+	}
+
+	@Override
+	public void updateInPlace(Document oldDocument, Document newDocument, Object position,
+			MongoCollection<Object> collection) throws KeyConstraintError {
+		if (!nullAwareEqualsKeys(oldDocument, newDocument)) {
+			Object removedPosition = remove(oldDocument, collection);
+			if (removedPosition != null) {
+				Assert.equals(removedPosition, position);
+			}
+			add(newDocument, position, collection);
+		}
+	}
+
+	@Override
+	public void drop() {		
+		Map<String, FieldType> fields = indexAccess.fields(this.collection.getTypeName());
+		for (IndexKey ik : this.getKeys()) {
+			fields.remove(ik.getKey());
+		}		
+		this.indexAccess = null;
+	}
+	
+	void close() {
+		LuceneIndexAccess.removeIndexAccess(indexAccess);
+	}
+
+	private Query getQueryValueForExpression(IndexKey key, Object value, QueryOperator operator) {
+		if (operator==QueryOperator.IN || operator==QueryOperator.NOT_IN) {
+			@SuppressWarnings("unchecked")
+			Collection<Object> objects = (Collection<Object>) value;
+			Collection<Object> queriedObjects = new TreeSet<>(ValueComparator.asc());
+			queriedObjects.addAll(objects);
+
+			List<Object> allKeys = new ArrayList<>();
+			for (Object object : queriedObjects) {
+				Object keyValue = Utils.normalizeValue(object);
+				allKeys.add(keyValue);
+			}
+			
+			BytesRef[] terms = new BytesRef[allKeys.size()];
+			for(int i=0;i<terms.length;i++) {
+				Object item = allKeys.get(i);
+				if(item instanceof byte[]) {
+					BytesRef term = new BytesRef((byte[])item);
+					terms[i] = term;
+				}
+				else {
+					BytesRef term = new BytesRef(item.toString());
+					terms[i] = term;
+				}										
+			}
+			
+			Query termQuery = new TermInSetQuery(key.getKey(),terms);
+			return termQuery;
+		}
+		else if (operator==QueryOperator.EQUAL || operator==QueryOperator.NOT_EQUALS) {
+			Object obj = value;
+			Query termQuery;
+			if(obj instanceof ObjectId || obj instanceof UUID) {									
+				byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(obj),false);
+	            BytesRef keyByteRef = new BytesRef(keyBytes);	
+	            Term term = new Term(key.getKey(), keyByteRef);
+				termQuery = new TermQuery(term);
+				
+	     	} else if (obj instanceof Number) {
+				if (obj instanceof Long ) {
+					 termQuery = LongPoint.newExactQuery(key.getKey(), ((Number) obj).longValue());
+					
+				}
+				else if (obj instanceof Integer || obj instanceof Short) {
+					termQuery = IntPoint.newExactQuery(key.getKey(), ((Number) obj).intValue());
+					
+				}
+				else if (obj instanceof Float ) {
+					termQuery = FloatPoint.newExactQuery(key.getKey(), ((Number) obj).floatValue());
+					
+				}
+				else {
+					double d = ((Number) obj).doubleValue();						
+					termQuery = DoublePoint.newExactQuery(key.getKey(),d);					
+				}
+				
+			} else if (obj instanceof byte[]) {
+				Term term = new Term(key.getKey(), new BytesRef((byte[]) obj));
+				termQuery = new TermQuery(term);
+				
+			} else {
+				Term term = new Term(key.getKey(), obj.toString());
+				termQuery = new TermQuery(term);				
+			}
+			return termQuery;
+		}
+		else if (operator==QueryOperator.GREATER_THAN || operator==QueryOperator.GREATER_THAN_OR_EQUAL) {
+			Object obj = value;
+			Query filter;
+			if (obj instanceof Number) {
+				if (obj instanceof Long ) {					
+					filter = LongPoint.newRangeQuery(key.getKey(), ((Number) obj).longValue(),Long.MAX_VALUE);
+					
+				}
+				else if (obj instanceof Integer || obj instanceof Short) {
+					filter = IntPoint.newRangeQuery(key.getKey(), ((Number) obj).intValue(),Integer.MAX_VALUE);
+					
+				}
+				else if (obj instanceof Float ) {
+					filter = FloatPoint.newRangeQuery(key.getKey(), ((Number) obj).floatValue(),Float.MAX_VALUE);
+					
+				}
+				else {
+					double d = ((Number) obj).doubleValue();						
+					filter = DoublePoint.newRangeQuery(key.getKey(),d,Double.MAX_VALUE);					
+				}
+				
+			} else if (obj instanceof byte[]) {				
+				filter = BinaryPoint.newRangeQuery(key.getKey(),(byte[]) obj, null);
+				
+			} else {				
+				filter = SortedDocValuesField.newSlowRangeQuery(key.getKey(), new BytesRef(obj.toString()), null,true,false);				
+			}
+			return filter;
+		}
+		else if (operator==QueryOperator.LESS_THAN || operator==QueryOperator.LESS_THAN_OR_EQUAL) {
+			Object obj = value;
+			Query filter;
+			if (obj instanceof Number) {
+				if (obj instanceof Long ) {					
+					filter = LongPoint.newRangeQuery(key.getKey(), Long.MIN_VALUE, ((Number) obj).longValue());
+					
+				}
+				else if (obj instanceof Integer || obj instanceof Short) {
+					filter = IntPoint.newRangeQuery(key.getKey(), Integer.MIN_VALUE, ((Number) obj).intValue());
+					
+				}
+				else if (obj instanceof Float ) {
+					filter = FloatPoint.newRangeQuery(key.getKey(),Float.MIN_VALUE, ((Number) obj).floatValue());
+					
+				}
+				else {
+					double d = ((Number) obj).doubleValue();						
+					filter = DoublePoint.newRangeQuery(key.getKey(),Double.MIN_VALUE, d);					
+				}
+				
+			} else if (obj instanceof byte[]) {				
+				filter = BinaryPoint.newRangeQuery(key.getKey(), null, (byte[]) obj);
+				
+			} else {				
+				filter = SortedDocValuesField.newSlowRangeQuery(key.getKey(), null, new BytesRef(obj.toString()), false, true);				
+			}
+			return filter;
+		}
+		else {
+			throw new UnsupportedOperationException("unsupported query expression: " + operator);
+		}
+	}
+	
+	/**
+	 * 对所有字段使用lucene索引进行查询, for $text
+	 * @param query
+	 * @return
+	 */
+	protected List<IdWithMeta> getPosition(BooleanQuery.Builder query, Document $text) {
+		List<IdWithMeta> result = new ArrayList<>();
+		LuceneIndexAccess access = indexAccess;
+
+		try {
+
+			String cacheName = access.cacheName();
+			ClassLoader ldr = null;
+
+			GridCacheAdapter<KeyValue,Object> cache = null;
+			if (ctx != null) {
+				cache = ctx.cache().internalCache(cacheName);
+				if (cache == null) {
+					cache = ctx.cache().internalCache(this.collection.getCollectionName());
+				}
+			}
+			if (cache != null && ctx.deploy().enabled())
+				ldr = cache.context().deploy().globalLoader();
+
+			access.flush();
+			
+			int limit = 0;
+			float scoreThreshold = 0;
+			SortField sortField = null;
+
+			// take a reference as the searcher may change
+			IndexSearcher searcher = access.searcher;
+			// reuse the same analyzer; it's thread-safe;
+			// also allows subclasses to control the analyzer used.			
+			// Filter expired items.
+			//-Query filter = LongPoint.newRangeQuery(FullTextLucene.EXPIRATION_TIME_FIELD_NAME, U.currentTimeMillis(),Long.MAX_VALUE);
+			// query.add(filter, BooleanClause.Occur.FILTER);
+			
+			
+			String defaultTextField = null;
+			FieldType fieldType = TextField.TYPE_NOT_STORED;
+			for (IndexKey key : this.getKeys()) {				
+				if (key.isText() && defaultTextField==null) {
+					defaultTextField = key.getKey();
+					fieldType = access.fields(collection.getTypeName()).getOrDefault(defaultTextField,fieldType);
+				}
+			}
+			if ($text!=null) {
+				Map<String, Object> opt =  $text;
+				Object obj = null;
+
+				if(opt.containsKey("$limit")) {
+					limit = Integer.parseInt(opt.get("$limit").toString());
+				}
+
+				int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
+				if(k<=0){
+					k = GridLuceneIndex.DEAULT_LIMIT;
+				}
+
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+
+				if(opt.containsKey("$sort")) {
+					String sortOpt = opt.get("$sort").toString();
+					sortField = new SortField(sortOpt,Type.DOUBLE, true);
+				}
+
+				if(!this.isKnnVectorIndex && opt.containsKey("$search")) {
+					obj = opt.get("$search"); // 更容错，支持多个字段
+					SimpleQueryParser parser = new SimpleQueryParser(access.analyzerWrapper, weights); // 定义查询分析器 // 定义查询分析器
+					parser.setDefaultOperator(BooleanClause.Occur.MUST);
+					Query textQuery = parser.parse(obj.toString());
+					query.add(textQuery, BooleanClause.Occur.MUST);
+				}
+				else if(!this.isKnnVectorIndex && opt.containsKey("$text")) {
+					obj = opt.get("$text"); // 更复杂，不指定字段，只支持默认文本字段
+					StandardQueryParser parser = new StandardQueryParser(access.analyzerWrapper); // 定义查询分析器
+					parser.setFieldsBoost(weights);
+					Query textQuery = parser.parse(obj.toString(),defaultTextField);
+					query.add(textQuery, BooleanClause.Occur.MUST);
+
+				}
+				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
+					Object text = opt.get("$knnVector"); // 指定字段
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
+						query.add(vecQuery, BooleanClause.Occur.MUST);
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
+						query.add(vecQuery, BooleanClause.Occur.MUST);
+					}
+				}
+				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
+					Object text = opt.get("$vectorSearch"); // 支持多个字段
+
+					if(this.getKeys().size()==1) {
+						if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+							byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+							KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
+							query.add(vecQuery, BooleanClause.Occur.MUST);
+						}
+						else {
+							float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+							KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
+							query.add(vecQuery, BooleanClause.Occur.MUST);
+						}
+					}
+					else{
+						for(IndexKey key: this.getKeys()){
+							if(key.isText()){
+								if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+									byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+									KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(key.getKey(), queryVector, k);
+									query.add(vecQuery, BooleanClause.Occur.SHOULD);
+								}
+								else {
+									float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
+									KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(key.getKey(), queryVector, k);
+									query.add(vecQuery, BooleanClause.Occur.SHOULD);
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			// Lucene 3 insists on a hard limit and will not provide
+			// a total hits value. Take at least 100 which is
+			// an optimal limit for Lucene as any more
+			// will trigger writing results to disk.
+			int maxResults = GridLuceneIndex.DEAULT_LIMIT;
+			if(limit>0) {
+				maxResults = limit;
+			}
+			
+			TopDocs docs = null;
+			if(sortField==null)
+				docs = searcher.search(query.build(), maxResults);
+			else
+				docs = searcher.search(query.build(), maxResults, new Sort(sortField));
+			
+			limit = docs.scoreDocs.length;
+			
+			result = new ArrayList<>(limit);
+			for (int i = 0; i < limit; i++) {
+				ScoreDoc sd = docs.scoreDocs[i];
+				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
+				float score = sd.score;
+				if(score<scoreThreshold) {
+					continue;
+				}
+
+				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
+				
+				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"textScore",score);
+				if(i==0) {
+					meta.append("totalHits", docs.totalHits.value);
+				}
+				result.add(new IdWithMeta(k,meta));
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+
+	/**
+	 * 对指定的字符串字段进行搜索$search查询，支持模糊匹配
+	 * 
+	 * @param indexKey
+	 * @return 字段值，_key
+	 */
+	protected List<IdWithMeta> getFullTextList(IndexKey indexKey,BooleanQuery.Builder query, Object exp) {
+		LuceneIndexAccess access = indexAccess;		
+		int limit = 0;
+		float scoreThreshold = 0;
+		List<IdWithMeta> result = new ArrayList<>();
+		try {
+			String field = indexKey.getKey();
+			FieldType fieldType = this.indexAccess.fields(collection.getTypeName()).getOrDefault(field,StringField.TYPE_STORED);
+			String cacheName = access.cacheName();
+			ClassLoader ldr = null;
+
+			GridCacheAdapter<KeyValue, Object> cache = null;
+			if (ctx != null) {
+				cache = ctx.cache().internalCache(cacheName);
+				if (cache == null) {
+					cache = ctx.cache().internalCache(collection.getCollectionName());
+				}
+			}
+			if (cache != null && ctx.deploy().enabled())
+				ldr = cache.context().deploy().globalLoader();
+
+			access.flush();
+
+			// take a reference as the searcher may change
+			IndexSearcher searcher = access.searcher;
+			// reuse the same analyzer; it's thread-safe;
+			// also allows subclasses to control the analyzer used.
+			SortField sortField = null;
+			Object text = exp;
+			Query textQuery = null;
+			if (exp instanceof Map) {
+				Map<String, Object> opt = ((Map) exp);
+
+				if(opt.containsKey("$limit")) {
+					limit = Integer.parseInt(opt.get("$limit").toString());
+				}
+				int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
+				if(k<=0){
+					k = GridLuceneIndex.DEAULT_LIMIT;
+				}
+
+				if(opt.containsKey("$scoreThreshold")) {
+					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
+				}
+
+				if(opt.containsKey("$sort")) {
+					String sortOpt = opt.get("$sort").toString();
+					sortField = new SortField(sortOpt,Type.DOUBLE, true);
+				}
+
+				if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.REGEX)) {
+					text = opt.get(BsonRegularExpression.REGEX);
+					RegexpQuery regQuery = new RegexpQuery(new Term(field,text.toString()));					
+					textQuery = regQuery;
+				}
+				else if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.TEXT)) {
+					text = opt.get(BsonRegularExpression.TEXT);
+					// 更容错，只检索一个字段
+					StandardQueryParser parser = new StandardQueryParser(access.analyzerWrapper); // 定义查询分析器
+					parser.setFieldsBoost(weights);
+					textQuery = parser.parse(text.toString(),field);
+				}
+				else if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.SEARCH)) {
+					text = opt.get(BsonRegularExpression.SEARCH);
+					// 更复杂，只检索一个字段，支持括号
+					SimpleQueryParser parser = new SimpleQueryParser(access.getFieldAnalyzer(field), field); // 定义查询分析器
+					parser.setDefaultOperator(BooleanClause.Occur.MUST);
+					textQuery = parser.parse(text.toString());
+				}
+				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
+					text = opt.get("$vectorSearch");
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+				}
+				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
+					text = opt.get("$knnVector");
+
+					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
+						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
+						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+					else {
+						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
+						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
+						textQuery = vecQuery;
+					}
+				}
+			}
+			if(textQuery!=null) {
+				query.add(textQuery,BooleanClause.Occur.MUST);
+			}
+			// Lucene 3 insists on a hard limit and will not provide
+			// a total hits value. Take at least 100 which is
+			// an optimal limit for Lucene as any more
+			// will trigger writing results to disk.
+			int maxResults = GridLuceneIndex.DEAULT_LIMIT;
+			if(limit>0) {
+				maxResults = limit;
+			}
+			TopDocs docs = null;
+			if(sortField==null)
+				docs = searcher.search(query.build(), maxResults);
+			else
+				docs = searcher.search(query.build(), maxResults, new Sort(sortField));
+			
+			limit = docs.scoreDocs.length;
+
+			for (int i = 0; i < limit; i++) {
+				ScoreDoc sd = docs.scoreDocs[i];
+				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
+				float score = sd.score;
+				if(score<scoreThreshold) {
+					continue;
+				}
+
+				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
+				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"searchScore",score);
+				if(i==0) {
+					meta.append("totalHits", docs.totalHits.value);
+				}
+				if(!this.isKnnVectorIndex) {
+					String v = doc.get(field);
+					meta.append("indexValue", v);
+				}
+				result.add(new IdWithMeta(k,meta));
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+
+	}
+
+	private static boolean isInQuery(String key) {
+		return key.equals(QueryOperator.IN.getValue());
+	}
+
+	public boolean isFirstIndex() {
+		return isFirstIndex;
+	}
+
+	void setFirstIndex(boolean isFirstIndex) {
+		this.isFirstIndex = isFirstIndex;
+	}
+	
+	public boolean isTextIndex() {
+		for(IndexKey ind: this.getKeys()) {
+			if(ind.isText()) return true;
+		}
+		return false;
+	}
+	
+	public int getPriority() {
+		if(this.isTextIndex()) {
+			return 100 + (int)docCount/100 + getKeys().size();
+		}
+		return 10 + (int)docCount/1000 + getKeys().size();
+    }
+
+}

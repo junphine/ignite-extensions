@@ -60,8 +60,8 @@ import static de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil.*;
 
 public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
-	final IgniteCache<Object, BinaryObject> dataMap;	
-	final String idField;
+	final IgniteCache<Object, BinaryObject> dataMap;
+	private String schema;
 	private String tableName;
 	private String typeName;
 	private boolean readOnly = false;
@@ -70,7 +70,6 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
             CursorRegistry cursorRegistry, IgniteCache<Object, BinaryObject> dataMap) {
         super(database, collectionName,options,cursorRegistry);
         this.dataMap = dataMap;
-        this.idField = options.getIdField();
         
         if(collectionName.startsWith("igfs-internal-")) { // igfs
         	this.readOnly = true;
@@ -94,7 +93,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 			if (idx instanceof IgniteLuceneIndex) {
 				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;
 				if(op.equals("reIndex"))
-					igniteIndex.init(this);
+					igniteIndex.init();
 				if(op.equals("add")) {
 					igniteIndex.setFirstIndex(firstLuneceIndex);
 					firstLuneceIndex = false;
@@ -103,7 +102,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 			if (idx instanceof IgniteVectorIndex) {
 				IgniteVectorIndex igniteIndex = (IgniteVectorIndex) idx;
 				if(op.equals("reIndex"))
-					igniteIndex.init(this);
+					igniteIndex.init();
 			}
     	}
     }
@@ -129,6 +128,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	if(readOnly) {
     		throw new IllegalOperationException("This collection is read only!");
     	}
+		final String idField = this.options.getIdField();
         Object key = null;
         if (idField != null) {
             key = document.get(idField);
@@ -174,6 +174,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
     @Override
     protected Document getDocument(Object position) {
+		final String idField = this.options.getIdField();
     	// position with score
     	if(position instanceof IdWithMeta) { // _key,_score,_indexValue
     		IdWithMeta idWithScore = (IdWithMeta)position;    		
@@ -206,12 +207,13 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
     @Override
     protected Object findDocumentPosition(Document document) {
-    	 Object key = document.getOrDefault(this.idField, null);
-    	 if(key!=null) {
-    		 key = toBinaryKey(key);
-    		 return key;
-    	 }    	 
-         return null;
+		final String idField = this.options.getIdField();
+		Object key = document.getOrDefault(idField, null);
+		if(key!=null) {
+			key = toBinaryKey(key);
+			return key;
+		}
+		return null;
     }
     
     @Override
@@ -312,6 +314,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     
     protected CloseableIterator<Document> matchDocuments(Document query, Document orderBy, int numberToSkip, int numberToReturn) {       
         boolean isSysDB = this.getDatabaseName().equals(IgniteDatabase.SYS_DB_NAME);
+		final String idField = this.options.getIdField();
         if(query.containsKey("$sql")) {
         	Object sqlQuery = query.get("$sql");
         	SqlFieldsQuery sqlQ;
@@ -352,7 +355,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         		// cache does not have table or queryentity
 	        	FieldsQueryCursor<List<?>>  cursor = dataMap.query(sqlQ);
 	    		
-	    		return TransformerUtil.mapListField(cursor,this.idField);
+	    		return TransformerUtil.mapListField(cursor,idField);
        	 	}
         	else {
 				try {
@@ -391,14 +394,14 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 	        	}
 	        }
 	        else {
-	        	filter = new BinaryObjectMatch(query,this.idField);
+	        	filter = new BinaryObjectMatch(query,idField);
 	        }
 	        
 	        ScanQuery<Object, Object> scan = new ScanQuery<>(query.isEmpty() ? null : filter);
 		 
 			QueryCursor<Cache.Entry<Object, Object>>  cursor = dataMap.query(scan);		  
 		    
-		    return TransformerUtil.map(cursor,this.idField);
+		    return TransformerUtil.map(cursor,idField);
         }
     }
 
@@ -430,7 +433,8 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     protected void handleUpdate(Object key, Document oldDocument,Document document) {
     	if(readOnly) {
     		throw new IllegalOperationException("This collection is read only!");
-    	}    	
+    	}
+		final String idField = this.options.getIdField();
     	String typeName =  this.getTypeName();
     	
     	IgniteDatabase database = (IgniteDatabase)this.getDatabase();
@@ -445,11 +449,11 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	// Get the data streamer reference and stream data.
     	 ScanQuery<Object, BinaryObject> scan = new ScanQuery<>();
     	 QueryCursor<Cache.Entry<Object, BinaryObject>>  cursor = dataMap.query(scan);
-    	
+		final String idField = this.options.getIdField();
     	 return StreamSupport.stream(cursor.spliterator(),false).map(
 				 entry ->
 						 new DocumentWithPosition<>(
-								 objectToDocument(entry.getKey(),entry.getValue(),this.idField), entry.getKey()
+								 objectToDocument(entry.getKey(),entry.getValue(),idField), entry.getKey()
 						 )
 		 );
     }
@@ -460,39 +464,64 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	}
 
     	CacheConfiguration<Object,BinaryObject> cfg = dataMap.getConfiguration(CacheConfiguration.class);
-    	String schema = cfg.getSqlSchema();
+    	schema = cfg.getSqlSchema();
     	if(schema==null) {
     		schema = cfg.getName();
     	}
-    	String cacheName = cfg.getName();
-    	
-    	IgniteDatabase db = (IgniteDatabase)this.getDatabase();
-    	GridKernalContext ctx = ((IgniteEx)db.getIgnite()).context();
-    	IgniteH2Indexing igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
-    	if(igniteH2Indexing!=null) {
-    		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(cacheName);
-    		for(TableDescriptor table: tables) {    			
-    			if (table.type().textIndex() != null) {
-    				tableName = table.type().tableName();
-    				typeName = table.type().name();
-    				break;
-    			}
-    			if(tableName==null) {
-    				tableName = table.type().tableName();
-    				typeName = table.type().name();
-    			}
-    		}
-    	}   	
+		String cacheName = cfg.getName();
+		String shortName = cacheName;
+		int pos = shortName.lastIndexOf('.');
+		shortName = pos>0? shortName.substring(pos+1): shortName;
+
+		if(!cfg.getQueryEntities().isEmpty()) {
+			Iterator<QueryEntity> qeit = cfg.getQueryEntities().iterator();
+			while(qeit.hasNext()) {
+				QueryEntity entity = qeit.next();
+				if(StringUtils.isEmpty(typeName)) {
+					typeName = entity.getValueType();
+					tableName = entity.getTableName();
+				}
+				else if(cacheName.equalsIgnoreCase(entity.getValueType()) || shortName.equalsIgnoreCase(entity.getTableName())){
+					typeName = entity.getValueType();
+					tableName = entity.getTableName();
+					break;
+				}
+			}
+		}
+
+		if(tableName==null) {
+			IgniteDatabase db = (IgniteDatabase) this.getDatabase();
+			GridKernalContext ctx = ((IgniteEx) db.getIgnite()).context();
+			IgniteH2Indexing igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
+			if (igniteH2Indexing != null) {
+				Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(cacheName);
+				for (TableDescriptor table : tables) {
+					if (table.type().textIndex() != null) {
+						schema = table.type().schemaName();
+						tableName = table.type().tableName();
+						typeName = table.type().name();
+						break;
+					}
+					if (tableName == null) {
+						schema = table.type().schemaName();
+						tableName = table.type().tableName();
+						typeName = table.type().name();
+					}
+				}
+			}
+		}
     	// SQL_{SCHEMA_NAME}_{TABLE_NAME}	
-		if(cacheName.startsWith("SQL_")) {
+		if(tableName==null && cacheName.startsWith("SQL_")) {
 			String patten = "SQL_"+schema+"_";
 			if(cacheName.startsWith(patten)) {
 				tableName = cacheName.substring(patten.length());
 			}
 			else {
-				int pos = cacheName.lastIndexOf('_',5);
-				if(pos>0)
-					tableName =  cacheName.substring(pos+1);
+				pos = cacheName.lastIndexOf('_',5);
+				if(pos>5) {
+					tableName = cacheName.substring(pos + 1);
+					schema = cacheName.substring(4,pos-1);
+				}
 			}
 		}
 		return tableName;
@@ -505,27 +534,8 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	String shortName = getTableName();
     	if(typeName!=null) {
     		return typeName;
-    	}    	
-    	if(!StringUtils.isEmpty(shortName)) {
-    		int pos = shortName.lastIndexOf('.');
-    		shortName = pos>0? shortName.substring(pos+1): shortName;
-    	}    	
-    	
-    	CacheConfiguration<Object,BinaryObject> cfg = dataMap.getConfiguration(CacheConfiguration.class);    	
-    	if(!cfg.getQueryEntities().isEmpty()) {
-    		Iterator<QueryEntity> qeit = cfg.getQueryEntities().iterator();
-    		while(qeit.hasNext()) {
-	    		QueryEntity entity = qeit.next();
-	    		if(StringUtils.isEmpty(typeName)) {
-	        		typeName = entity.getValueType();	        		
-	        	}
-	    		else if(this.getCollectionName().equalsIgnoreCase(entity.getValueType()) || shortName.equalsIgnoreCase(entity.getTableName())){
-	    			typeName = entity.getValueType();
-	    			break;
-	    		}	    		
-    		}
     	}
-    	
+
     	if(StringUtils.isEmpty(typeName)) {
     		// read type name from existed records
     		ScanQuery<Object, Object> scan = new ScanQuery<>(null);

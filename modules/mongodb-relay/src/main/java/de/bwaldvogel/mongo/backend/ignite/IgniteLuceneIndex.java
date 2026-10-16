@@ -68,10 +68,11 @@ import static org.apache.ignite.internal.processors.query.QueryUtils.KEY_FIELD_N
 /**
  * 如果是复合索引，不论是否Text索引，每个字段各自索引。
  */
+@Deprecated
 public class IgniteLuceneIndex extends Index<Object> {
 	private static final Logger log = LoggerFactory.getLogger(IgniteLuceneIndex.class);
 
-	private final String cacheName;
+	private final IgniteBinaryCollection collection;
 
 	private LuceneIndexAccess indexAccess;
 
@@ -85,7 +86,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 	private boolean isKnnVectorIndex = false;
 
-	private int dimensions = 0;
+	private int dimensions = 1024;
 
 	private VectorSimilarityFunction vectorSimilarityFunction;
 
@@ -94,10 +95,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 	private Map<String, Float> weights = new HashMap<>();
 
 	private long docCount = 0;
-	
-	private final String idField;
-	
-	private String typeName;
 
 	/** */
 	private String[] idxdFields = null;
@@ -110,8 +107,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	public IgniteLuceneIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,boolean sparse,boolean isKnnVectorIndex) {
 		super(name, keys, true);  // lucene index always is sparse
 		this.ctx = ctx;
-		this.cacheName = collection.getCollectionName();
-		this.idField = collection.idField;
+		this.collection = collection;
 		this.isKnnVectorIndex = isKnnVectorIndex;
 		// init field weight
 		for(IndexKey indexKey: keys) {
@@ -125,20 +121,20 @@ public class IgniteLuceneIndex extends Index<Object> {
 				}
 			}
 		}
-		
-		init(collection);
+		igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
+		init();
 	}
 
-	public void init(IgniteBinaryCollection coll) {
+	public void init() {
 		if (indexAccess == null) {
 			try {
-				indexAccess = LuceneIndexAccess.getIndexAccess(ctx, cacheName);
+				indexAccess = LuceneIndexAccess.getIndexAccess(ctx, collection.getCollectionName());
 
 				CacheObjectBinaryProcessorImpl cacheObjProc = (CacheObjectBinaryProcessorImpl) ctx.cacheObjects();
 
 				marshaller = cacheObjProc.marshaller();				
 				
-				typeName =  coll.getTypeName();
+				String typeName =  collection.getTypeName();
 
 				String embeddingModelName = "BAAI/bge-m3";
 				
@@ -150,7 +146,8 @@ public class IgniteLuceneIndex extends Index<Object> {
 							log.error("KnnVectorIndex must have dimensions and indexType options");
 							throw new IgniteException("KnnVectorIndex must have dimensions and indexType options");
 						}
-						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions", options.getOrDefault("numDimensions", 1024)).toString());
+						Object numDimensions = options.getOrDefault("numDimensions", this.dimensions);
+						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions",numDimensions).toString());
 						String similarity = options.getOrDefault("similarity", "cosine").toString();
 						if(similarity.equals("euclidean ")) {
 							vectorSimilarityFunction = VectorSimilarityFunction.EUCLIDEAN;
@@ -209,9 +206,6 @@ public class IgniteLuceneIndex extends Index<Object> {
 						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
 					}
 				}
-				
-				igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
-
 			} catch (IOException e) {
 				log.error("create luence index failed:",e);
 			}
@@ -225,7 +219,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			return false;
 		}
 		@Nullable
-		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(cacheName);
+		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(this.collection.getCollectionName());
 		for(TableDescriptor table: tables) {
 			if (table.type().name().equalsIgnoreCase(typeName) && table.type().textIndex() != null) {
 				return true;
@@ -237,7 +231,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	@Override
 	public Object getPosition(Document document) {
 		// Set<KeyValue> keyValues = getKeyValues(document);
-		Object key = document.getOrDefault(idField, null);
+		Object key = document.getOrDefault("_id", null);
 		if (key != null) {
 			return DocumentUtil.toBinaryKey(key);
 		}
@@ -282,12 +276,12 @@ public class IgniteLuceneIndex extends Index<Object> {
 		return k;
 	}
 
-	public Map<String, FieldType> fieldsMapping(MongoCollection<Object> collection) {
-		Map<String, FieldType> fields = indexAccess.fields(typeName);
+	public Map<String, FieldType> fieldsMapping(IgniteBinaryCollection collection) {
+		Map<String, FieldType> fields = indexAccess.fields(collection.getTypeName());
 		for (Index<Object> idx : collection.getIndexes()) {
 			if (idx instanceof IgniteLuceneIndex) {
 				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;
-				igniteIndex.init((IgniteBinaryCollection)collection);				
+				igniteIndex.init();
 				for (IndexKey ik : idx.getKeys()) {
 					if(igniteIndex.isKnnVectorIndex){
 						FieldType fieldType = new FieldType();
@@ -347,7 +341,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 		// index all field
 		if (idxdFields == null || idxdFields.length==0) {
-			Map<String, FieldType> fields = fieldsMapping(collection);
+			Map<String, FieldType> fields = fieldsMapping(coll);
 			idxdFields = new String[fields.size()];
 			idxdTypes = new FieldType[fields.size()];
 			int i = 0;
@@ -734,7 +728,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 	@Override
 	public void drop() {		
-		Map<String, FieldType> fields = indexAccess.fields(typeName);
+		Map<String, FieldType> fields = indexAccess.fields(this.collection.getTypeName());
 		for (IndexKey ik : this.getKeys()) {
 			fields.remove(ik.getKey());
 		}		
@@ -892,7 +886,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			if (ctx != null) {
 				cache = ctx.cache().internalCache(cacheName);
 				if (cache == null) {
-					cache = ctx.cache().internalCache(this.cacheName);
+					cache = ctx.cache().internalCache(this.collection.getCollectionName());
 				}
 			}
 			if (cache != null && ctx.deploy().enabled())
@@ -918,7 +912,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			for (IndexKey key : this.getKeys()) {				
 				if (key.isText() && defaultTextField==null) {
 					defaultTextField = key.getKey();
-					fieldType = access.fields(typeName).getOrDefault(defaultTextField,fieldType);
+					fieldType = access.fields(collection.getTypeName()).getOrDefault(defaultTextField,fieldType);
 				}
 			}
 			if ($text!=null) {
@@ -1058,7 +1052,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		List<IdWithMeta> result = new ArrayList<>();
 		try {
 			String field = indexKey.getKey();
-			FieldType fieldType = this.indexAccess.fields(typeName).getOrDefault(field,StringField.TYPE_STORED);
+			FieldType fieldType = this.indexAccess.fields(collection.getTypeName()).getOrDefault(field,StringField.TYPE_STORED);
 			String cacheName = access.cacheName();
 			ClassLoader ldr = null;
 
@@ -1066,7 +1060,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 			if (ctx != null) {
 				cache = ctx.cache().internalCache(cacheName);
 				if (cache == null) {
-					cache = ctx.cache().internalCache(this.cacheName);
+					cache = ctx.cache().internalCache(collection.getCollectionName());
 				}
 			}
 			if (cache != null && ctx.deploy().enabled())

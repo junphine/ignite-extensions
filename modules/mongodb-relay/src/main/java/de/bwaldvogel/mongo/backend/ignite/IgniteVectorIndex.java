@@ -69,7 +69,7 @@ public class IgniteVectorIndex extends Index<Object> {
 	/** Learning environment builder. */
     protected LearningEnvironmentBuilder envBuilder = LearningEnvironmentBuilder.defaultBuilder();
 
-	private final String cacheName;	
+	private final IgniteBinaryCollection collection;
 	
 	private IgniteCache<Object, Vector> vecIndex;	
 	
@@ -84,8 +84,6 @@ public class IgniteVectorIndex extends Index<Object> {
     protected DistanceMeasure distanceMeasure;
     
     private String indexType = SpatialIndexType.BALL_TREE.name();
-	
-	private String idField = "_id";
 	
 	private int K = GridLuceneIndex.DEAULT_LIMIT;
 	
@@ -119,8 +117,7 @@ public class IgniteVectorIndex extends Index<Object> {
 	public IgniteVectorIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys, boolean sparse) {
 		super(name, keys, sparse);
 		this.ctx = ctx;
-		this.cacheName = collection.getCollectionName();
-		this.idField = collection.idField;
+		this.collection = collection;
 		this.distanceMeasure = new CosineSimilarity();
 		
 		if(sparse) {
@@ -130,8 +127,9 @@ public class IgniteVectorIndex extends Index<Object> {
 		String embeddingModelName = "BAAI/bge-m3";
 		Document options = keys.get(0).textOptions();
 		if(options!=null) {
-			
-			this.dimensions = Integer.parseInt(options.getOrDefault("dimensions", dimensions).toString());
+
+			Object numDimensions = options.getOrDefault("numDimensions", dimensions);
+			this.dimensions = Integer.parseInt(options.getOrDefault("dimensions",numDimensions).toString());
 			
 			String similarity = options.getOrDefault("similarity", "cosine").toString();
 			if(similarity.equals("euclidean ")) {
@@ -193,17 +191,17 @@ public class IgniteVectorIndex extends Index<Object> {
 		
 		CacheConfiguration<Object, Vector> cfg = new CacheConfiguration<>();        	
         cfg.setCacheMode(CacheMode.PARTITIONED);
-        cfg.setName(IgniteDatabase.getIndexCacheName(collection.getDatabaseName(),this.cacheName,this.getName()));
+        cfg.setName(IgniteDatabase.getIndexCacheName(collection.getDatabaseName(),this.collection.getCollectionName(),this.getName()));
         cfg.setAtomicityMode(CacheAtomicityMode.ATOMIC); 
         cfg.setBackups(0);
         
         vecIndex = ctx.grid().getOrCreateCache(cfg);
-        
-        init(collection);
+
+		init();
 	}
 	
 
-	public void init(IgniteBinaryCollection collection) {
+	public void init() {
 				
 	}
 	
@@ -357,7 +355,7 @@ public class IgniteVectorIndex extends Index<Object> {
     
 	@Override
 	public Object getPosition(Document document) {		
-		Object key = document.get(idField);
+		Object key = document.get(this.collection.idField);
 		if (key != null) {
 			return DocumentUtil.toBinaryKey(key);
 		}

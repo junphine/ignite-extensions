@@ -6,7 +6,12 @@ Ignite Cache 和  Mongo Collection 是对应的。
 _class 为type
 _id    为key
 
-使用lucene作为index，一个collection对应一个cache
+使用lucene作为index，一个collection对应一个cache.
+
+当_class为空：
+   schema name为CacheName,table name为CacheName或者改cache下面的第一个table name
+当_class不为空：
+   schema name为CacheName,table name为type short name
 
 默认的DataBase为default，不能创建新的数据库，只能通过配置文件增加数据库
 
