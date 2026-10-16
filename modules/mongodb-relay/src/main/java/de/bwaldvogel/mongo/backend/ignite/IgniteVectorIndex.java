@@ -355,7 +355,7 @@ public class IgniteVectorIndex extends Index<Object> {
     
 	@Override
 	public Object getPosition(Document document) {		
-		Object key = document.get(this.collection.idField);
+		Object key = document.get(this.collection.getOptions().getIdField());
 		if (key != null) {
 			return DocumentUtil.toBinaryKey(key);
 		}

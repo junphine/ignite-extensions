@@ -231,7 +231,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 	@Override
 	public Object getPosition(Document document) {
 		// Set<KeyValue> keyValues = getKeyValues(document);
-		Object key = document.getOrDefault("_id", null);
+		Object key = document.get(this.collection.getOptions().getIdField());
 		if (key != null) {
 			return DocumentUtil.toBinaryKey(key);
 		}

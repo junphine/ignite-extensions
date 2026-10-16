@@ -78,7 +78,10 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         	this.readOnly = true;
         }
     }
-    
+
+	CollectionOptions getOptions(){
+		return this.options;
+	}
 
     @Override
     public void addIndex(Index<Object> index) {
