@@ -735,7 +735,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		this.indexAccess = null;
 	}
 	
-	void close() {
+	public void close() {
 		LuceneIndexAccess.removeIndexAccess(indexAccess);
 	}
 
@@ -879,7 +879,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 
 		try {
 
-			String cacheName = access.cacheName();
+			String cacheName = access.getCacheName();
 			ClassLoader ldr = null;
 
 			GridCacheAdapter<KeyValue,Object> cache = null;
@@ -1053,7 +1053,7 @@ public class IgniteLuceneIndex extends Index<Object> {
 		try {
 			String field = indexKey.getKey();
 			FieldType fieldType = this.indexAccess.fields(collection.getTypeName()).getOrDefault(field,StringField.TYPE_STORED);
-			String cacheName = access.cacheName();
+			String cacheName = access.getCacheName();
 			ClassLoader ldr = null;
 
 			GridCacheAdapter<KeyValue, Object> cache = null;

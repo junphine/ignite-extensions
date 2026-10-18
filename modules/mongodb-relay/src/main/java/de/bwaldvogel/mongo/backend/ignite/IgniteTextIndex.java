@@ -1,7 +1,9 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import de.bwaldvogel.mongo.backend.CollectionUtils;
@@ -9,13 +11,13 @@ import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
 
-import org.apache.ignite.cache.FullTextQueryIndex;
-import org.apache.ignite.cache.QueryEntity;
+import org.apache.ignite.cache.*;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.TextQuery;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.cache.query.ScoredCacheEntry;
 import org.apache.ignite.internal.processors.query.GridQueryIndexDescriptor;
+import org.apache.ignite.internal.processors.query.QueryIndexDescriptorImpl;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
 
 /**
@@ -32,19 +34,37 @@ import org.apache.ignite.internal.processors.query.schema.management.TableDescri
  *   <li>{@code { field: 'keyword' } } → 单字段检索（与旧版SimpleQueryParser语义近似）；</li>
  * </ul>
  *
+ * <p>初始化参数（命名对齐MongoDB Search索引配置，取自mongo建索引时传入的 {@code textOptions}）：
+ * <ul>
+ *   <li>{@code analyzer} —— 索引期分析器；</li>
+ *   <li>{@code searchAnalyzer}（或 {@code queryAnalyzer}/{@code defaultSearchAnalyzer}）—— 检索期分析器；</li>
+ * </ul>
+ * 取值为 {@code $IGNITE_HOME/config/lucene.xml} 中注册的Spring bean名，由Ignite的
+ * {@code LuceneIndexAccess} 解析；自定义分词器/tokenFilter等也统一由该配置提供。
+ * 后建的文本索引追加到已有类型时，若类型上已存在FULLTEXT配置则共享既有配置、忽略本索引的分析器参数。
+ *
  * <p>首版限制：
  * <ul>
  *   <li>{@code $regex} 不使用索引，退化为 {@code matchDocuments} 全表扫描过滤；</li>
- *   <li>FULLTEXT字段无法在类型注册后动态追加；后建的文本索引若字段未被注册，查询退化为全表扫描；</li>
  *   <li>{@code $sort} 不生效（Ignite的TextQuery仅支持double docValues字段排序）。</li>
  * </ul>
  */
 public class IgniteTextIndex extends IgniteH2Index {
 
+	/** 索引期分析器（对应MongoDB Search的 {@code analyzer}，lucene.xml bean名）。 */
+	protected String analyzer;
+
+	/** 检索期分析器（对应MongoDB Search的 {@code searchAnalyzer}，lucene.xml bean名）。 */
+	protected String queryAnalyzer;
+
+	protected Boolean storedSource;
+
+	protected Boolean dynamic;
+
 	public IgniteTextIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,
 			boolean sparse) {
 		super(ctx, collection, name, keys, sparse);
-		register();
+		initTextOptions();
 	}
 
 	@Override
@@ -54,19 +74,99 @@ public class IgniteTextIndex extends IgniteH2Index {
 
 	@Override
 	protected void doRegister() throws Exception {
-		if (findTable() != null) {
-			// Ignite不支持在已注册类型上动态追加FULLTEXT字段（dynamicIndexCreate只支持SORTED）
-			log.warn("Ignite type '" + typeName() + "' is already registered. Text fields " + indexFields()
-					+ " cannot be added to its Lucene text index dynamically. Queries using mongo index '" + getName()
-					+ "' will fall back to full scan.");
+		TableDescriptor tbl = findTable();
+		if (tbl == null) {
+			QueryEntity entity = new QueryEntity();
+			entity.setValueType(typeName());
+			entity.setTableName(tableName());
+			entity.setFields(buildFields(allKnownFields()));
+			List<QueryIndex> indexs = new ArrayList<>(entity.getIndexes());
+			indexs.add(buildFullTextQueryIndex());
+			entity.setIndexes(indexs);
+			addQueryEntity(entity);
+			// 针对持久化缓存：registerCache0的重建走树索引分支，不经过Lucene store，这里统一回填
+			backfillLuceneIndex();
 			return;
 		}
-		QueryEntity entity = new QueryEntity();
-		entity.setValueType(typeName());
-		entity.setTableName(tableName());
-		entity.setFields(buildFields(allKnownFields()));
-		entity.getIndexes().add(new FullTextQueryIndex(indexFields()));
-		addQueryEntity(entity);
+		// 类型已注册：WARN后把文本字段动态追加进类型已有的Lucene文本索引
+		log.warn("Ignite type '" + typeName() + "' is already registered. Appending text fields " + keys()
+				+ " of mongo index '" + getName() + "' into its Lucene text index.");
+		addColumns(keys());
+		QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
+		if (desc.getQueryIndex() == null) {
+			desc.setQueryIndex(buildFullTextQueryIndex());
+		} else {
+			log.info("Ignite type '" + typeName() + "' already has FULLTEXT configuration "
+					+ desc.getQueryIndex().getClass().getSimpleName() + "; analyzer options of mongo index '"
+					+ getName() + "' (analyzer=" + analyzer + ", searchAnalyzer=" + queryAnalyzer
+					+ ") are not applied, the existing configuration is shared.");
+		}
+
+		try{
+			LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
+			access.config.setStoreTextFieldValue(storedSource);
+			access.init(tbl.type());
+		} catch (IOException e) {
+			log.error("Get LuceneIndexAccess of cache failed",e);
+		}
+		refreshLuceneIndex();
+		backfillLuceneIndex();
+	}
+
+	/**
+	 * 解析mongo建索引时的文本选项（命名对齐MongoDB Search索引配置）。
+	 * 取第一个非空配置生效；未指定的项回落到Ignite的默认分析器。
+	 */
+	protected void initTextOptions() {
+		for (IndexKey key : getKeys()) {
+			if (!key.isText()) {
+				continue;
+			}
+			Document options = key.textOptions();
+			if (options == null) {
+				continue;
+			}
+			if (analyzer == null) {
+				analyzer = stringOption(options, "analyzer");
+			}
+			if (queryAnalyzer == null) {
+				queryAnalyzer = stringOption(options, "searchAnalyzer");
+				if (queryAnalyzer == null) {
+					queryAnalyzer = stringOption(options, "queryAnalyzer");
+				}
+			}
+			if (storedSource == null) {
+				storedSource = "true".equalsIgnoreCase(stringOption(options, "storedSource"));
+			}
+
+			if (dynamic == null) {
+				dynamic = "true".equalsIgnoreCase(stringOption(options, "dynamic"));
+			}
+		}
+		if (analyzer != null || queryAnalyzer != null) {
+			log.info("Text index '" + getName() + "' analyzer config: analyzer=" + analyzer + ", searchAnalyzer="
+					+ queryAnalyzer);
+		}
+    }
+
+	protected static String stringOption(Document options, String name) {
+		Object value = options.get(name);
+		return value == null ? null : value.toString();
+	}
+
+	/** 构建带分析器配置的FullTextQueryIndex（分析器命名对齐MongoDB Search）。 */
+	protected FullTextQueryIndex buildFullTextQueryIndex() {
+		FullTextQueryIndex idx = new FullTextQueryIndex(keys());
+		if (analyzer != null) {
+			idx.setAnalyzer(analyzer);
+		}
+		if (queryAnalyzer != null) {
+			idx.setQueryAnalyzer(queryAnalyzer);
+		} else if (analyzer != null) {
+			idx.setQueryAnalyzer(analyzer); // 未单独指定时检索分析器与索引分析器一致
+		}
+		idx.setName(this.getName());
+		return idx;
 	}
 
 	@Override
@@ -80,7 +180,19 @@ public class IgniteTextIndex extends IgniteH2Index {
 			return false;
 		}
 		Collection<String> textFields = textIdx.fields();
-		return textFields != null && textFields.containsAll(indexFields());
+		if (textFields == null || !textFields.containsAll(keys())) {
+			return false;
+		}
+		QueryIndexDescriptorImpl desc = textIndexDescriptor(tbl);
+		QueryIndex qidx = desc == null ? null : desc.getQueryIndex();
+		if (qidx == null) {
+			return false; // 无QueryIndex对象时LuceneIndexAccess不会为这些字段建索引
+		}
+		if (qidx instanceof VectorQueryIndex) {
+			// 字段被注册为向量字段（数值数组）时无法做文本检索，交集非空则放弃本索引
+			return Collections.disjoint(((VectorQueryIndex) qidx).getFieldNames(), keys());
+		}
+		return true;
 	}
 
 	@Override
@@ -94,12 +206,12 @@ public class IgniteTextIndex extends IgniteH2Index {
 			return true;
 		}
 
-		if (!CollectionUtils.containsAny(query.keySet(), queryableKeySet())) {
+		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
 			return false;
 		}
 
 		if (isSparse()) { // always sparse
-			boolean allIndexFieldsNull = queryableKeySet().stream().allMatch(k -> query.get(k) == null);
+			boolean allIndexFieldsNull = keys().stream().allMatch(k -> query.get(k) == null);
 			if (allIndexFieldsNull) {
 				return false;
 			}
@@ -201,7 +313,7 @@ public class IgniteTextIndex extends IgniteH2Index {
 			cursor = collection.dataMap.query(qry);
 			for (javax.cache.Cache.Entry<Object, Object> entry : cursor) {
 				float score = entry instanceof ScoredCacheEntry ? ((ScoredCacheEntry<Object, Object>) entry).score()
-						: 0f;
+						: Float.MAX_VALUE;
 				if (score < scoreThreshold) {
 					continue;
 				}

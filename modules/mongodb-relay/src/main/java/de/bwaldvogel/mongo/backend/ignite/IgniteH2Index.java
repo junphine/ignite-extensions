@@ -22,16 +22,24 @@ import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
 import de.bwaldvogel.mongo.bson.Document;
 
+import org.apache.ignite.IgniteCheckedException;
 import org.apache.ignite.cache.CacheMetrics;
 import org.apache.ignite.cache.CachePeekMode;
+import org.apache.ignite.cache.LuceneIndexAccess;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.processors.query.GridQueryTypeDescriptor;
-import org.apache.ignite.internal.processors.query.QueryUtils;
+import org.apache.ignite.internal.processors.cache.GridCacheAdapter;
+import org.apache.ignite.internal.processors.cache.IgniteCacheOffheapManager;
+import org.apache.ignite.internal.processors.cache.persistence.CacheDataRow;
+import org.apache.ignite.internal.processors.query.*;
+import org.apache.ignite.internal.processors.query.h2.H2TableDescriptor;
 import org.apache.ignite.internal.processors.query.h2.IgniteH2Indexing;
+import org.apache.ignite.internal.processors.query.h2.opt.GridH2Table;
+import org.apache.ignite.internal.processors.query.h2.opt.GridLuceneIndex;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
+import org.apache.ignite.internal.util.lang.GridCursor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,14 +56,15 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>类型首次注册：{@code dynamicAddQueryEntity}（携带QueryEntity字段与索引定义）；</li>
  *   <li>类型已存在时追加SORTED索引：{@code dynamicColumnAdd} + {@code dynamicIndexCreate}；</li>
- *   <li>FULLTEXT/Lucene字段无法动态追加（Ignite未提供该能力），首版会在已注册类型上退化为全表扫描并记录告警。</li>
+ *   <li>类型已注册后追加的text/knnVector字段通过 {@code addFieldToTextIndex} 动态并入类型的FULLTEXT索引
+ *       （补建/重建QueryIndex与GridLuceneIndex实例），并回填存量文档到Lucene索引；</li>
  * </ul>
  *
  * <p>仅支持顶层与二层（一个点号）字段；更深层的点号路径退化为 {@code matchDocuments} 全表扫描。
  */
 public abstract class IgniteH2Index extends Index<Object> {
 
-	protected final Logger log = LoggerFactory.getLogger(getClass());
+	protected static final Logger log = LoggerFactory.getLogger(IgniteH2Index.class);
 
 	/** 分布式schema操作（注册实体/索引/列）的等待超时。 */
 	private static final long SCHEMA_OP_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(10);
@@ -75,7 +84,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 	static final String TYPE_HASHED = "hashed";
 
 	/** index key textOptions里的type取值。 */
-	static final String[] TYPE_VECTOR = { "knnVector", "vector" };
+	static final String[] TYPE_VECTOR = { "knnVector", "vector", "annVector" };
 
 	protected final IgniteBinaryCollection collection;
 	protected final GridKernalContext ctx;
@@ -87,7 +96,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 
 	protected IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,
 			boolean sparse) {
-		super(name, keys, true); // mongo侧的索引语义上总是sparse（缺失字段的文档不参与匹配）
+		super(name, indexFields(keys,collection), true); // mongo侧的索引语义上总是sparse（缺失字段的文档不参与匹配）
 		this.ctx = ctx;
 		this.collection = collection;
 
@@ -96,7 +105,6 @@ public abstract class IgniteH2Index extends Index<Object> {
 			throw new UnsupportedOperationException("Use IgniteH2Index must dependecy ignite-indexed.jar");
 		}
 	}
-
 
 	public boolean isRegistered() {
 		return registered;
@@ -108,7 +116,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 	}
 
 	protected final void register() {
-		if (indexFields().isEmpty()) {
+		if (getKeys().isEmpty()) {
 			log.warn("Mongo index '" + getName() + "' has no registrable field (only _id or deeper fields); "
 					+ "it will not be registered in Ignite, queries fall back to full scan");
 		} else {
@@ -141,8 +149,6 @@ public abstract class IgniteH2Index extends Index<Object> {
 		return collection.getSchema();
 	}
 
-
-
 	public final String typeName() {
 		return collection.getTypeName();
 	}
@@ -166,16 +172,16 @@ public abstract class IgniteH2Index extends Index<Object> {
 	}
 
 	/** 本mongo索引中可以注册进Ignite的字段（仅支持顶层和二层字段；{@code _id} 是cache key本身，不声明列）。 */
-	protected List<String> indexFields() {
-		List<String> fields = new ArrayList<>();
-		for (IndexKey key : getKeys()) {
-			if (isIdField(key.getKey())) {
-				log.debug("Field '" + key.getKey() + "' of mongo index '" + getName()
+	protected static List<IndexKey> indexFields(List<IndexKey> keys,IgniteBinaryCollection collection) {
+		List<IndexKey> fields = new ArrayList<>();
+		for (IndexKey key : keys) {
+			if (isIdField(key.getKey(),collection)) {
+				log.debug("Field '" + key.getKey() + "' of mongo index '" + collection.getCollectionName()
 						+ "' is the cache key itself and will not be declared as an Ignite column");
 			} else if (isRegistrableField(key.getKey())) {
-				fields.add(key.getKey());
+				fields.add(key);
 			} else {
-				log.warn("Field '" + key.getKey() + "' of mongo index '" + getName()
+				log.warn("Field '" + key.getKey() + "' of mongo index '" + collection.getCollectionName()
 						+ "' is deeper than the second level and will not be indexed in Ignite");
 			}
 		}
@@ -187,18 +193,9 @@ public abstract class IgniteH2Index extends Index<Object> {
 	 * canHandle/getPositions只允许触碰这些键，避免对未注册字段检索得到错误的空结果。
 	 */
 	protected List<String> queryableKeys() {
-		List<String> res = new ArrayList<>();
-		for (String key : keys()) {
-			if (isRegistrableField(key) && !isIdField(key)) {
-				res.add(key);
-			}
-		}
-		return res;
+		return this.keys();
 	}
 
-	protected Set<String> queryableKeySet() {
-		return new LinkedHashSet<>(queryableKeys());
-	}
 
 	/** Ignite的QueryEntity field支持顶层字段与带一个点号的二层字段。 */
 	protected static boolean isRegistrableField(String field) {
@@ -207,10 +204,10 @@ public abstract class IgniteH2Index extends Index<Object> {
 
 	/** 本索引字段 + 集合中已知的其它索引的字段（用于首次注册时一次性声明列）。 */
 	protected Collection<String> allKnownFields() {
-		Set<String> fields = new LinkedHashSet<>(indexFields());
+		Set<String> fields = new LinkedHashSet<>(keySet());
 		for (Index<Object> idx : collection.getIndexes()) {
 			if (idx instanceof IgniteH2Index && idx != this) {
-				fields.addAll(((IgniteH2Index) idx).indexFields());
+				fields.addAll(((IgniteH2Index) idx).keySet());
 			}
 		}
 		return fields;
@@ -247,7 +244,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 			return String.class; // 文本字段只经由Lucene检索，列类型仅用于兼容
 		}
 		if (isKeyOfType(field, TYPE_VECTOR)) {
-			return Object.class; // 向量字段只经由Lucene检索
+			return float[].class; // 向量字段只经由Lucene检索
 		}
 		return sampleFieldClass(field);
 	}
@@ -317,13 +314,9 @@ public abstract class IgniteH2Index extends Index<Object> {
 		return resolveFieldClass(field);
 	}
 
-	/** 生成进Ignite的SQL索引名（H2标识符安全）。 */
-	protected String sqlIndexName() {
-		return ("MONGO_" + getName()).replaceAll("[^A-Za-z0-9_$]", "_");
-	}
-
 	protected static String quote(String ident) {
-		return '"' + ident.replace("\"", "\"\"") + '"';
+		if(ident.startsWith("\"") && ident.endsWith("\"")) return ident;
+		return '"' + ident + '"';
 	}
 
 	protected void addQueryEntity(org.apache.ignite.cache.QueryEntity entity) throws Exception {
@@ -341,21 +334,117 @@ public abstract class IgniteH2Index extends Index<Object> {
 		if (tbl == null) {
 			return;
 		}
-		List<org.apache.ignite.internal.processors.query.QueryField> cols = new ArrayList<>();
+		List<QueryField> cols = new ArrayList<>();
 		for (String field : fields) {
 			if (tbl.type().fields().containsKey(field)) {
 				continue;
 			}
-			cols.add(new org.apache.ignite.internal.processors.query.QueryField(field,
+			cols.add(new QueryField(field,
 					resolveFieldClass(field).getName(), true));
 		}
 		if (!cols.isEmpty()) {
-			ctx.query().dynamicColumnAdd(collection.getCollectionName(), schemaName(), tableName(), cols, true, true)
+			ctx.query().dynamicColumnAdd(collection.getCollectionName(), schemaName(), tableName(), cols, true, false)
 					.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 		}
 	}
 
-	protected boolean isIdField(String field) {
+	/** 类型文本索引描述符（{@code QueryIndexDescriptorImpl}，可能为null）。 */
+	protected QueryIndexDescriptorImpl textIndexDescriptor(TableDescriptor tbl) {
+		GridQueryIndexDescriptor desc = tbl.type().textIndex();
+		return desc instanceof QueryIndexDescriptorImpl ? (QueryIndexDescriptorImpl) desc : null;
+	}
+
+	/**
+	 * 把本索引的字段追加进类型已有的文本索引描述符（走 {@link QueryTypeDescriptorImpl#addFieldToTextIndex}，
+	 * 描述符不存在时会自动创建）。调用前必须先通过 {@link #addColumns} 注册字段属性，
+	 * 因为 addField 要求字段已存在于类型上。
+	 *
+	 * @param tbl 已注册的表描述符
+	 * @return 追加后的文本索引描述符
+	 * @throws IgniteCheckedException 若类型上不存在该字段
+	 */
+	protected QueryIndexDescriptorImpl appendTextIndexFields(TableDescriptor tbl) throws IgniteCheckedException {
+		QueryTypeDescriptorImpl type = (QueryTypeDescriptorImpl) tbl.type();
+		QueryIndexDescriptorImpl desc = textIndexDescriptor(tbl);
+		Collection<String> existing = desc != null ? desc.fields() : Collections.emptyList();
+		for (String field : keySet()) {
+			if (!existing.contains(field)) {
+				type.addFieldToTextIndex(field);
+			}
+		}
+		return textIndexDescriptor(tbl);
+	}
+
+	/**
+	 * 动态追加字段后无条件重建 {@code GridLuceneIndex} 实例：
+	 * <ul>
+	 *   <li>{@code store()} 的字段变化检查对比的是 {@code indexAccess.init(type)} 时的快照，
+	 *       不重建则新字段永远不会进入共享字段映射、也不会被索引；</li>
+	 *   <li>同时为“类型创建时无FULLTEXT索引”的情况补建实例（此时H2表上根本没有GridLuceneIndex）。</li>
+	 * </ul>
+	 * 旧实例的 {@code close()} 是空操作，且两个实例共享同一个Lucene目录（{@code LuceneIndexAccess}
+	 * 按缓存名全局复用），因此覆盖是安全的。
+	 */
+	protected void refreshLuceneIndex() {
+		GridH2Table h2Tbl = igniteH2Indexing.schemaManager().dataTable(schemaName(), tableName());
+		if (h2Tbl == null) {
+			return;
+		}
+		H2TableDescriptor desc = h2Tbl.tableDescriptor();
+		if (desc.table() != null) {
+			desc.createTextIndex(desc.table());
+			log.info("Recreated GridLuceneIndex of table '" + tableName() + "' after text index field append");
+		}
+	}
+
+	/**
+	 * 遍历本节点缓存数据，把存量文档补写进Lucene索引：追加字段前写入的文档在Lucene记录中
+	 * 没有新字段，不回填会导致查询漏掉这些文档。{@code GridLuceneIndex.store} 按key先删后写，幂等。
+	 */
+	protected void backfillLuceneIndex() {
+		String cacheName = collection.getCollectionName();
+		long count = 0;
+		try {
+			GridH2Table h2Tbl = igniteH2Indexing.schemaManager().dataTable(schemaName(), tableName());
+			if (h2Tbl == null || h2Tbl.tableDescriptor().luceneIndex() == null) {
+				return;
+			}
+			GridCacheAdapter<?, ?> cache = ctx.cache().internalCache(cacheName);
+			if (cache == null) {
+				return;
+			}
+			GridLuceneIndex luceneIdx = h2Tbl.tableDescriptor().luceneIndex();
+			for (IgniteCacheOffheapManager.CacheDataStore store : cache.context().offheap().cacheDataStores()) {
+				if (store.isEmpty()) {
+					continue;
+				}
+				try {
+					GridCursor<? extends CacheDataRow> cursor = store.cursor();
+					while (cursor.next()) {
+						CacheDataRow row = cursor.get();
+						long expireTime = row.expireTime() == 0 ? Long.MAX_VALUE : row.expireTime();
+						try {
+							luceneIdx.store(row.key(), row.value(), row.version(), expireTime);
+							count++;
+						} catch (Exception e) {
+							log.warn("Failed to backfill a document into Lucene index of table '" + tableName()
+									+ "' [key=" + row.key() + ']', e);
+						}
+					}
+				} catch (Exception e) {
+					// 单个分区迭代失败（如并发修改）不影响其它分区
+					log.error("Failed to backfill partition " + store.partId() + " of cache '" + cacheName
+							+ "' into Lucene index", e);
+				}
+			}
+			log.info("Backfilled " + count + " documents into the Lucene index of table '" + tableName() + "'");
+		} catch (Exception e) {
+			log.error("Failed to backfill the Lucene index of table '" + tableName() + "'; queries on the "
+					+ "appended fields may miss documents written before the append", e);
+		}
+	}
+
+	protected static boolean isIdField(String field,IgniteBinaryCollection collection) {
 		String idField = collection.getOptions().getIdField();
 		return field.equals(idField) || field.equals("_id");
 	}
@@ -403,6 +492,9 @@ public abstract class IgniteH2Index extends Index<Object> {
 	@Override
 	public void checkAdd(Document document, MongoCollection<Object> collection) {
 		// 索引维护由Ignite的store钩子完成
+		if (!isRegistered()) {
+			register();
+		}
 	}
 
 	@Override
@@ -441,16 +533,18 @@ public abstract class IgniteH2Index extends Index<Object> {
 	@Override
 	public void drop() {
 		try {
-			ctx.query().dynamicIndexDrop(collection.getCollectionName(), schemaName(), sqlIndexName(), true)
+			ctx.query().dynamicIndexDrop(collection.getCollectionName(), schemaName(), getName(), true)
 					.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 		} catch (Exception e) {
-			log.warn("Failed to drop SQL index '" + sqlIndexName() + "' of type '" + typeName() + "'", e);
+			log.warn("Failed to drop SQL index '" + getName() + "' of type '" + typeName() + "'", e);
 		}
 		registered = false;
 	}
 
-	void close() {
+	@Override
+	public void close() {
 		// 底层索引的生命周期由Ignite管理，这里无需释放任何资源
+		super.close();
 	}
 
 	@Override

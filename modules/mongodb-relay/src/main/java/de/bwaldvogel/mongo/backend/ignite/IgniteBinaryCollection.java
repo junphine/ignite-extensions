@@ -241,11 +241,35 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		
 		enabledIndexes.sort(TransformerUtil::indexCompareTo);
 
+		// orderBy 非空且唯一候选是 sorted 索引时，把排序下推给 Ignite 的 B+Tree：
+		// 索引按序返回主键后，置空 orderBy 让 matchDocumentsFromStream 跳过内存全量排序，
+		// filter→skip→limit→project 变为惰性流水线，内存占用从 O(命中文档) 降为 O(skip+limit)。
+		IgniteSortedIndex sortIndex = null;
+		if (orderBy != null && enabledIndexes.size() == 1) {
+			Index<Object> candidate = enabledIndexes.get(0);
+			if (candidate instanceof IgniteSortedIndex
+					&& ((IgniteSortedIndex) candidate).canProvideSortOrder(orderBy)) {
+				sortIndex = (IgniteSortedIndex) candidate;
+			}
+		}
+
 		for (Index<Object> index : enabledIndexes) {
 			if (!index.canHandle(query)) {
 				continue;
 			}
-			Iterable<Object> positions = index.getPositions(query);
+			Iterable<Object> positions;
+			if (index == sortIndex) {
+				T2<List<Object>, Boolean> sortedPositions =
+						((IgniteSortedIndex) index).getPositions(query, orderBy);
+				positions = sortedPositions.get1();
+				if (sortedPositions.get2()) {
+					// 索引已按 orderBy 有序，跳过内存排序
+					orderBy = null;
+				}
+				// 有序化失败（SQL兜底全量扫描）时保留 orderBy，退回内存排序，结果仍正确
+			} else {
+				positions = index.getPositions(query);
+			}
 			indexResult.add(positions);
 			// empty results
 			if((positions instanceof List && ((List)positions).isEmpty())) {
@@ -427,18 +451,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     
     public void close() {
     	for(Index<Object> idx: this.getIndexes()) {
-    		if (idx instanceof IgniteH2Index) {
-				// 底层索引由Ignite管理，close为无操作
-				((IgniteH2Index) idx).close();
-			}
-    		if (idx instanceof IgniteLuceneIndex) {
-				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;				
-				igniteIndex.close();
-			}
-			if (idx instanceof IgniteVectorIndex) {
-				IgniteVectorIndex igniteIndex = (IgniteVectorIndex) idx;				
-				igniteIndex.close();
-			}
+    		idx.close();
     	}
     }
 

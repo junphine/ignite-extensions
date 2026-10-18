@@ -2,12 +2,15 @@ package de.bwaldvogel.mongo.backend.ignite;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import de.bwaldvogel.mongo.backend.CollectionUtils;
@@ -22,6 +25,7 @@ import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
+import org.apache.ignite.internal.util.typedef.T2;
 
 /**
  * B+Tree（SORTED）索引：把mongo的普通（1/-1）索引注册为Ignite的SORTED索引，
@@ -30,19 +34,88 @@ import org.apache.ignite.internal.processors.query.schema.management.TableDescri
  * <p>类型首次注册时通过 {@code dynamicAddQueryEntity} 建表并建索引；类型已存在时通过
  * {@code dynamicColumnAdd}（补齐缺失列）+ {@code dynamicIndexCreate}（ifNotExists幂等）追加索引。
  *
+ * <p>当 {@code orderBy} 能被本索引的键前缀满足时，还会追加 {@code ORDER BY} 让B+Tree直接按序返回主键，
+ * 由 {@link #getPositions(Document, Document)} 的第二个返回值告知调用方结果已有序，
+ * 从而免去 {@code matchDocumentsFromStream} 的内存全量排序（内存占用从 O(命中文档) 降为 O(skip+limit)）。
+ *
  * <p>已知限制（首版）：
  * <ul>
  *   <li>字段声明类型取自Binary元数据/文档采样；列类型与实际存储值不一致的文档会导致该字段不走SQL路径；</li>
- *   <li>{@code _id} 是cache key本身，不通过SQL列检索；</li>
- *   <li>{@code $regex} 等未支持的谓词由 {@code matchDocuments} 兜底过滤（本索引只提供超集）。</li>
+ *   <li>{@code _id} 是cache key本身，不通过SQL列检索（按 {@code _id} 排序不走下推）；</li>
+ *   <li>{@code $regex} 等未支持的谓词由 {@code matchDocuments} 兜底过滤（本索引只提供超集）；</li>
+ *   <li>ORDER BY 下推仅当排序键是索引键前缀、方向全同/全反、且列类型为可比标量时启用；
+ *       字符串序按H2的UTF-16码元序（与mongo的码点序在非BMP字符上有理论差异），null/缺失字段
+ *       按H2语义（ASC在前）近似mongo的null语义。</li>
  * </ul>
  */
 public class IgniteSortedIndex extends IgniteH2Index {
+	/**
+	 * 可以安全用于 ORDER BY 下推的列类型：与 mongo ValueComparator 的标量排序语义一致。
+	 * <p>不含 UUID（Java UUID.compareTo 按有符号 msb 比较，与 mongo 按无符号字节序不一致）；
+	 * {@code Object/JAVA_OBJECT}（混合类型/数组）由不在白名单内自动排除。
+	 */
+	private static final Set<Class<?>> SORTABLE_FIELD_TYPES = new LinkedHashSet<>(Arrays.asList(
+			String.class, Integer.class, Long.class, Float.class, Double.class,
+			Boolean.class, BigDecimal.class, Date.class));
 
 	public IgniteSortedIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name,
 			List<IndexKey> keys, boolean sparse) {
 		super(ctx, collection, name, keys, sparse);
-		register();
+	}
+
+	/**
+	 * 判断本索引能否直接产出 {@code orderBy} 指定的顺序（B+Tree 前缀规则）。
+	 *
+	 * <p>全部满足才返回 true：
+	 * <ul>
+	 *   <li>索引已注册，且排序键序列是 {@link #queryableKeys()} 的前缀（{@code $natural} 等在此被拒绝）；</li>
+	 *   <li>方向值是 {@code Number}（1=升序，-1=降序；{@code $meta} 等返回 false）；</li>
+	 *   <li>列类型属于 {@link #SORTABLE_FIELD_TYPES}（可比标量）；</li>
+	 *   <li>所有键的方向相对索引注册方向要么全相同，要么全相反（全反→B+Tree 反向扫描）。</li>
+	 * </ul>
+	 *
+	 * <p>任何一条不满足即返回 false，调用方退回内存排序，行为与优化前完全一致。
+	 */
+	public boolean canProvideSortOrder(Document orderBy) {
+		if (!isRegistered() || orderBy == null || orderBy.isEmpty()) {
+			return false;
+		}
+
+		List<String> sortKeys = queryableKeys();
+		List<Boolean> indexDirections = queryableKeyDirections();
+		boolean firstKey = true;
+		boolean reversed = false;
+		int i = 0;
+		for (Map.Entry<String, Object> entry : orderBy.entrySet()) {
+			if (i >= sortKeys.size() || !entry.getKey().equals(sortKeys.get(i))) {
+				return false; // 排序键必须是索引键的前缀（$natural、$meta 字段名也在此被拒绝）
+			}
+			Object direction = entry.getValue();
+			if (!(direction instanceof Number)) {
+				return false;
+			}
+			if (!SORTABLE_FIELD_TYPES.contains(declaredFieldClass(entry.getKey()))) {
+				return false; // JAVA_OBJECT/混合类型列不保证与 mongo 序一致
+			}
+			boolean thisReversed = (((Number) direction).intValue() > 0) != indexDirections.get(i);
+			if (firstKey) {
+				reversed = thisReversed;
+				firstKey = false;
+			} else if (reversed != thisReversed) {
+				return false; // 混合方向无法由同一次索引扫描产出
+			}
+			i++;
+		}
+		return !firstKey;
+	}
+
+	/** 与 {@link #queryableKeys()} 一一对应的索引注册方向（true=升序）。 */
+	private List<Boolean> queryableKeyDirections() {
+		List<Boolean> directions = new ArrayList<>();
+		for (IndexKey key : getKeys()) {
+			directions.add(key.isAscending());
+		}
+		return directions;
 	}
 
 	@Override
@@ -53,10 +126,11 @@ public class IgniteSortedIndex extends IgniteH2Index {
 			entity.setValueType(typeName());
 			entity.setTableName(tableName());
 			entity.setFields(buildFields(allKnownFields()));
-			entity.getIndexes().add(buildQueryIndex());
+			// QueryEntity.getIndexes() 在未初始化时返回不可变的空集合，必须通过 setIndexes 设置
+			entity.setIndexes(new LinkedHashSet<>(Collections.singletonList(buildQueryIndex())));
 			addQueryEntity(entity);
 		} else {
-			addColumns(indexFields());
+			addColumns(keySet());
 			createSqlIndex(buildQueryIndex());
 		}
 	}
@@ -67,10 +141,10 @@ public class IgniteSortedIndex extends IgniteH2Index {
 		if (tbl == null) {
 			return false;
 		}
-		if (!tbl.type().indexes().containsKey(sqlIndexName())) {
+		if (!tbl.type().indexes().containsKey(getName())) {
 			return false;
 		}
-		for (String field : indexFields()) {
+		for (String field : keys()) {
 			if (!tbl.type().fields().containsKey(field)) {
 				return false;
 			}
@@ -81,12 +155,10 @@ public class IgniteSortedIndex extends IgniteH2Index {
 	protected QueryIndex buildQueryIndex() {
 		LinkedHashMap<String, Boolean> fields = new LinkedHashMap<>();
 		for (IndexKey key : getKeys()) {
-			if (isRegistrableField(key.getKey()) && !isIdField(key.getKey())) {
-				fields.put(key.getKey(), key.isAscending());
-			}
+			fields.put(key.getKey(), key.isAscending());
 		}
 		QueryIndex idx = new QueryIndex(fields, QueryIndexType.SORTED);
-		idx.setName(sqlIndexName());
+		idx.setName(getName());
 		return idx;
 	}
 
@@ -96,12 +168,12 @@ public class IgniteSortedIndex extends IgniteH2Index {
 			return false;
 		}
 
-		if (!CollectionUtils.containsAny(query.keySet(), queryableKeySet())) {
+		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
 			return false;
 		}
 
 		if (isSparse()) { // always sparse
-			boolean allIndexFieldsNull = queryableKeySet().stream().allMatch(k -> query.get(k) == null);
+			boolean allIndexFieldsNull = queryableKeys().stream().allMatch(k -> query.get(k) == null);
 			if (allIndexFieldsNull) {
 				return false;
 			}
@@ -155,6 +227,20 @@ public class IgniteSortedIndex extends IgniteH2Index {
 
 	@Override
 	public Iterable<Object> getPositions(Document query) {
+		return getPositions(query, null).get1();
+	}
+
+	/**
+	 * 取索引命中的主键（超集，剩余谓词由 matchDocuments 过滤）。
+	 *
+	 * <p>当 {@code orderBy} 非空且 {@link #canProvideSortOrder} 成立时，SQL 追加 {@code ORDER BY}，
+	 * 由 Ignite 的 B+Tree（正向或反向扫描）直接按序返回主键。
+	 *
+	 * @return first = 命中主键；second = 结果是否已按 orderBy 有序。
+	 *         仅当 ORDER BY 实际执行成功时为 true；SQL 失败走全量兜底扫描时为 false，
+	 *         调用方据此保留内存排序，保证正确性。
+	 */
+	public T2<List<Object>, Boolean> getPositions(Document query, Document orderBy) {
 		List<String> clauses = new ArrayList<>();
 		List<Object> args = new ArrayList<>();
 
@@ -175,7 +261,27 @@ public class IgniteSortedIndex extends IgniteH2Index {
 		if (!clauses.isEmpty()) {
 			sql.append(" WHERE ").append(String.join(" AND ", clauses));
 		}
-		return executeKeyQuery(sql.toString(), args);
+		boolean ordered = orderBy != null && canProvideSortOrder(orderBy);
+		if (ordered) {
+			appendOrderBy(sql, orderBy);
+		}
+		List<Object> keys = new ArrayList<>();
+		boolean succeeded = executeKeyQuery(sql.toString(), args, keys);
+		return new T2<>(keys, Boolean.valueOf(ordered && succeeded));
+	}
+
+	/** 在SQL末尾追加 {@code ORDER BY "col" ASC/DESC, ...}（方向取自mongo的 orderBy 值）。 */
+	private void appendOrderBy(StringBuilder sql, Document orderBy) {
+		sql.append(" ORDER BY ");
+		boolean firstKey = true;
+		for (Map.Entry<String, Object> entry : orderBy.entrySet()) {
+			if (!firstKey) {
+				sql.append(", ");
+			}
+			firstKey = false;
+			sql.append(quote(entry.getKey()))
+					.append(((Number) entry.getValue()).intValue() > 0 ? " ASC" : " DESC");
+		}
 	}
 
 	/**
@@ -311,11 +417,16 @@ public class IgniteSortedIndex extends IgniteH2Index {
 		return null;
 	}
 
-	/** 执行取主键的SQL；失败时兜底返回全量主键（超集），保证matchDocuments过滤后结果正确。 */
-	protected List<Object> executeKeyQuery(String sql, List<Object> args) {
-		List<Object> keys = new ArrayList<>();
+	/**
+	 * 执行取主键的SQL；失败时兜底返回全量主键（超集），保证matchDocuments过滤后结果正确。
+	 *
+	 * @param keys 输出参数，填充命中的主键
+	 * @return true=请求SQL执行成功；false=走了兜底全量扫描（结果相对请求的排序是无序的）
+	 */
+	protected boolean executeKeyQuery(String sql, List<Object> args, List<Object> keys) {
 		try {
 			runKeyQuery(sql, args, keys);
+			return true;
 		} catch (Exception e) {
 			log.error("Failed to execute index query [" + sql + "] on type '" + typeName()
 					+ "', falling back to full scan", e);
@@ -327,8 +438,8 @@ public class IgniteSortedIndex extends IgniteH2Index {
 				log.error("Failed to scan keys of type '" + typeName() + "'", e2);
 				keys.clear();
 			}
+			return false;
 		}
-		return keys;
 	}
 
 	private void runKeyQuery(String sql, List<Object> args, List<Object> keys) {

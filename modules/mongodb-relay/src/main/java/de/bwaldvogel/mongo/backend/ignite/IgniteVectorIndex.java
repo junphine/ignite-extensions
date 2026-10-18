@@ -544,7 +544,7 @@ public class IgniteVectorIndex extends Index<Object> {
 		this.vecIndex.destroy();		
 	}
 	
-	void close() {
+	public void close() {
 		try {
 			if (this.knnModel != null) {
 				this.knnModel.close();

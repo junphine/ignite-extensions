@@ -1,28 +1,38 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import de.bwaldvogel.mongo.MongoCollection;
 import de.bwaldvogel.mongo.backend.CollectionUtils;
 import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.bson.Document;
 
 import org.apache.ignite.IgniteFileSystem;
-import org.apache.ignite.cache.VectorQueryIndex;
-import org.apache.ignite.cache.QueryEntity;
+import org.apache.ignite.cache.*;
 import org.apache.ignite.cache.query.HybridTextQuery;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.cache.query.ScoredCacheEntry;
 import org.apache.ignite.internal.processors.query.GridQueryIndexDescriptor;
+import org.apache.ignite.internal.processors.query.QueryIndexDescriptorImpl;
+import org.apache.ignite.internal.processors.query.QueryTypeDescriptorImpl;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
 import org.apache.ignite.igfs.IgfsPath;
+import org.apache.ignite.ml.math.primitives.vector.Vector;
+import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 
 import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
+
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8ValueEmbedding;
+import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
 
 /**
  * knn向量索引：mongo的 {@code {"field": "knnVector"}} 索引。
@@ -37,8 +47,9 @@ import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
  *   <li>{@code { field: { $knnVector: [0.1, ...] } }} → 指定字段的KNN检索。</li>
  * </ul>
  *
- * <p>首版限制：与文本索引相同，向量字段无法在类型注册后动态追加；后建的向量索引若字段未被注册，
- * 查询退化为全表扫描。混合（文本+向量）检索暂不支持。
+ * <p>首版限制：混合（文本+向量）检索暂不支持——类型上已存在文本FULLTEXT索引（FullTextQueryIndex）时，
+ * 后建的向量索引无法追加（向量FieldType依赖类型上的VectorQueryIndex），此时记录WARN并退化为全表扫描；
+ * 反之类型上已有向量索引时追加的向量字段共享既有维度/相似度配置。
  */
 public class IgniteKnnVectorIndex extends IgniteH2Index {
 
@@ -58,7 +69,6 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 				break; // 首版以首个向量字段的配置为准
 			}
 		}
-		register();
 	}
 
 	/** 解析mongo建索引时的向量选项（numDimensions/dimensions、similarity、modelUrl）。 */
@@ -122,25 +132,50 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 
 	@Override
 	protected void doRegister() throws Exception {
-		if (findTable() != null) {
-			// Ignite不支持在已注册类型上动态追加向量字段（dynamicIndexCreate只支持SORTED）
-			log.warn("Ignite type '" + typeName() + "' is already registered. Vector fields " + indexFields()
-					+ " cannot be added to its Lucene index dynamically. Queries using mongo index '" + getName()
-					+ "' will fall back to full scan.");
+		TableDescriptor tbl = findTable();
+		if (tbl == null) {
+			QueryEntity entity = new QueryEntity();
+			entity.setValueType(typeName());
+			entity.setTableName(tableName());
+			entity.setFields(buildFields(allKnownFields()));
+			List<QueryIndex> indexs = new ArrayList<>(entity.getIndexes());
+			indexs.add(buildVectorQueryIndex(keys()));
+			entity.setIndexes(indexs);
+			addQueryEntity(entity);
+			// 针对持久化缓存：registerCache0的重建走树索引分支，不经过Lucene store，这里统一回填
+			backfillLuceneIndex();
 			return;
 		}
-		List<String> fields = indexFields();
+		// 类型已注册：WARN后把向量字段动态追加进类型已有的Lucene索引
+
+		log.warn("Ignite type '" + typeName() + "' is already registered. Appending vector fields " + keys()
+				+ " of mongo index '" + getName() + "' into its Lucene index.");
+
+
+		QueryTypeDescriptorImpl type = (QueryTypeDescriptorImpl) tbl.type();
+		QueryIndexDescriptorImpl desc = new QueryIndexDescriptorImpl(type,getName(), QueryIndexType.VECTOR, dimensions);
+		desc.setQueryIndex(buildVectorQueryIndex(keys()));
+		type.addIndex(desc);
+
+		try{
+			LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
+			access.init(tbl.type());
+		} catch (IOException e) {
+			log.error("Get LuceneIndexAccess of cache failed",e);
+		}
+		refreshLuceneIndex();
+		backfillLuceneIndex();
+	}
+
+	/** 构建带向量属性（相似度/维度/编码）的VectorQueryIndex。 */
+	protected VectorQueryIndex buildVectorQueryIndex(List<String> fields) {
 		VectorQueryIndex idx = new VectorQueryIndex(fields.get(0), vectorSimilarityFunction, dimensions,
 				VectorEncoding.FLOAT32);
 		if (fields.size() > 1) {
 			idx.setFieldNames(fields, true); // 复合向量索引：每个字段各自独立索引
 		}
-		QueryEntity entity = new QueryEntity();
-		entity.setValueType(typeName());
-		entity.setTableName(tableName());
-		entity.setFields(buildFields(allKnownFields()));
-		entity.getIndexes().add(idx);
-		addQueryEntity(entity);
+		idx.setName(this.getName());
+		return idx;
 	}
 
 	@Override
@@ -149,12 +184,17 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 		if (tbl == null) {
 			return false;
 		}
-		GridQueryIndexDescriptor textIdx = tbl.type().textIndex();
-		if (textIdx == null) {
+
+		Collection<String> textFields = tbl.type().fields().keySet();
+		if (textFields == null || !textFields.containsAll(keys())) {
 			return false;
 		}
-		Collection<String> textFields = textIdx.fields();
-		return textFields != null && textFields.containsAll(indexFields());
+		QueryIndexDescriptorImpl desc = (QueryIndexDescriptorImpl)tbl.type().indexes().get(this.getName());
+		QueryIndex qidx = desc == null ? null : desc.getQueryIndex();
+		if (!(qidx instanceof VectorQueryIndex)) {
+			return false; // QueryIndex非VectorQueryIndex（文本索引或缺失）时向量字段未被Lucene注册
+		}
+		return ((VectorQueryIndex) qidx).getFieldNames().containsAll(keys());
 	}
 
 	@Override
@@ -169,12 +209,12 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 			return true;
 		}
 
-		if (!CollectionUtils.containsAny(query.keySet(), queryableKeySet())) {
+		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
 			return false;
 		}
 
 		if (isSparse()) { // always sparse
-			boolean allIndexFieldsNull = queryableKeySet().stream().allMatch(k -> query.get(k) == null);
+			boolean allIndexFieldsNull = keys().stream().allMatch(k -> query.get(k) == null);
 			if (allIndexFieldsNull) {
 				return false;
 			}
@@ -259,11 +299,24 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 		return limit > 0 ? limit : DEFAULT_K;
 	}
 
+	@Override
+	public void add(Document document, Object position, MongoCollection<Object> collection) {
+		// 索引维护由Ignite的store钩子完成（dataMap.put/remove会驱动IgniteH2Indexing.store/remove）
+		// 这里只进行string数据类型转换为float[]
+		for(String key: this.keys()){
+			Object value = document.get(key);
+			if(value!=null){
+				float[] vectorVal = computeValueEmbedding(value,modelUrl,dimensions);
+				document.put(key,vectorVal);
+			}
+		}
+	}
+
 	/** 执行纯KNN检索（HybridTextQuery文本部分为空时即向量检索）。 */
 	protected List<IdWithMeta> executeVectorQuery(String field, Object vectorValue, int k, float scoreThreshold) {
 		List<IdWithMeta> result = new ArrayList<>();
 		try {
-			float[] vector = EmbeddingUtil.computeValueEmbedding(vectorValue, modelUrl, dimensions);
+			float[] vector = computeValueEmbedding(vectorValue, modelUrl, dimensions);
 			if (vector == null || vector.length == 0) {
 				return result;
 			}
@@ -277,7 +330,7 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 				for (javax.cache.Cache.Entry<Object, Object> entry : cursor) {
 					float score = entry instanceof ScoredCacheEntry
 							? ((ScoredCacheEntry<Object, Object>) entry).score()
-							: 0f;
+							: Float.MAX_VALUE;
 					if (score < scoreThreshold) {
 						continue;
 					}
