@@ -6,16 +6,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import de.bwaldvogel.mongo.backend.ignite.*;
 import org.apache.ignite.internal.IgniteEx;
 import org.apache.ignite.plugin.IgnitePlugin;
 
 import de.bwaldvogel.mongo.backend.Index;
 import de.bwaldvogel.mongo.backend.IndexKey;
-import de.bwaldvogel.mongo.backend.ignite.IgniteBackend;
-import de.bwaldvogel.mongo.backend.ignite.IgniteBinaryCollection;
-import de.bwaldvogel.mongo.backend.ignite.IgniteDatabase;
-import de.bwaldvogel.mongo.backend.ignite.IgniteLuceneIndex;
-import de.bwaldvogel.mongo.backend.ignite.IgniteVectorIndex;
 import de.bwaldvogel.mongo.bson.Document;
 
 public class MongoPlugin implements IgnitePlugin {
@@ -30,19 +26,19 @@ public class MongoPlugin implements IgnitePlugin {
 		return (IgniteBinaryCollection)this.database().resolveCollection(collectionName, false);
 	}
 	
-	public IgniteVectorIndex createVectorIndex(String collectionName,String field,Document options) {
+	public IgniteKnnVectorIndex createVectorIndex(String collectionName,String field,Document options) {
 		IgniteBinaryCollection coll = this.collecion(collectionName);
 		String indexName = field+"_knnVector";
 		for(Index<Object> index: coll.getIndexes()) {
 			if(index.getName().equals(indexName)) {
-				return (IgniteVectorIndex)index;
+				return (IgniteKnnVectorIndex)index;
 			}
 		}
 		
 		IgniteEx ex = (IgniteEx) database().getIgnite();
 		IndexKey key = new IndexKey(field,false,options);
-		
-		IgniteVectorIndex index = new IgniteVectorIndex(ex.context(),coll,indexName,Arrays.asList(key),false);
+
+		IgniteKnnVectorIndex index = new IgniteKnnVectorIndex(ex.context(),coll,indexName,Arrays.asList(key),false);
 		coll.addIndex(index);
 		Document indexDesc = new Document();
 		indexDesc.append("ns", databaseName+"."+collectionName);
@@ -53,12 +49,12 @@ public class MongoPlugin implements IgnitePlugin {
 		return index;
 	}
 	
-	public IgniteLuceneIndex createLuceneTextIndex(String collectionName,Document fieldsDesc) {
+	public IgniteTextIndex createLuceneTextIndex(String collectionName,Document fieldsDesc) {
 		IgniteBinaryCollection coll = this.collecion(collectionName);
 		String indexName = String.join("_", fieldsDesc.keySet())+"_text";
 		for(Index<Object> index: coll.getIndexes()) {
 			if(index.getName().equals(indexName)) {
-				return (IgniteLuceneIndex)index;
+				return (IgniteTextIndex)index;
 			}
 		}
 		IgniteEx ex = (IgniteEx) database().getIgnite();
@@ -73,8 +69,8 @@ public class MongoPlugin implements IgnitePlugin {
 				keys.add(key);
 			}
 		}
-		
-		IgniteLuceneIndex index = new IgniteLuceneIndex(ex.context(),coll,indexName, keys, true);
+
+		IgniteTextIndex index = new IgniteTextIndex(ex.context(),coll,indexName, keys, true);
 		coll.addIndex(index);
 		Document indexDesc = new Document();
 		indexDesc.append("ns", databaseName+"."+collectionName);

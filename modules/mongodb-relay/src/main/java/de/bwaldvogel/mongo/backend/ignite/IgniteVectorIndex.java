@@ -64,6 +64,7 @@ import de.bwaldvogel.mongo.exception.KeyConstraintError;
 /**
  * 如果是复合索引，如果不是文本字段，谁先有值，先索引谁，剩下的字段忽略，如果是文本字段，所有字段按顺序加起来形成embedding
  */
+@Deprecated
 public class IgniteVectorIndex extends Index<Object> {
 	
 	/** Learning environment builder. */

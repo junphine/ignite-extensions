@@ -1,1202 +1,465 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+import javax.cache.Cache;
+
 import de.bwaldvogel.mongo.MongoCollection;
-import de.bwaldvogel.mongo.backend.*;
+import de.bwaldvogel.mongo.backend.Index;
+import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
-import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
-import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
-import de.bwaldvogel.mongo.bson.ObjectId;
-import de.bwaldvogel.mongo.exception.KeyConstraintError;
-import org.apache.ignite.IgniteCheckedException;
-import org.apache.ignite.IgniteException;
-import org.apache.ignite.IgniteFileSystem;
-import org.apache.ignite.cache.FullTextLucene;
-import org.apache.ignite.cache.LuceneIndexAccess;
-import org.apache.ignite.igfs.IgfsPath;
+
+import org.apache.ignite.cache.CacheMetrics;
+import org.apache.ignite.cache.CachePeekMode;
+import org.apache.ignite.cache.query.QueryCursor;
+import org.apache.ignite.cache.query.ScanQuery;
+import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.GridKernalContext;
-import org.apache.ignite.internal.binary.GridBinaryMarshaller;
-import org.apache.ignite.internal.processors.cache.GridCacheAdapter;
-import org.apache.ignite.internal.processors.cache.binary.CacheObjectBinaryProcessorImpl;
+import org.apache.ignite.internal.processors.query.GridQueryTypeDescriptor;
+import org.apache.ignite.internal.processors.query.QueryUtils;
 import org.apache.ignite.internal.processors.query.h2.IgniteH2Indexing;
-import org.apache.ignite.internal.processors.query.h2.opt.GridLuceneIndex;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
-import org.apache.ignite.ml.math.primitives.vector.Vector;
-import org.apache.lucene.document.*;
-import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.index.SegmentCommitInfo;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.index.VectorEncoding;
-import org.apache.lucene.index.VectorSimilarityFunction;
-import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
-import org.apache.lucene.queryparser.simple.SimpleQueryParser;
-import org.apache.lucene.search.*;
-import org.apache.lucene.search.SortField.Type;
-import org.apache.lucene.util.BytesRef;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.*;
-import java.util.Map.Entry;
-import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher;
-
-import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8ValueEmbedding;
-import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
-import static org.apache.ignite.internal.processors.query.QueryUtils.KEY_FIELD_NAME;
-
 /**
- * 如果是复合索引，不论是否Text索引，每个字段各自索引。
+ * mongo二级索引基类：不再在mongodb-relay中维护一份独立的Lucene索引数据，
+ * 而是通过 {@code IgniteH2Indexing} 的动态schema操作把索引定义注册进Ignite自身的索引体系
+ * （H2 B+Tree / GridLuceneIndex），Ignite与MongoDB共用同一份索引。
+ *
+ * <p>索引维护（add/remove/update）全部委托给Ignite在cache store/remove时的索引钩子
+ * （{@code IgniteH2Indexing.store(...)} 会驱动 H2 表与 Lucene 索引的更新），
+ * 因此 {@link #add}/{@link #remove}/{@link #updateInPlace} 均为空实现。
+ *
+ * <p>注册是按 (cache, typeName) 幂等的：
+ * <ul>
+ *   <li>类型首次注册：{@code dynamicAddQueryEntity}（携带QueryEntity字段与索引定义）；</li>
+ *   <li>类型已存在时追加SORTED索引：{@code dynamicColumnAdd} + {@code dynamicIndexCreate}；</li>
+ *   <li>FULLTEXT/Lucene字段无法动态追加（Ignite未提供该能力），首版会在已注册类型上退化为全表扫描并记录告警。</li>
+ * </ul>
+ *
+ * <p>仅支持顶层与二层（一个点号）字段；更深层的点号路径退化为 {@code matchDocuments} 全表扫描。
  */
-public class IgniteH2Index extends Index<Object> {
-	private static final Logger log = LoggerFactory.getLogger(IgniteH2Index.class);
+public abstract class IgniteH2Index extends Index<Object> {
 
-	private final IgniteBinaryCollection collection;
+	protected final Logger log = LoggerFactory.getLogger(getClass());
 
-	private LuceneIndexAccess indexAccess;
+	/** 分布式schema操作（注册实体/索引/列）的等待超时。 */
+	private static final long SCHEMA_OP_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(10);
 
-	private final GridKernalContext ctx;
+	/** 推断字段类型时最多采样的文档数。 */
+	private static final int FIELD_TYPE_SAMPLE_SIZE = 64;
 
-	private GridBinaryMarshaller marshaller;
+	/** 可以直接映射为H2列类型的采样类型。 */
+	private static final Set<Class<?>> SQL_FIELD_TYPES = new LinkedHashSet<>(Arrays.asList(
+			String.class, Integer.class, Long.class, Float.class, Double.class,
+			Boolean.class, BigDecimal.class, Date.class, UUID.class));
 
-	private IgniteH2Indexing igniteH2Indexing = null;
+	/** index key textOptions里的type取值。 */
+	static final String TYPE_TEXT = "text";
 
-	private boolean isFirstIndex = false;
+	/** index key textOptions里的type取值。 */
+	static final String TYPE_HASHED = "hashed";
 
-	private boolean isKnnVectorIndex = false;
+	/** index key textOptions里的type取值。 */
+	static final String[] TYPE_VECTOR = { "knnVector", "vector" };
 
-	private int dimensions = 1024;
+	protected final IgniteBinaryCollection collection;
+	protected final GridKernalContext ctx;
+	protected final IgniteH2Indexing igniteH2Indexing;
 
-	private VectorSimilarityFunction vectorSimilarityFunction;
 
-	private String modelUrl = null;
+	/** 索引定义是否已成功注册进Ignite。 */
+	private volatile boolean registered = false;
 
-	private Map<String, Float> weights = new HashMap<>();
-
-	private long docCount = 0;
-
-	/** */
-	private String[] idxdFields = null;
-	private FieldType[] idxdTypes = null;
-
-	public IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys, boolean sparse) {
-		this(ctx,collection,name,keys,sparse,false);
-	}
-
-	public IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys, boolean sparse, boolean isKnnVectorIndex) {
-		super(name, keys, true);  // lucene index always is sparse
+	protected IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,
+			boolean sparse) {
+		super(name, keys, true); // mongo侧的索引语义上总是sparse（缺失字段的文档不参与匹配）
 		this.ctx = ctx;
 		this.collection = collection;
-		this.isKnnVectorIndex = isKnnVectorIndex;
-		// init field weight
-		for(IndexKey indexKey: keys) {
-			if(indexKey.textOptions()!=null) {
-				if(indexKey.textOptions().containsKey("weight")) {
-					float w = Float.valueOf(indexKey.textOptions().get("weight").toString());
-					weights.put(indexKey.getKey(), w);
-				}
-				else {
-					weights.put(indexKey.getKey(), 1.0f);
-				}
-			}
-		}
-		igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
-		if(igniteH2Indexing==null){
+
+		this.igniteH2Indexing = (IgniteH2Indexing) ctx.query().getIndexing();
+		if (igniteH2Indexing == null) {
 			throw new UnsupportedOperationException("Use IgniteH2Index must dependecy ignite-indexed.jar");
 		}
-		init();
 	}
 
+
+	public boolean isRegistered() {
+		return registered;
+	}
+
+	/** 重新尝试注册（幂等），用于collection的 "reIndex" 操作。 */
 	public void init() {
-		if (indexAccess == null) {
+		register();
+	}
+
+	protected final void register() {
+		if (indexFields().isEmpty()) {
+			log.warn("Mongo index '" + getName() + "' has no registrable field (only _id or deeper fields); "
+					+ "it will not be registered in Ignite, queries fall back to full scan");
+		} else {
 			try {
-				indexAccess = LuceneIndexAccess.getIndexAccess(ctx, collection.getCollectionName());
+				doRegister();
+			} catch (Exception e) {
+				log.error("Failed to register mongo index '" + getName() + "' of type '" + typeName()
+						+ "' into Ignite indexing, queries will fall back to full scan", e);
+			}
+		}
+		registered = verifyRegistration();
+		if (!registered) {
+			log.warn("Mongo index '" + getName() + "' is not registered in Ignite indexing for type '" + typeName()
+					+ "', queries will fall back to full scan");
+		}
+	}
 
-				CacheObjectBinaryProcessorImpl cacheObjProc = (CacheObjectBinaryProcessorImpl) ctx.cacheObjects();
+	/**
+	 * 把索引定义注册进Ignite的索引体系。必须可重复调用（幂等）。
+	 */
+	protected abstract void doRegister() throws Exception;
 
-				marshaller = cacheObjProc.marshaller();				
-				
-				String typeName =  collection.getTypeName();
+	/**
+	 * 校验索引定义是否已经存在于Ignite索引体系中。
+	 */
+	protected abstract boolean verifyRegistration();
 
-				String embeddingModelName = "BAAI/bge-m3";
-				
-				Map<String, FieldType> fields = indexAccess.fields(typeName);
-				for (IndexKey ik : this.getKeys()) {
-					if(ik.isText() && this.isKnnVectorIndex){
-						Document options = ik.textOptions();
-						if(options==null) {
-							log.error("KnnVectorIndex must have dimensions and indexType options");
-							throw new IgniteException("KnnVectorIndex must have dimensions and indexType options");
-						}
-						Object numDimensions = options.getOrDefault("numDimensions", this.dimensions);
-						this.dimensions = Integer.parseInt(options.getOrDefault("dimensions",numDimensions).toString());
-						String similarity = options.getOrDefault("similarity", "cosine").toString();
-						if(similarity.equals("euclidean ")) {
-							vectorSimilarityFunction = VectorSimilarityFunction.EUCLIDEAN;
-						}
-						else if(similarity.equals("cosine")) {
-							vectorSimilarityFunction = VectorSimilarityFunction.COSINE;
-						}
-						else if(similarity.equals("dotProduct")) {
-							vectorSimilarityFunction = VectorSimilarityFunction.DOT_PRODUCT;
-						}
-						else if(similarity.equals("innerProduct")) {
-							vectorSimilarityFunction = VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT;
-						}
-						else{
-							vectorSimilarityFunction = VectorSimilarityFunction.valueOf(similarity);
-						}
+	/** Ignite计算出的schema名（与SchemaManager.schemaName一致）。 */
+	protected String schemaName() {
+		return collection.getSchema();
+	}
 
-						// 句向量模型
-						embeddingModelName = (String)options.getOrDefault("modelUrl", embeddingModelName);
-						if(embeddingModelName.equals("chinese")) {
-							embeddingModelName = "BAAI/bge-m3";
-						}
 
-						String igniteHome = ctx.grid().configuration().getIgniteHome();
 
-						// is openai api
-						String lowerUrl = embeddingModelName.toLowerCase();
-						if(lowerUrl.startsWith("http://") || lowerUrl.startsWith("https://")){
-							modelUrl = embeddingModelName;
-						}
-						else {  // is local model
+	public final String typeName() {
+		return collection.getTypeName();
+	}
 
-							try {
-								IgniteFileSystem fs = ctx.grid().fileSystem("models");
-								if (fs.exists(new IgfsPath(embeddingModelName))) {
-									modelUrl = "s3://models/" + (embeddingModelName);
-								} else {
-									modelUrl = igniteHome + "/models/" + (embeddingModelName);
-								}
-							} catch (IllegalArgumentException e) {
-								modelUrl = igniteHome + "/models/" + (embeddingModelName);
-							}
-						}
+	/** 表名；类型未注册时按Ignite默认规则推导。 */
+	protected String tableName() {
+		String tbl = collection.getTableName();
+		return tbl != null ? tbl : QueryUtils.normalizeObjectName(typeName(), true);
+	}
 
-						FieldType fieldType = new FieldType();
-						fieldType.setVectorAttributes(dimensions, VectorEncoding.FLOAT32, vectorSimilarityFunction);
-						fieldType.putAttribute("modelUrl",this.modelUrl);
-						fieldType.freeze();
-						fields.putIfAbsent(ik.getKey(), fieldType);
-
-					}
-					else if (ik.isText()) {
-						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
-					}
-					else {
-						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
-					}
+	protected TableDescriptor findTable() {
+		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(collection.getCollectionName());
+		if (tables != null) {
+			for (TableDescriptor table : tables) {
+				if (typeName().equalsIgnoreCase(table.type().name())) {
+					return table;
 				}
-				
-
-			} catch (IOException e) {
-				log.error("create luence index failed:",e);
 			}
-		}
-		this.idxdFields = null;
-		this.idxdTypes = null;
-	}
-
-	private boolean hasIgniteLuenceIndex(String typeName) {
-		if(igniteH2Indexing==null) {
-			return false;
-		}
-		@Nullable
-		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(this.collection.getCollectionName());
-		for(TableDescriptor table: tables) {
-			if (table.type().name().equalsIgnoreCase(typeName) && table.type().textIndex() != null) {
-				return true;
-			}
-		}
-		return false;
-	}
-	
-	@Override
-	public Object getPosition(Document document) {
-		// Set<KeyValue> keyValues = getKeyValues(document);
-		Object key = document.get(this.collection.getOptions().getIdField());
-		if (key != null) {
-			return DocumentUtil.toBinaryKey(key);
 		}
 		return null;
-	}	
-
-	@Override
-	public void checkAdd(Document document, MongoCollection<Object> collection) {
-		if(igniteH2Indexing!=null) {
-			// 获取当前文档的类型,优先使用_class字段，然后是Cache QueryEntity
-			if(document.containsKey("_class")) {
-				String typeName = (String)document.get("_class");
-				
-				Map<String, FieldType> fields = indexAccess.fields(typeName);
-				for (IndexKey ik : this.getKeys()) {
-					if(this.isKnnVectorIndex){
-						FieldType fieldType = new FieldType();
-						fieldType.setVectorAttributes(dimensions, VectorEncoding.FLOAT32, vectorSimilarityFunction);
-						fieldType.putAttribute("modelUrl",this.modelUrl);
-						fieldType.freeze();
-						fields.putIfAbsent(ik.getKey(), fieldType);
-					}
-					else if (ik.isText()) {
-						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
-					} else {
-						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
-					}
-				}
-			}
-		}
-
-	}
-	
-	private BytesRef marshalKeyField(Object key) {		
-		byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(key), false);		
-		return new BytesRef(keyBytes);
-	}
-	
-	private Object unmarshalKeyField(BytesRef bytes, GridCacheAdapter cache, ClassLoader ldr) throws IgniteCheckedException {
-		byte[] keyBytes = bytes.bytes;
-		Object k = ctx.cacheObjects().unmarshal(cache.context().cacheObjectContext(), keyBytes, ldr);
-		return k;
 	}
 
-	public Map<String, FieldType> fieldsMapping(IgniteBinaryCollection collection) {
-		Map<String, FieldType> fields = indexAccess.fields(collection.getTypeName());
-		for (Index<Object> idx : collection.getIndexes()) {
-			if (idx instanceof IgniteH2Index) {
-				IgniteH2Index igniteIndex = (IgniteH2Index) idx;
-				igniteIndex.init();
-				for (IndexKey ik : idx.getKeys()) {
-					if(igniteIndex.isKnnVectorIndex){
-						FieldType fieldType = new FieldType();
-						fieldType.setVectorAttributes(igniteIndex.dimensions, VectorEncoding.FLOAT32, igniteIndex.vectorSimilarityFunction);
-						fieldType.putAttribute("modelUrl",igniteIndex.modelUrl);
-						fieldType.freeze();
-						fields.putIfAbsent(ik.getKey(), fieldType);
-					} else if (ik.isText()) {
-						fields.putIfAbsent(ik.getKey(), TextField.TYPE_NOT_STORED);
-					} else {
-						fields.putIfAbsent(ik.getKey(), StringField.TYPE_STORED);
-					}
-				}
+	/** 本mongo索引中可以注册进Ignite的字段（仅支持顶层和二层字段；{@code _id} 是cache key本身，不声明列）。 */
+	protected List<String> indexFields() {
+		List<String> fields = new ArrayList<>();
+		for (IndexKey key : getKeys()) {
+			if (isIdField(key.getKey())) {
+				log.debug("Field '" + key.getKey() + "' of mongo index '" + getName()
+						+ "' is the cache key itself and will not be declared as an Ignite column");
+			} else if (isRegistrableField(key.getKey())) {
+				fields.add(key.getKey());
+			} else {
+				log.warn("Field '" + key.getKey() + "' of mongo index '" + getName()
+						+ "' is deeper than the second level and will not be indexed in Ignite");
 			}
 		}
 		return fields;
 	}
 
-	public Object computeDocumentEmbedding(String field, FieldType fieldType,Document document,String modelUrl) {
-		Object val = document.get(field);
-		int dimensions = fieldType.vectorDimension();
-		if(val instanceof CharSequence) {
-			if(!val.toString().isBlank()) {
-				Vector vec = EmbeddingUtil.textXlmVec(field,document,modelUrl,dimensions);
-				if(vec!=null) {
-					Object data = vec.getStorage().rawData();
-					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-						return computeInt8ValueEmbedding(data,modelUrl,dimensions);
-					}
-					return computeValueEmbedding(data,modelUrl,dimensions);
+	/**
+	 * 本索引中实际参与Ignite检索的键：仅注册过的（顶层/二层）字段，且排除 {@code _id}。
+	 * canHandle/getPositions只允许触碰这些键，避免对未注册字段检索得到错误的空结果。
+	 */
+	protected List<String> queryableKeys() {
+		List<String> res = new ArrayList<>();
+		for (String key : keys()) {
+			if (isRegistrableField(key) && !isIdField(key)) {
+				res.add(key);
+			}
+		}
+		return res;
+	}
+
+	protected Set<String> queryableKeySet() {
+		return new LinkedHashSet<>(queryableKeys());
+	}
+
+	/** Ignite的QueryEntity field支持顶层字段与带一个点号的二层字段。 */
+	protected static boolean isRegistrableField(String field) {
+		return field.indexOf('.') == field.lastIndexOf('.');
+	}
+
+	/** 本索引字段 + 集合中已知的其它索引的字段（用于首次注册时一次性声明列）。 */
+	protected Collection<String> allKnownFields() {
+		Set<String> fields = new LinkedHashSet<>(indexFields());
+		for (Index<Object> idx : collection.getIndexes()) {
+			if (idx instanceof IgniteH2Index && idx != this) {
+				fields.addAll(((IgniteH2Index) idx).indexFields());
+			}
+		}
+		return fields;
+	}
+
+	/** 判断某个index key是否属于指定的textOptions type。 */
+	protected boolean isKeyOfType(String field, String... types) {
+		for (IndexKey key : getKeys()) {
+			if (!key.getKey().equals(field)) {
+				continue;
+			}
+			String type = key.getType();
+			if (type == null) {
+				continue;
+			}
+			for (String t : types) {
+				if (t.equalsIgnoreCase(type)) {
+					return true;
 				}
 			}
 		}
-		else if(val!=null){
-			if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-				return computeInt8ValueEmbedding(val,modelUrl,dimensions);
+		return false;
+	}
+
+	/**
+	 * 解析字段在QueryEntity中声明的Java类型。
+	 * <p>
+	 * 对现有文档采样（{@code documentToBinaryObject} 会按首个文档写入时的Binary元数据归一化数值类型，
+	 * 因此同名字段的类型是稳定的）；采样失败或类型混杂时退化为 {@code java.lang.Object}
+	 * （JAVA_OBJECT列，写入安全但不支持SQL查询）。
+	 */
+	protected Class<?> resolveFieldClass(String field) {
+		if (isKeyOfType(field, TYPE_TEXT)) {
+			return String.class; // 文本字段只经由Lucene检索，列类型仅用于兼容
+		}
+		if (isKeyOfType(field, TYPE_VECTOR)) {
+			return Object.class; // 向量字段只经由Lucene检索
+		}
+		return sampleFieldClass(field);
+	}
+
+	private Class<?> sampleFieldClass(String field) {
+		Set<Class<?>> classes = new LinkedHashSet<>();
+		int scanned = 0;
+		QueryCursor<Cache.Entry<Object, Object>> cursor = collection.dataMap.query(new ScanQuery<>());
+		try {
+			for (Cache.Entry<Object, Object> entry : cursor) {
+				if (++scanned > FIELD_TYPE_SAMPLE_SIZE) {
+					break;
+				}
+				Object value = rawFieldValue(entry.getValue(), field);
+				if (value != null) {
+					classes.add(value.getClass());
+				}
 			}
-			return computeValueEmbedding(val,modelUrl,dimensions);
+		} finally {
+			cursor.close();
+		}
+		if (classes.size() == 1) {
+			Class<?> cls = classes.iterator().next();
+			if (SQL_FIELD_TYPES.contains(cls)) {
+				return cls;
+			}
+		}
+		return Object.class;
+	}
+
+	private static Object rawFieldValue(Object value, String field) {
+		if (!(value instanceof org.apache.ignite.binary.BinaryObject)) {
+			return null;
+		}
+		Object current = value;
+		for (String part : field.split("\\.")) {
+			if (!(current instanceof org.apache.ignite.binary.BinaryObject)) {
+				return null;
+			}
+			current = ((org.apache.ignite.binary.BinaryObject) current).field(part);
+			if (current == null) {
+				return null;
+			}
+		}
+		return current;
+	}
+
+	/** QueryEntity的fields映射：字段名 → Java类名。 */
+	protected LinkedHashMap<String, String> buildFields(Collection<String> fields) {
+		LinkedHashMap<String, String> res = new LinkedHashMap<>();
+		for (String field : fields) {
+			res.put(field, resolveFieldClass(field).getName());
+		}
+		return res;
+	}
+
+	/** 查询时用于参数转换的列类型；以Ignite中已注册的声明为准。 */
+	protected Class<?> declaredFieldClass(String field) {
+		TableDescriptor tbl = findTable();
+		if (tbl != null) {
+			GridQueryTypeDescriptor type = tbl.type();
+			Class<?> cls = type.fields().get(field);
+			if (cls != null) {
+				return cls;
+			}
+		}
+		return resolveFieldClass(field);
+	}
+
+	/** 生成进Ignite的SQL索引名（H2标识符安全）。 */
+	protected String sqlIndexName() {
+		return ("MONGO_" + getName()).replaceAll("[^A-Za-z0-9_$]", "_");
+	}
+
+	protected static String quote(String ident) {
+		return '"' + ident.replace("\"", "\"\"") + '"';
+	}
+
+	protected void addQueryEntity(org.apache.ignite.cache.QueryEntity entity) throws Exception {
+		ctx.query().dynamicAddQueryEntity(collection.getCollectionName(), schemaName(), entity, null, true)
+				.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+	}
+
+	protected void createSqlIndex(org.apache.ignite.cache.QueryIndex idx) throws Exception {
+		ctx.query().dynamicIndexCreate(collection.getCollectionName(), schemaName(), tableName(), idx, true, 1)
+				.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+	}
+
+	protected void addColumns(Collection<String> fields) throws Exception {
+		TableDescriptor tbl = findTable();
+		if (tbl == null) {
+			return;
+		}
+		List<org.apache.ignite.internal.processors.query.QueryField> cols = new ArrayList<>();
+		for (String field : fields) {
+			if (tbl.type().fields().containsKey(field)) {
+				continue;
+			}
+			cols.add(new org.apache.ignite.internal.processors.query.QueryField(field,
+					resolveFieldClass(field).getName(), true));
+		}
+		if (!cols.isEmpty()) {
+			ctx.query().dynamicColumnAdd(collection.getCollectionName(), schemaName(), tableName(), cols, true, true)
+					.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+		}
+	}
+
+	protected boolean isIdField(String field) {
+		String idField = collection.getOptions().getIdField();
+		return field.equals(idField) || field.equals("_id");
+	}
+
+	protected static int limitOf(Map<String, Object> opts, int defaultLimit) {
+		Object limit = opts.get("$limit");
+		if (limit instanceof Number) {
+			return ((Number) limit).intValue();
+		}
+		return defaultLimit;
+	}
+
+	protected static float scoreThresholdOf(Map<String, Object> opts) {
+		Object threshold = opts.get("$scoreThreshold");
+		if (threshold instanceof Number) {
+			return ((Number) threshold).floatValue();
+		}
+		return 0;
+	}
+
+	/** 按主键求交集（保留带meta的结果）。 */
+	protected static List<IdWithMeta> intersect(List<IdWithMeta> a, List<IdWithMeta> b) {
+		Set<Object> keys = new LinkedHashSet<>();
+		for (IdWithMeta id : b) {
+			keys.add(id.getKey());
+		}
+		List<IdWithMeta> res = new ArrayList<>();
+		for (IdWithMeta id : a) {
+			if (keys.contains(id.getKey())) {
+				res.add(id);
+			}
+		}
+		return res;
+	}
+
+	@Override
+	public Object getPosition(Document document) {
+		Object key = document.get(collection.getOptions().getIdField());
+		if (key != null) {
+			return DocumentUtil.toBinaryKey(key);
 		}
 		return null;
+	}
+
+	@Override
+	public void checkAdd(Document document, MongoCollection<Object> collection) {
+		// 索引维护由Ignite的store钩子完成
 	}
 
 	@Override
 	public void add(Document document, Object position, MongoCollection<Object> collection) {
-		if (!this.isFirstIndex)
-			return;
-		
-		IgniteBinaryCollection coll = (IgniteBinaryCollection) collection;
-		
-		String typeName =  coll.getTypeName();
-		
-		// 使用Ignite自己的Luence索引
-		if(!this.isKnnVectorIndex && hasIgniteLuenceIndex(typeName)) {
-			log.warn("Type {} has ignite text index itself,ignore mongo index.",typeName);
-			return ;
-		}
-
-		// index all field
-		if (idxdFields == null || idxdFields.length==0) {
-			Map<String, FieldType> fields = fieldsMapping(coll);
-			idxdFields = new String[fields.size()];
-			idxdTypes = new FieldType[fields.size()];
-			int i = 0;
-			for (Entry<String, FieldType> ft : fields.entrySet()) {
-				idxdFields[i] = ft.getKey();
-				idxdTypes[i++] = ft.getValue();
-			}
-		}
-
-		CompletableFuture.runAsync(()->{
-			org.apache.lucene.document.Document doc = new org.apache.lucene.document.Document();
-
-			Object[] row = new Object[idxdFields.length];
-
-			for (int i = 0, last = idxdFields.length; i < last; i++) {
-				Object fieldVal = document.get(idxdFields[i]);
-				if(idxdTypes[i].vectorDimension()>0){
-					String modelUrl = idxdTypes[i].getAttributes().get("modelUrl");
-					fieldVal = computeDocumentEmbedding(idxdFields[i],idxdTypes[i],document,modelUrl);
-				}
-				//byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(fieldVal), false);
-				//BytesRef keyByteRef = new BytesRef(keyBytes);
-				row[i] = fieldVal;
-			}
-
-			BytesRef keyByteRef = marshalKeyField(position);
-			Term term = new Term(KEY_FIELD_NAME, keyByteRef);
-			// build doc body
-			try {
-				boolean stringsFound = FullTextLucene.buildDocument(doc, idxdFields, idxdTypes, null, row);
-				if (!stringsFound) {
-					indexAccess.writer.deleteDocuments(term);
-
-					return; // We did not find any strings to be indexed, will not store data at all.
-				}
-
-				doc.add(new StringField(KEY_FIELD_NAME, keyByteRef, Store.YES));
-				doc.add(new StoredField(FullTextLucene.FIELD_TABLE, typeName));
-
-				// Next implies remove than add atomically operation.
-				docCount = indexAccess.writer.updateDocument(term, doc);
-
-				indexAccess.increment();
-
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-
-		});
+		// 索引维护由Ignite的store钩子完成（dataMap.put/remove会驱动IgniteH2Indexing.store/remove）
 	}
 
 	@Override
-	public Object remove(Document document, MongoCollection<Object> collection) {		
-		if(!this.isFirstIndex) {
-			return null;
-		}
-
-		Object key = getPosition(document);
-		try {
-			
-			if (key != null) {				
-				BytesRef keyByteRef = marshalKeyField(key);
-				Term term = new Term(KEY_FIELD_NAME, keyByteRef);
-				long seq = indexAccess.writer.deleteDocuments(term);
-			}
-		} catch (IOException e) {
-			e.printStackTrace();
-		} finally {
-			indexAccess.increment();
-		}
+	public Object remove(Document document, MongoCollection<Object> collection) {
 		return null;
 	}
 
 	@Override
-	public boolean canHandle(Document query) {
-		if(this.isTextIndex()) {
-			if (query.containsKey("$text")) {
-				if(!this.isKnnVectorIndex && query.getDocument("$text").containsKey("$search")) {
-					return true;
-				}
-				if(this.isKnnVectorIndex && query.getDocument("$text").containsKey("$vectorSearch")) {
-					return true;
-				}
-				if(this.isKnnVectorIndex && query.getDocument("$text").containsKey("$knnVector")) {
-					return true;
-				}
-			}
-		}
-
-		if (!CollectionUtils.containsAny(query.keySet(), keySet())) {
-			return false;
-		}
-
-		if (isSparse()) { // always sparse
-			boolean allIndexFieldsNull = keySet().stream().allMatch(k -> query.get(k) == null);
-		    if (allIndexFieldsNull) {
-		        return false;
-		    }
-		}
-
-		if(this.isKnnVectorIndex){
-			for (String key : keys()) {
-				Object queryValue = query.get(key);
-				if (queryValue instanceof Document) {
-					Document queryDoc = (Document) queryValue;
-					for (String queriedKey : queryDoc.keySet()) {
-						if (isInQuery(queriedKey)) {
-							// okay
-							return true;
-						}
-						else if (queriedKey.equals("$vectorSearch")) {
-							return true;
-						}
-						else if (queriedKey.equals("$knnVector") || queriedKey.equals("$annVector")) {
-							return true;
-						}
-						else if (queriedKey.startsWith("$")) {
-							// continue check
-						}
-					}
-				}
-			}
-			return false;
-		}
-		
-		Document $expr = query.getDocument("$expr");
-        if($expr!=null && $expr.containsKey("$eq")){
-            List args = (List) $expr.get("$eq");
-            for (String key : keys()){
-                String ekey = "$"+key;
-                if (args.contains(ekey)){
-                    args.remove(ekey);
-                    query.remove("$expr");
-                    query.put(key, args.get(0));
-                    return true;
-                }
-            }
-            return false;
-        }
-
-		// 排除不支持的操作
-		for (String key : keys()) {
-			Object queryValue = query.get(key);
-			if (this.isTextIndex() && BsonRegularExpression.isRegularExpression(queryValue)) {
-				return true;
-			}
-			if (this.isTextIndex() && BsonRegularExpression.isTextSearchExpression(queryValue)) {
-				return true;
-			}
-			if (queryValue instanceof Document) {
-				Document queryDoc = (Document) queryValue;
-
-				for (String queriedKey : queryDoc.keySet()) {
-					if (isInQuery(queriedKey)) {
-						// okay
-					}
-					else if (queriedKey.startsWith("$type") || queriedKey.startsWith("$exists")
-						    || queriedKey.startsWith("$mod")|| queriedKey.startsWith("$size") ) {
-						// not yet supported
-						if(queryDoc.size()==1) {
-							return false;
-						}
-					}
-					else if(queriedKey.startsWith("$")){
-						// continue
-					}
-				}
-			}
-		}
-		return true;
-	}
-
-	@Override
-	public Iterable<Object> getPositions(Document query) {
-		final KeyValue queriedKeys = getQueriedKeys(query);
-
-		Set<Object> all = null;
-		BooleanQuery.Builder queryBuider = new BooleanQuery.Builder();
-		Document textDoc = null;
-
-		// for { $text : { $search: 'keyword' } } || { $text : { $knnVector: [0.1,0.4,0.6] } }
-		if(this.isTextIndex() && query.containsKey("$text")) {
-			Object queriedKey = query.get("$text");
-			if (queriedKey instanceof Document) {
-				textDoc = query.getDocument("$text");
-				if (!this.isKnnVectorIndex && BsonRegularExpression.isTextSearchExpression(queriedKey)){
-					// is { $text : { $search: 'keyword' } }
-				}
-				else if(this.isKnnVectorIndex && IgniteVectorIndex.isVectorSearchExpression(textDoc)) {
-					// is { $text : { $knnVector: [0.1,0.4,0.6] } }
-				}
-				else{
-					textDoc = null;
-				}
-			}
-			else {
-				throw new UnsupportedOperationException("unsupported $text expression: " + queriedKey);
-			}
-			query.remove("$text");
-		}
-		int n = 0;
-		for (Object queriedKey : queriedKeys.iterator()) {
-			IndexKey indexKey = this.getKeys().get(n);
-			if (queriedKey instanceof Document) {
-				Document keyObj = (Document) queriedKey;
-				if (Utils.containsQueryExpression(keyObj)) {
-					for(String expression: keyObj.keySet()) {
-						if (expression.equals(QueryOperator.IN.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.IN.getValue()), QueryOperator.IN);
-							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.NOT_IN.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_IN.getValue()), QueryOperator.NOT_IN);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.EQUAL.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.EQUAL.getValue()), QueryOperator.EQUAL);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.NOT_EQUALS.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.NOT_EQUALS.getValue()), QueryOperator.NOT_EQUALS);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.MUST_NOT);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.GREATER_THAN.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN.getValue()), QueryOperator.GREATER_THAN);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.GREATER_THAN_OR_EQUAL.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.GREATER_THAN_OR_EQUAL.getValue()), QueryOperator.GREATER_THAN_OR_EQUAL);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.LESS_THAN.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN.getValue()), QueryOperator.LESS_THAN);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-							query.remove(indexKey.getKey());
-						} else if (expression.equals(QueryOperator.LESS_THAN_OR_EQUAL.getValue())) {
-							Query termQuery = getQueryValueForExpression(indexKey, keyObj.get(QueryOperator.LESS_THAN_OR_EQUAL.getValue()), QueryOperator.LESS_THAN_OR_EQUAL);
-
-							queryBuider.add(termQuery, BooleanClause.Occur.FILTER);
-							query.remove(indexKey.getKey());
-						}
-					}
-				}				
-			}
-			else if (queriedKey instanceof String) {					
-				String keyString = (String) queriedKey;
-				if (!keyString.isEmpty()) {
-					if(this.isTextIndex()) {
-						SimpleQueryParser parser = new SimpleQueryParser(indexAccess.analyzerWrapper, indexKey.getKey()); // 定义查询分析器
-						parser.setDefaultOperator(BooleanClause.Occur.MUST);
-						Query textQuery = parser.parse(keyString);
-						queryBuider.add(textQuery, BooleanClause.Occur.MUST);
-						query.remove(indexKey.getKey());
-					}
-					else {
-						Query termQuery = getQueryValueForExpression(indexKey,keyString, QueryOperator.EQUAL);						
-						queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-						query.remove(indexKey.getKey());		
-					}
-				}
-			}
-			else if (queriedKey instanceof Number) {					
-				Number keyValue = (Number) queriedKey;
-				if (keyValue!=null) {
-					Query termQuery = getQueryValueForExpression(indexKey,keyValue, QueryOperator.EQUAL);						
-					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-					query.remove(indexKey.getKey());
-				}
-			}
-			else if (queriedKey instanceof Collection) {					
-				Collection querySet = (Collection) queriedKey;
-				if (querySet.size()>0) {
-					Query termQuery = getQueryValueForExpression(indexKey,querySet, QueryOperator.IN);					
-					queryBuider.add(termQuery, BooleanClause.Occur.MUST);
-					query.remove(indexKey.getKey());
-				}
-			}
-			n++;
-		}
-
-		if(textDoc!=null) {
-			List<IdWithMeta> positions = getPosition(queryBuider, textDoc);
-			return (List)positions;
-		}
-		n = 0;
-		for (Object queriedKey : queriedKeys.iterator()) {
-			IndexKey indexKey = this.getKeys().get(n);
-			// for $text value  { textField : { $text: 'keyword' } }
-			if (!this.isKnnVectorIndex && BsonRegularExpression.isRegularExpression(queriedKey)) { // { textField : { $regex: 'keyword' } }
-
-				Set<Object> positions = new HashSet<>();
-				for (IdWithMeta obj : getFullTextList(indexKey, queryBuider,queriedKey)) {
-					if (obj.key != null) { // k, score, v
-						Object v = obj.meta().get("indexValue");
-						if (v != null) {
-							BsonRegularExpression regularExpression = BsonRegularExpression.convertToRegularExpression(queriedKey);
-							Matcher matcher = regularExpression.matcher(v.toString());
-							if (matcher.find()) {
-								positions.add(obj.key);
-							}
-						}
-					}
-				}
-				query.remove(indexKey.getKey());
-				if (all == null) {
-					all = positions;
-				} else {
-					all.retainAll(positions);
-				}
-
-			}
-			else if (!this.isKnnVectorIndex && BsonRegularExpression.isTextSearchExpression(queriedKey)) { // { textField : { $text: 'keyword' } }
-
-				List<IdWithMeta> positions = getFullTextList(indexKey, queryBuider, queriedKey);
-				query.remove(indexKey.getKey());
-				if (all == null) {
-					all = new HashSet<>(positions);
-				} else {
-					all.retainAll(positions);
-				}
-			}
-			else if (this.isKnnVectorIndex && IgniteVectorIndex.isVectorSearchExpression(queriedKey)) { // { textField : { $knnVector: 'keyword' } }
-
-				List<IdWithMeta> positions = getFullTextList(indexKey, queryBuider, queriedKey);
-				query.remove(indexKey.getKey());
-				if (all == null) {
-					all = new HashSet<>(positions);
-				} else {
-					all.retainAll(positions);
-				}
-			}
-		}
-		if(all==null){
-			List<IdWithMeta> positions = getPosition(queryBuider, textDoc);
-			return (List)positions;
-		}
-		return all;
-	}
-
-	@Override
-	public long getCount() {
-		if(docCount>0) {
-			return docCount;
-		}
-		return indexAccess.writer.getDocStats().numDocs;
-	}
-
-	@Override
-	public long getDataSize() {
-		long siz = 0;
-		for(SegmentCommitInfo seg: indexAccess.writer.getMergingSegments()) {
-			try {
-				siz += seg.sizeInBytes();
-			} 
-			catch (IOException e) {
-			}
-		}
-		return siz;
-	}
-
-	@Override
 	public void checkUpdate(Document oldDocument, Document newDocument, MongoCollection<Object> collection) {
-		
+		// 索引维护由Ignite的store钩子完成
 	}
 
 	@Override
 	public void updateInPlace(Document oldDocument, Document newDocument, Object position,
-			MongoCollection<Object> collection) throws KeyConstraintError {
-		if (!nullAwareEqualsKeys(oldDocument, newDocument)) {
-			Object removedPosition = remove(oldDocument, collection);
-			if (removedPosition != null) {
-				Assert.equals(removedPosition, position);
-			}
-			add(newDocument, position, collection);
-		}
+			MongoCollection<Object> collection) {
+		// 索引维护由Ignite的store钩子完成（update通过dataMap.put覆盖）
 	}
 
 	@Override
-	public void drop() {		
-		Map<String, FieldType> fields = indexAccess.fields(this.collection.getTypeName());
-		for (IndexKey ik : this.getKeys()) {
-			fields.remove(ik.getKey());
-		}		
-		this.indexAccess = null;
+	public long getCount() {
+		return collection.dataMap.sizeLong(CachePeekMode.PRIMARY);
 	}
-	
+
+	@Override
+	public long getDataSize() {
+		CacheMetrics metrics = collection.dataMap.metrics();
+		long offHeap = metrics.getOffHeapAllocatedSize();
+		return offHeap >= 0 ? offHeap : 0;
+	}
+
+	@Override
+	public void drop() {
+		try {
+			ctx.query().dynamicIndexDrop(collection.getCollectionName(), schemaName(), sqlIndexName(), true)
+					.get(SCHEMA_OP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+		} catch (Exception e) {
+			log.warn("Failed to drop SQL index '" + sqlIndexName() + "' of type '" + typeName() + "'", e);
+		}
+		registered = false;
+	}
+
 	void close() {
-		LuceneIndexAccess.removeIndexAccess(indexAccess);
+		// 底层索引的生命周期由Ignite管理，这里无需释放任何资源
 	}
 
-	private Query getQueryValueForExpression(IndexKey key, Object value, QueryOperator operator) {
-		if (operator==QueryOperator.IN || operator==QueryOperator.NOT_IN) {
-			@SuppressWarnings("unchecked")
-			Collection<Object> objects = (Collection<Object>) value;
-			Collection<Object> queriedObjects = new TreeSet<>(ValueComparator.asc());
-			queriedObjects.addAll(objects);
-
-			List<Object> allKeys = new ArrayList<>();
-			for (Object object : queriedObjects) {
-				Object keyValue = Utils.normalizeValue(object);
-				allKeys.add(keyValue);
-			}
-			
-			BytesRef[] terms = new BytesRef[allKeys.size()];
-			for(int i=0;i<terms.length;i++) {
-				Object item = allKeys.get(i);
-				if(item instanceof byte[]) {
-					BytesRef term = new BytesRef((byte[])item);
-					terms[i] = term;
-				}
-				else {
-					BytesRef term = new BytesRef(item.toString());
-					terms[i] = term;
-				}										
-			}
-			
-			Query termQuery = new TermInSetQuery(key.getKey(),terms);
-			return termQuery;
-		}
-		else if (operator==QueryOperator.EQUAL || operator==QueryOperator.NOT_EQUALS) {
-			Object obj = value;
-			Query termQuery;
-			if(obj instanceof ObjectId || obj instanceof UUID) {									
-				byte[] keyBytes = marshaller.marshal(ctx.grid().binary().toBinary(obj),false);
-	            BytesRef keyByteRef = new BytesRef(keyBytes);	
-	            Term term = new Term(key.getKey(), keyByteRef);
-				termQuery = new TermQuery(term);
-				
-	     	} else if (obj instanceof Number) {
-				if (obj instanceof Long ) {
-					 termQuery = LongPoint.newExactQuery(key.getKey(), ((Number) obj).longValue());
-					
-				}
-				else if (obj instanceof Integer || obj instanceof Short) {
-					termQuery = IntPoint.newExactQuery(key.getKey(), ((Number) obj).intValue());
-					
-				}
-				else if (obj instanceof Float ) {
-					termQuery = FloatPoint.newExactQuery(key.getKey(), ((Number) obj).floatValue());
-					
-				}
-				else {
-					double d = ((Number) obj).doubleValue();						
-					termQuery = DoublePoint.newExactQuery(key.getKey(),d);					
-				}
-				
-			} else if (obj instanceof byte[]) {
-				Term term = new Term(key.getKey(), new BytesRef((byte[]) obj));
-				termQuery = new TermQuery(term);
-				
-			} else {
-				Term term = new Term(key.getKey(), obj.toString());
-				termQuery = new TermQuery(term);				
-			}
-			return termQuery;
-		}
-		else if (operator==QueryOperator.GREATER_THAN || operator==QueryOperator.GREATER_THAN_OR_EQUAL) {
-			Object obj = value;
-			Query filter;
-			if (obj instanceof Number) {
-				if (obj instanceof Long ) {					
-					filter = LongPoint.newRangeQuery(key.getKey(), ((Number) obj).longValue(),Long.MAX_VALUE);
-					
-				}
-				else if (obj instanceof Integer || obj instanceof Short) {
-					filter = IntPoint.newRangeQuery(key.getKey(), ((Number) obj).intValue(),Integer.MAX_VALUE);
-					
-				}
-				else if (obj instanceof Float ) {
-					filter = FloatPoint.newRangeQuery(key.getKey(), ((Number) obj).floatValue(),Float.MAX_VALUE);
-					
-				}
-				else {
-					double d = ((Number) obj).doubleValue();						
-					filter = DoublePoint.newRangeQuery(key.getKey(),d,Double.MAX_VALUE);					
-				}
-				
-			} else if (obj instanceof byte[]) {				
-				filter = BinaryPoint.newRangeQuery(key.getKey(),(byte[]) obj, null);
-				
-			} else {				
-				filter = SortedDocValuesField.newSlowRangeQuery(key.getKey(), new BytesRef(obj.toString()), null,true,false);				
-			}
-			return filter;
-		}
-		else if (operator==QueryOperator.LESS_THAN || operator==QueryOperator.LESS_THAN_OR_EQUAL) {
-			Object obj = value;
-			Query filter;
-			if (obj instanceof Number) {
-				if (obj instanceof Long ) {					
-					filter = LongPoint.newRangeQuery(key.getKey(), Long.MIN_VALUE, ((Number) obj).longValue());
-					
-				}
-				else if (obj instanceof Integer || obj instanceof Short) {
-					filter = IntPoint.newRangeQuery(key.getKey(), Integer.MIN_VALUE, ((Number) obj).intValue());
-					
-				}
-				else if (obj instanceof Float ) {
-					filter = FloatPoint.newRangeQuery(key.getKey(),Float.MIN_VALUE, ((Number) obj).floatValue());
-					
-				}
-				else {
-					double d = ((Number) obj).doubleValue();						
-					filter = DoublePoint.newRangeQuery(key.getKey(),Double.MIN_VALUE, d);					
-				}
-				
-			} else if (obj instanceof byte[]) {				
-				filter = BinaryPoint.newRangeQuery(key.getKey(), null, (byte[]) obj);
-				
-			} else {				
-				filter = SortedDocValuesField.newSlowRangeQuery(key.getKey(), null, new BytesRef(obj.toString()), false, true);				
-			}
-			return filter;
-		}
-		else {
-			throw new UnsupportedOperationException("unsupported query expression: " + operator);
-		}
-	}
-	
-	/**
-	 * 对所有字段使用lucene索引进行查询, for $text
-	 * @param query
-	 * @return
-	 */
-	protected List<IdWithMeta> getPosition(BooleanQuery.Builder query, Document $text) {
-		List<IdWithMeta> result = new ArrayList<>();
-		LuceneIndexAccess access = indexAccess;
-
-		try {
-
-			String cacheName = access.cacheName();
-			ClassLoader ldr = null;
-
-			GridCacheAdapter<KeyValue,Object> cache = null;
-			if (ctx != null) {
-				cache = ctx.cache().internalCache(cacheName);
-				if (cache == null) {
-					cache = ctx.cache().internalCache(this.collection.getCollectionName());
-				}
-			}
-			if (cache != null && ctx.deploy().enabled())
-				ldr = cache.context().deploy().globalLoader();
-
-			access.flush();
-			
-			int limit = 0;
-			float scoreThreshold = 0;
-			SortField sortField = null;
-
-			// take a reference as the searcher may change
-			IndexSearcher searcher = access.searcher;
-			// reuse the same analyzer; it's thread-safe;
-			// also allows subclasses to control the analyzer used.			
-			// Filter expired items.
-			//-Query filter = LongPoint.newRangeQuery(FullTextLucene.EXPIRATION_TIME_FIELD_NAME, U.currentTimeMillis(),Long.MAX_VALUE);
-			// query.add(filter, BooleanClause.Occur.FILTER);
-			
-			
-			String defaultTextField = null;
-			FieldType fieldType = TextField.TYPE_NOT_STORED;
-			for (IndexKey key : this.getKeys()) {				
-				if (key.isText() && defaultTextField==null) {
-					defaultTextField = key.getKey();
-					fieldType = access.fields(collection.getTypeName()).getOrDefault(defaultTextField,fieldType);
-				}
-			}
-			if ($text!=null) {
-				Map<String, Object> opt =  $text;
-				Object obj = null;
-
-				if(opt.containsKey("$limit")) {
-					limit = Integer.parseInt(opt.get("$limit").toString());
-				}
-
-				int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
-				if(k<=0){
-					k = GridLuceneIndex.DEAULT_LIMIT;
-				}
-
-				if(opt.containsKey("$scoreThreshold")) {
-					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
-				}
-
-				if(opt.containsKey("$sort")) {
-					String sortOpt = opt.get("$sort").toString();
-					sortField = new SortField(sortOpt,Type.DOUBLE, true);
-				}
-
-				if(!this.isKnnVectorIndex && opt.containsKey("$search")) {
-					obj = opt.get("$search"); // 更容错，支持多个字段
-					SimpleQueryParser parser = new SimpleQueryParser(access.analyzerWrapper, weights); // 定义查询分析器 // 定义查询分析器
-					parser.setDefaultOperator(BooleanClause.Occur.MUST);
-					Query textQuery = parser.parse(obj.toString());
-					query.add(textQuery, BooleanClause.Occur.MUST);
-				}
-				else if(!this.isKnnVectorIndex && opt.containsKey("$text")) {
-					obj = opt.get("$text"); // 更复杂，不指定字段，只支持默认文本字段
-					StandardQueryParser parser = new StandardQueryParser(access.analyzerWrapper); // 定义查询分析器
-					parser.setFieldsBoost(weights);
-					Query textQuery = parser.parse(obj.toString(),defaultTextField);
-					query.add(textQuery, BooleanClause.Occur.MUST);
-
-				}
-				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
-					Object text = opt.get("$knnVector"); // 指定字段
-					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
-						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
-						query.add(vecQuery, BooleanClause.Occur.MUST);
-					}
-					else {
-						float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
-						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
-						query.add(vecQuery, BooleanClause.Occur.MUST);
-					}
-				}
-				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
-					Object text = opt.get("$vectorSearch"); // 支持多个字段
-
-					if(this.getKeys().size()==1) {
-						if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-							byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
-							KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(defaultTextField, queryVector, k);
-							query.add(vecQuery, BooleanClause.Occur.MUST);
-						}
-						else {
-							float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
-							KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(defaultTextField, queryVector, k);
-							query.add(vecQuery, BooleanClause.Occur.MUST);
-						}
-					}
-					else{
-						for(IndexKey key: this.getKeys()){
-							if(key.isText()){
-								if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-									byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
-									KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(key.getKey(), queryVector, k);
-									query.add(vecQuery, BooleanClause.Occur.SHOULD);
-								}
-								else {
-									float[] queryVector = computeValueEmbedding(obj,this.modelUrl,this.dimensions);
-									KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(key.getKey(), queryVector, k);
-									query.add(vecQuery, BooleanClause.Occur.SHOULD);
-								}
-							}
-						}
-					}
-				}
-			}
-			
-			// Lucene 3 insists on a hard limit and will not provide
-			// a total hits value. Take at least 100 which is
-			// an optimal limit for Lucene as any more
-			// will trigger writing results to disk.
-			int maxResults = GridLuceneIndex.DEAULT_LIMIT;
-			if(limit>0) {
-				maxResults = limit;
-			}
-			
-			TopDocs docs = null;
-			if(sortField==null)
-				docs = searcher.search(query.build(), maxResults);
-			else
-				docs = searcher.search(query.build(), maxResults, new Sort(sortField));
-			
-			limit = docs.scoreDocs.length;
-			
-			result = new ArrayList<>(limit);
-			for (int i = 0; i < limit; i++) {
-				ScoreDoc sd = docs.scoreDocs[i];
-				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
-				float score = sd.score;
-				if(score<scoreThreshold) {
-					continue;
-				}
-
-				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
-				
-				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"textScore",score);
-				if(i==0) {
-					meta.append("totalHits", docs.totalHits.value);
-				}
-				result.add(new IdWithMeta(k,meta));
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return result;
-	}
-
-	/**
-	 * 对指定的字符串字段进行搜索$search查询，支持模糊匹配
-	 * 
-	 * @param indexKey
-	 * @return 字段值，_key
-	 */
-	protected List<IdWithMeta> getFullTextList(IndexKey indexKey,BooleanQuery.Builder query, Object exp) {
-		LuceneIndexAccess access = indexAccess;		
-		int limit = 0;
-		float scoreThreshold = 0;
-		List<IdWithMeta> result = new ArrayList<>();
-		try {
-			String field = indexKey.getKey();
-			FieldType fieldType = this.indexAccess.fields(collection.getTypeName()).getOrDefault(field,StringField.TYPE_STORED);
-			String cacheName = access.cacheName();
-			ClassLoader ldr = null;
-
-			GridCacheAdapter<KeyValue, Object> cache = null;
-			if (ctx != null) {
-				cache = ctx.cache().internalCache(cacheName);
-				if (cache == null) {
-					cache = ctx.cache().internalCache(collection.getCollectionName());
-				}
-			}
-			if (cache != null && ctx.deploy().enabled())
-				ldr = cache.context().deploy().globalLoader();
-
-			access.flush();
-
-			// take a reference as the searcher may change
-			IndexSearcher searcher = access.searcher;
-			// reuse the same analyzer; it's thread-safe;
-			// also allows subclasses to control the analyzer used.
-			SortField sortField = null;
-			Object text = exp;
-			Query textQuery = null;
-			if (exp instanceof Map) {
-				Map<String, Object> opt = ((Map) exp);
-
-				if(opt.containsKey("$limit")) {
-					limit = Integer.parseInt(opt.get("$limit").toString());
-				}
-				int k = Integer.parseInt(opt.getOrDefault("$k",limit).toString());
-				if(k<=0){
-					k = GridLuceneIndex.DEAULT_LIMIT;
-				}
-
-				if(opt.containsKey("$scoreThreshold")) {
-					scoreThreshold = Float.parseFloat(opt.get("$scoreThreshold").toString());
-				}
-
-				if(opt.containsKey("$sort")) {
-					String sortOpt = opt.get("$sort").toString();
-					sortField = new SortField(sortOpt,Type.DOUBLE, true);
-				}
-
-				if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.REGEX)) {
-					text = opt.get(BsonRegularExpression.REGEX);
-					RegexpQuery regQuery = new RegexpQuery(new Term(field,text.toString()));					
-					textQuery = regQuery;
-				}
-				else if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.TEXT)) {
-					text = opt.get(BsonRegularExpression.TEXT);
-					// 更容错，只检索一个字段
-					StandardQueryParser parser = new StandardQueryParser(access.analyzerWrapper); // 定义查询分析器
-					parser.setFieldsBoost(weights);
-					textQuery = parser.parse(text.toString(),field);
-				}
-				else if(!this.isKnnVectorIndex && opt.containsKey(BsonRegularExpression.SEARCH)) {
-					text = opt.get(BsonRegularExpression.SEARCH);
-					// 更复杂，只检索一个字段，支持括号
-					SimpleQueryParser parser = new SimpleQueryParser(access.getFieldAnalyzer(field), field); // 定义查询分析器
-					parser.setDefaultOperator(BooleanClause.Occur.MUST);
-					textQuery = parser.parse(text.toString());
-				}
-				else if(this.isKnnVectorIndex && opt.containsKey("$vectorSearch")) {
-					text = opt.get("$vectorSearch");
-					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
-						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
-						textQuery = vecQuery;
-					}
-					else {
-						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
-						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
-						textQuery = vecQuery;
-					}
-				}
-				else if(this.isKnnVectorIndex && opt.containsKey("$knnVector")) {
-					text = opt.get("$knnVector");
-
-					if(fieldType.vectorEncoding()==VectorEncoding.BYTE){
-						byte[] queryVector = computeInt8ValueEmbedding(text,this.modelUrl,this.dimensions);
-						KnnByteVectorQuery vecQuery = new KnnByteVectorQuery(field, queryVector, k);
-						textQuery = vecQuery;
-					}
-					else {
-						float[] queryVector = computeValueEmbedding(text, this.modelUrl, this.dimensions);
-						KnnFloatVectorQuery vecQuery = new KnnFloatVectorQuery(field, queryVector, k);
-						textQuery = vecQuery;
-					}
-				}
-			}
-			if(textQuery!=null) {
-				query.add(textQuery,BooleanClause.Occur.MUST);
-			}
-			// Lucene 3 insists on a hard limit and will not provide
-			// a total hits value. Take at least 100 which is
-			// an optimal limit for Lucene as any more
-			// will trigger writing results to disk.
-			int maxResults = GridLuceneIndex.DEAULT_LIMIT;
-			if(limit>0) {
-				maxResults = limit;
-			}
-			TopDocs docs = null;
-			if(sortField==null)
-				docs = searcher.search(query.build(), maxResults);
-			else
-				docs = searcher.search(query.build(), maxResults, new Sort(sortField));
-			
-			limit = docs.scoreDocs.length;
-
-			for (int i = 0; i < limit; i++) {
-				ScoreDoc sd = docs.scoreDocs[i];
-				org.apache.lucene.document.Document doc = searcher.storedFields().document(sd.doc);
-				float score = sd.score;
-				if(score<scoreThreshold) {
-					continue;
-				}
-
-				Object k = unmarshalKeyField(doc.getBinaryValue(KEY_FIELD_NAME), cache, ldr);
-				Document meta = new Document(this.isKnnVectorIndex?"vectorSearchScore":"searchScore",score);
-				if(i==0) {
-					meta.append("totalHits", docs.totalHits.value);
-				}
-				if(!this.isKnnVectorIndex) {
-					String v = doc.get(field);
-					meta.append("indexValue", v);
-				}
-				result.add(new IdWithMeta(k,meta));
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return result;
-
-	}
-
-	private static boolean isInQuery(String key) {
-		return key.equals(QueryOperator.IN.getValue());
-	}
-
-	public boolean isFirstIndex() {
-		return isFirstIndex;
-	}
-
-	void setFirstIndex(boolean isFirstIndex) {
-		this.isFirstIndex = isFirstIndex;
-	}
-	
-	public boolean isTextIndex() {
-		for(IndexKey ind: this.getKeys()) {
-			if(ind.isText()) return true;
-		}
-		return false;
-	}
-	
+	@Override
 	public int getPriority() {
-		if(this.isTextIndex()) {
-			return 100 + (int)docCount/100 + getKeys().size();
-		}
-		return 10 + (int)docCount/1000 + getKeys().size();
-    }
+		return priorityBase() + getKeys().size();
+	}
 
+	/** 等值类索引优先于文本/向量索引参与查询规划。 */
+	protected int priorityBase() {
+		return 10;
+	}
 }

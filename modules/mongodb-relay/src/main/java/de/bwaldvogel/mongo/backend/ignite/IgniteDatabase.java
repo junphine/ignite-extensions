@@ -123,26 +123,21 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     	if(keys.size()>0 && keys.get(0).isText() ) {
     		String indexType = (String)keys.get(0).textOptions().get("type");
 
-    		if("knnVector".equalsIgnoreCase(indexType) || "vector".equalsIgnoreCase(indexType)) { // rnnVector
-                String vectorIndexType = keys.get(0).textOptions().getOrDefault("indexType", "HNSW").toString().toUpperCase();
-                if(!vectorIndexType.isBlank()) {
-                    if(vectorIndexType.startsWith("HNSW") || vectorIndexType.startsWith("IVF")) {
-                        IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse,true);
-                        return index;
-                    }
-                }
-	    		IgniteVectorIndex index = new IgniteVectorIndex(ignite.context(),collection,indexName,keys,sparse); 		
-	    		return index;
+    		if("knnVector".equalsIgnoreCase(indexType) || "vector".equalsIgnoreCase(indexType)) { // knnVector
+                // 向量索引注册进Ignite的VectorQueryIndex，与MongoDB共用同一份索引数据
+                return new IgniteKnnVectorIndex(ignite.context(),collection,indexName,keys,sparse);
     		}
     		else if("text".equalsIgnoreCase(indexType)) { // text
-
-	    		IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse);    		
-	    		return index;
+                // 文本索引注册进Ignite的FullTextQueryIndex（GridLuceneIndex）
+                return new IgniteTextIndex(ignite.context(),collection,indexName,keys,sparse);
     		}
+            else if("hashed".equalsIgnoreCase(indexType)) { // hashed
+                return new IgniteHashIndex(ignite.context(),collection,indexName,keys,sparse);
+            }
     	}
     	if(keys.size()>0) {
-    		IgniteLuceneIndex index = new IgniteLuceneIndex(ignite.context(),collection,indexName,keys,sparse);    		
-    		return index;
+            // 普通索引注册进Ignite的SORTED索引（H2 B+Tree）
+            return new IgniteSortedIndex(ignite.context(),collection,indexName,keys,sparse);
     	}
     	return null;
      }

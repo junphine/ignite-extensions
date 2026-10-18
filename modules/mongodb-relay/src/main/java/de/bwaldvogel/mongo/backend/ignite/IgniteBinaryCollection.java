@@ -23,6 +23,7 @@ import org.apache.ignite.cache.query.SqlQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.internal.processors.query.QueryUtils;
 import org.apache.ignite.internal.processors.query.h2.IgniteH2Indexing;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
 import org.apache.ignite.internal.util.typedef.T2;
@@ -93,6 +94,11 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     protected void indexChanged(Index<Object> index,String op) {
     	boolean firstLuneceIndex = true;
     	for (Index<Object> idx : this.getIndexes()) {
+			if (idx instanceof IgniteH2Index) {
+				// 索引定义已在构造时注册进Ignite；"reIndex" 时幂等地重试注册
+				if(op.equals("reIndex"))
+					((IgniteH2Index) idx).init();
+			}
 			if (idx instanceof IgniteLuceneIndex) {
 				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;
 				if(op.equals("reIndex"))
@@ -421,6 +427,10 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     
     public void close() {
     	for(Index<Object> idx: this.getIndexes()) {
+    		if (idx instanceof IgniteH2Index) {
+				// 底层索引由Ignite管理，close为无操作
+				((IgniteH2Index) idx).close();
+			}
     		if (idx instanceof IgniteLuceneIndex) {
 				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;				
 				igniteIndex.close();
@@ -471,6 +481,8 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	if(schema==null) {
     		schema = cfg.getName();
     	}
+		schema = QueryUtils.normalizeSchemaName(cfg.getName(), schema);
+
 		String cacheName = cfg.getName();
 		String shortName = cacheName;
 		int pos = shortName.lastIndexOf('.');
@@ -558,6 +570,13 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	}   
     	
     	return typeName==null ? this.getCollectionName() : typeName;
-    }    
+    }
+
+	public String getSchema() {
+		if(schema==null) {
+			String shortName = getTableName();
+		}
+		return schema;
+	}
     
 }
