@@ -20,6 +20,7 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
+import de.kp.works.ignite.ValueUtils;
 import de.kp.works.ignite.graph.ElementType;
 
 import java.util.HashMap;
@@ -35,7 +36,7 @@ public class IgniteLimitQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
         fields.put(IgniteConstants.FROM_COL_NAME, fromId.toString());
         fields.put(IgniteConstants.LIMIT_VALUE, String.valueOf(limit));
@@ -53,12 +54,12 @@ public class IgniteLimitQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
 
-        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, inclusiveFrom.toString());
+        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, inclusiveFrom);
         if(limit>0) {
         	fields.put(IgniteConstants.LIMIT_VALUE, String.valueOf(limit));
         }
@@ -70,7 +71,7 @@ public class IgniteLimitQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
 
@@ -101,15 +102,25 @@ public class IgniteLimitQuery extends IgniteQuery {
                  * The value of the value column must in the range of
                  * INCLUSIVE_FROM_VALUE >= PROPERTY_VALUE_COL_NAME
                  */
-                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-                sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+                String orderBy = IgniteConstants.PROPERTY_VALUE_COL_NAME;
+                boolean hasNum = ValueUtils.hasNumberValue(fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE));
+                if(hasNum) {
+                    sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+                    sqlStatement += " >= " + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + " ";
+                    orderBy = IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+                }
+                else{
+                    sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
+                    sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+                }
+
                 /*
                  * Determine sorting order
                  */
                 if (fields.get(IgniteConstants.REVERSED_VALUE).equals("true")) {
-                    sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " DESC";
+                    sqlStatement += " order by " + orderBy + " DESC";
                 } else {
-                    sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " ASC";
+                    sqlStatement += " order by " + orderBy + " ASC";
                 }
 
                 if (fields.containsKey(IgniteConstants.LIMIT_VALUE)) {

@@ -29,14 +29,17 @@ import java.util.stream.Stream;
 
 public class IgniteMutation {
 
+    public String label;
+
     public Object id;
     public List<IgniteColumn> columns = new ArrayList<>();
 
     public ElementType elementType;
     public IgniteMutationType mutationType;
 
-    public IgniteMutation(Object id) {
+    public IgniteMutation(Object id,String label) {
         this.id = id;
+        this.label = label;
     }
 
     public List<IgniteColumn> getColumns() {
@@ -65,12 +68,15 @@ public class IgniteMutation {
         return columns.stream()
                 .filter(column -> {
                     switch (column.getColName()) {
-                        case IgniteConstants.ID_COL_NAME:
+                        case IgniteConstants.ID_TYPE_COL_NAME:
+                        case IgniteConstants.VERTEX_ID_COL_NAME:
+                        case IgniteConstants.EDGE_ID_COL_NAME:
                         case IgniteConstants.LABEL_COL_NAME:
                         case IgniteConstants.TO_COL_NAME:
                         case IgniteConstants.FROM_COL_NAME:
                         case IgniteConstants.CREATED_AT_COL_NAME:
                         case IgniteConstants.UPDATED_AT_COL_NAME:
+                        case IgniteConstants.PROPERTY_WEIGHT_COL_NAME:
                             return false;
 
                         default:
@@ -81,6 +87,9 @@ public class IgniteMutation {
 
     public Object getId() {
         return id;
+    }
+    public String getLabel() {
+        return label;
     }
 
 }

@@ -121,7 +121,7 @@ public abstract class ElementModel extends BaseModel {
      * @param key     The property key
      * @param value   The amount to increment
      */
-    public PropertyIncrementer incrementProperty(Element element, ElementType elementType, String key, long value) {
+    public PropertyIncrementer incrementProperty(Element element, ElementType elementType, String key, Number value) {
         return new PropertyIncrementer(graph, element, elementType, key, value);
     }
 

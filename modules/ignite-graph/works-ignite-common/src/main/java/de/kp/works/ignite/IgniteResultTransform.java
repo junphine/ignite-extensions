@@ -2,7 +2,6 @@ package de.kp.works.ignite;
 
 import java.util.*;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import org.apache.tinkerpop.gremlin.structure.util.CloseableIterator;
 
@@ -33,45 +32,27 @@ public final class IgniteResultTransform {
 
 		@Override
 		public IgniteResult next() {
-			IgniteResult igniteResult = new IgniteResult();
-
 			IgniteEdgeEntry head = last;
 			if(head==null) head = entries.next();
 
 			/*
 			 * Extract common fields
 			 */
-
-			String id = head.id;
-
-			String idType = head.idType;
-			String label = head.label;
+			IgniteResult igniteResult = new IgniteResult(head.id, head.label);
+			igniteResult.setCreatedAt(head.createdAt);
+			igniteResult.setUpdatedAt(head.updatedAt);
 
 			String toId = head.toId;
 			String toIdType = head.toIdType;
 
 			String fromId = head.fromId;
 			String fromIdType = head.fromIdType;
-
-			Long createdAt = head.createdAt;
-			Long updatedAt = head.updatedAt;
-
 			/*
 			 * Add common fields
 			 */
-
-			igniteResult.addColumn(IgniteConstants.ID_COL_NAME, idType, id);
-
-			igniteResult.addColumn(IgniteConstants.LABEL_COL_NAME, ValueType.STRING.name(), label);
-
 			igniteResult.addColumn(IgniteConstants.TO_COL_NAME, toIdType, toId);
 
 			igniteResult.addColumn(IgniteConstants.FROM_COL_NAME, fromIdType, fromId);
-
-			igniteResult.addColumn(IgniteConstants.CREATED_AT_COL_NAME, ValueType.LONG.name(), createdAt);
-
-			igniteResult.addColumn(IgniteConstants.UPDATED_AT_COL_NAME, ValueType.LONG.name(), updatedAt);
-			
 			/*
 			 * Extract & add properties
 			 */
@@ -90,9 +71,6 @@ public final class IgniteResultTransform {
 			
 			return igniteResult;
 		}
-		
-	
-
 	};	
 
 	
@@ -116,33 +94,17 @@ public final class IgniteResultTransform {
 		
 		@Override
 		public IgniteResult next() {
-			IgniteResult igniteResult = new IgniteResult();
-
 			IgniteVertexEntry head = last;
 			if(head==null) head = entries.next();
 
 			/*
 			 * Extract common fields
 			 */
+			IgniteResult igniteResult = new IgniteResult(head.id, head.label);
+			igniteResult.setIdType(head.idType);
+			igniteResult.setCreatedAt(head.createdAt);
+			igniteResult.setUpdatedAt(head.updatedAt);
 
-			String id = head.id;
-
-			String idType = head.idType;
-			String label = head.label;
-
-			Long createdAt = head.createdAt;
-			Long updatedAt = head.updatedAt;
-
-			/*
-			 * Add common fields
-			 */
-			igniteResult.addColumn(IgniteConstants.ID_COL_NAME, idType, id);
-
-			igniteResult.addColumn(IgniteConstants.LABEL_COL_NAME, ValueType.STRING.name(), label);
-
-			igniteResult.addColumn(IgniteConstants.CREATED_AT_COL_NAME, ValueType.LONG.name(), createdAt);
-
-			igniteResult.addColumn(IgniteConstants.UPDATED_AT_COL_NAME, ValueType.LONG.name(), updatedAt);
 			/*
 			 * Extract & add properties
 			 */
@@ -163,8 +125,6 @@ public final class IgniteResultTransform {
 		}
 		
 	};
-
-
 
 	public static Iterator<IgniteResult> transformEdgeEntries(final EdgeEntryIterator entries) {
 		

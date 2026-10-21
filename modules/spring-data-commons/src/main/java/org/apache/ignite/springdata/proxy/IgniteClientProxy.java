@@ -50,6 +50,11 @@ public class IgniteClientProxy implements IgniteProxy {
         return new IgniteClientCacheProxy<>(cli.cache(name));
     }
 
+    /** @return {@link IgniteClient} instance to which operations are delegated. */
+    public IgniteClient delegate() {
+        return cli;
+    }
+
     /** {@inheritDoc} */
     @Override public boolean equals(Object other) {
         if (this == other)

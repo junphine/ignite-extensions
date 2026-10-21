@@ -258,10 +258,7 @@ public class IgniteGraph implements Graph {
 			IgniteConstants.UPDATED_AT_COL_NAME,indexMeta.updatedAt()
 		);
     	// do create index
-    	IgnitePut put = new IgnitePut(indexMeta.key(), ElementType.DOCUMENT);
-        put.addColumn(IgniteConstants.ID_COL_NAME, "String", indexMeta.key().propertyKey());
-        put.addColumn(IgniteConstants.LABEL_COL_NAME, "String", indexMeta.key().label());
-        put.addColumn(IgniteConstants.PROPERTY_KEY_COL_NAME, "Boolean", "isUnique");
+    	IgnitePut put = new IgnitePut(indexMeta.key().propertyKey(), indexMeta.key().label(), ElementType.DOCUMENT);
         put.addColumn("isUnique", "Boolean", indexMeta.isUnique());
         put.addColumn("state", "State", indexMeta.state());
         

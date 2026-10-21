@@ -46,7 +46,7 @@ public class PropertyRemover implements Mutator {
 
         Object id = element.id();
 
-        IgniteDelete delete = new IgniteDelete(id, elementType);
+        IgniteDelete delete = new IgniteDelete(id, element.label(),elementType);
         delete.addColumn(key);
 
         return IteratorUtils.of(delete);

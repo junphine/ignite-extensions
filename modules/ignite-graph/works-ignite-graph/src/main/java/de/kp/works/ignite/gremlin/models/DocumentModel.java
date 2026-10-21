@@ -33,7 +33,7 @@ public class DocumentModel extends VertexModel {
      * the same label.
      */
     public Iterator<Vertex> vertices(String sql, Object[] args) {
-    	List<IgniteResult> it = this.getTable().getIgniteSqlQuery(sql,args).getSqlResultWithMeta();
+    	List<IgniteResult> it = this.getTable().getIgniteSqlQuery(sql).getSqlResultWithMeta(args);
         /*
          * The parser converts results from Ignite
          * queries to vertices.

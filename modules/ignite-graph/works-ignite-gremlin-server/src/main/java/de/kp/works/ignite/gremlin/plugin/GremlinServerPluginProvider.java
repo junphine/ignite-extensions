@@ -79,7 +79,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 	/** {@inheritDoc} */
 	@Override
 	public String version() {
-		return "3.7.2";
+		return "3.7.3";
 	}
 
 	/** {@inheritDoc} */
@@ -144,12 +144,15 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 				}
 				
 				settings.graphs.put(databaseName, gremlin.graphConfigFile);
-				
+
+				IgniteEx igniteEx = (IgniteEx) ignite;
+				igniteEx.context().ports().registerPort(settings.port, TCP, getClass());
 				// 设置默认的ignite
 				IgniteConnect.defaultIgnite = ignite;
 				counter++;
 			} catch (Exception e) {
 				log.error(e.getMessage(), e);
+				throw new RuntimeException(e.getMessage());
 			}
 		}
 
@@ -197,7 +200,6 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 
 				log.info("TinkerPop: {}\n", GremlinServer.getHeader());
 				log.info("GremlinServer", "listern on " + settings.host + ":" + settings.port);
-				ignite.context().ports().registerPort(settings.port, TCP, getClass());
 
 			} catch (Exception e) {
 				log.error("GremlinServer bind fail.", e);

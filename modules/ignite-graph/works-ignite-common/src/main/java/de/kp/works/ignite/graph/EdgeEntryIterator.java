@@ -16,6 +16,8 @@ import de.kp.works.ignite.ValueType;
 import de.kp.works.ignite.ValueUtils;
 import de.kp.works.ignite.graph.IgniteEdgeEntry;
 
+import static de.kp.works.ignite.ValueType.STRING;
+
 public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,AutoCloseable {
 	private Iterator<List<?>> sqlResult;
 	private FieldsQueryCursor cursor;
@@ -79,7 +81,7 @@ public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,Aut
      * 0 : Cache key
      *
      * 1 : IgniteConstants.ID_COL_NAME (String)
-     * 2 : IgniteConstants.ID_TYPE_COL_NAME (String)
+     * 2 : IgniteConstants.PROPERTY_WEIGHT_COL_NAME (Float)
      * 3 : IgniteConstants.LABEL_COL_NAME (String)
      * 4 : IgniteConstants.TO_COL_NAME (String)
      * 5 : IgniteConstants.TO_TYPE_COL_NAME (String)
@@ -98,7 +100,7 @@ public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,Aut
 		String cacheKey = (String)result.get(0);
 
         String id     = (String)result.get(1);
-        String idType = (String)result.get(2);
+        Float weight = (Float)result.get(2);
         String label  = (String)result.get(3);
 
         String toId     = (String)result.get(4);
@@ -111,15 +113,14 @@ public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,Aut
         Long updatedAt  = (Long)result.get(9);
 
         String propKey   = (String)result.get(10);
-        String propType  = (String)result.get(11);
+        Short propType  = (Short)result.get(11);
         Object propValue = result.get(12);
-        if(!propType.equals("STRING") && !propType.equals("*") && propValue instanceof String) {
-        	propValue = ValueUtils.parseValue(propValue.toString(), ValueType.valueOf(propType));
-        }
+		if(propType!=STRING.code()){
+			propValue = ValueUtils.parseValue(propValue.toString(), ValueType.valueOf(propType));
+		}
 
-        return new IgniteEdgeEntry(                
+		IgniteEdgeEntry edge = new IgniteEdgeEntry(
                 id,
-                idType,
                 label,
                 toId,
                 toIdType,
@@ -130,6 +131,11 @@ public class EdgeEntryIterator implements CloseableIterator<IgniteEdgeEntry>,Aut
                 propKey,
                 propType,
                 propValue);
+
+		if(weight!=null){
+			edge.weight = weight;
+		}
+		return edge;
 		
 	}
 }

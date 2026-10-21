@@ -19,6 +19,7 @@ package de.kp.works.ignite.gremlin;
  */
 
 import de.kp.works.ignite.IgniteTable;
+import de.kp.works.ignite.IndexMetadata;
 import de.kp.works.ignite.graph.ElementType;
 import de.kp.works.ignite.gremlin.models.ElementModel;
 import de.kp.works.ignite.gremlin.mutators.Mutator;
@@ -34,23 +35,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class IgniteElement implements Element,java.io.Serializable {
   
-    protected String namespace;
+    protected final String namespace; // graph
     protected final Object id;
     protected String label;
-    protected Long createdAt;
-    protected Long updatedAt;
+    protected long createdAt;
+    protected long updatedAt;
     protected Map<String, Object> properties;
     protected transient boolean propertiesFullyLoaded;
-    //-protected transient IndexMetadata.Key indexKey;
-    protected transient long indexTs;
     protected transient boolean isCached;
     protected transient boolean isDeleted;
 
     protected IgniteElement(IgniteGraph graph,
                             Object id,
                             String label,
-                            Long createdAt,
-                            Long updatedAt,
+                            long createdAt,
+                            long updatedAt,
                             Map<String, Object> properties,
                             boolean propertiesFullyLoaded) {       
         this.namespace = graph.admin.namespace();
@@ -66,7 +65,7 @@ public abstract class IgniteElement implements Element,java.io.Serializable {
 
     public abstract ElementType getElementType();
 
-    public IgniteTable getTable() {
+    protected IgniteTable getTable() {
         return getModel().getTable();
     }
 
@@ -79,22 +78,7 @@ public abstract class IgniteElement implements Element,java.io.Serializable {
     public Object id() {
         return id;
     }
-    /**
-    public IndexMetadata.Key getIndexKey() {
-        return indexKey;
-    }
 
-    public void setIndexKey(IndexMetadata.Key indexKey) {
-        this.indexKey = indexKey;
-    }
-	*/
-    public long getIndexTs() {
-        return indexTs;
-    }
-
-    public void setIndexTs(long indexTs) {
-        this.indexTs = indexTs;
-    }
 
     public boolean isCached() {
         return isCached;
@@ -126,8 +110,8 @@ public abstract class IgniteElement implements Element,java.io.Serializable {
 
     public void copyFrom(IgniteElement element) {    	
         if (element.label != null) this.label = element.label;
-        if (element.createdAt != null) this.createdAt = element.createdAt;
-        if (element.updatedAt != null) this.updatedAt = element.updatedAt;
+        if (element.createdAt != 0) this.createdAt = element.createdAt;
+        if (element.updatedAt != 0) this.updatedAt = element.updatedAt;
         if (element.properties != null
                 && (element.propertiesFullyLoaded || this.properties == null)) {
             this.properties = element.properties;
@@ -179,7 +163,7 @@ public abstract class IgniteElement implements Element,java.io.Serializable {
         Mutators.write(getTable(), writer);
     }
 
-    public void incrementProperty(String key, long value) {
+    public void incrementProperty(String key, Number value) {
 
         ElementHelper.validateProperty(key, value);
         updatedAt(System.currentTimeMillis());
@@ -211,17 +195,17 @@ public abstract class IgniteElement implements Element,java.io.Serializable {
         return label;
     }
 
-    public Long createdAt() {
-        if (createdAt == null) load();
+    public long createdAt() {
+        if (createdAt == 0) load();
         return createdAt;
     }
 
-    public Long updatedAt() {
-        if (updatedAt == null) load();
+    public long updatedAt() {
+        if (updatedAt == 0) load();
         return updatedAt;
     }
 
-    public void updatedAt(Long updatedAt) {
+    public void updatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
     }
 

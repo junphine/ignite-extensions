@@ -30,11 +30,7 @@ import de.kp.works.ignite.query.IgniteEdgeQuery;
 import de.kp.works.ignite.query.IgniteGetQuery;
 import de.kp.works.ignite.query.IgniteResult;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -207,7 +203,7 @@ public class IgniteBaseTable {
     		id = vid.toString();
     	}
         IgniteGetQuery igniteQuery = new IgniteGetQuery(this.name, admin, id);
-        return igniteQuery.getSqlResultWithMeta();
+        return igniteQuery.getSqlResultWithMeta(null);
     }
     
     /**
@@ -216,13 +212,13 @@ public class IgniteBaseTable {
      */
     protected void createEdge(IgnitePut ignitePut) throws Exception {
 
-        String id         = null;
-        String idType     = null;
+        String id         = ignitePut.getId().toString();
         String label      = null;
         String toId       = null;
         String toIdType   = null;
         String fromId     = null;
         String fromIdType = null;
+        float weight = 1.0f;
 
         long createdAt = System.currentTimeMillis();
         long updatedAt = System.currentTimeMillis();
@@ -234,9 +230,8 @@ public class IgniteBaseTable {
          */
         for (IgniteColumn column : ignitePut.getColumns()) {
             switch (column.getColName()) {
-                case IgniteConstants.ID_COL_NAME: {
+                case IgniteConstants.EDGE_ID_COL_NAME: {
                     id = column.getColValue().toString();
-                    idType = column.getColType();
                     break;
                 }
                 case IgniteConstants.LABEL_COL_NAME: {
@@ -245,12 +240,12 @@ public class IgniteBaseTable {
                 }
                 case IgniteConstants.TO_COL_NAME: {
                     toId = column.getColValue().toString();
-                    toIdType = column.getColType();
+                    toIdType = column.getColTypeName();
                     break;
                 }
                 case IgniteConstants.FROM_COL_NAME: {
                     fromId = column.getColValue().toString();
-                    fromIdType = column.getColType();
+                    fromIdType = column.getColTypeName();
                     break;
                 }
                 case IgniteConstants.CREATED_AT_COL_NAME: {
@@ -268,69 +263,49 @@ public class IgniteBaseTable {
                     break;
                 }
                 default:
-                    break;
-            }
-        }
-        /*
-         * Check whether the core fields of an edge entry
-         * are provided
-         */
-        if (id == null || idType == null || label == null || toId == null || toIdType == null || fromId == null || fromIdType == null)
-            throw new Exception("Number of parameters provided is not sufficient to create an edge.");
-
-        /*
-         * STEP #2: Move through all property columns
-         */
-        for (IgniteColumn column : ignitePut.getColumns()) {
-            switch (column.getColName()) {
-                case IgniteConstants.ID_COL_NAME:
-                case IgniteConstants.LABEL_COL_NAME:
-                case IgniteConstants.TO_COL_NAME:
-                case IgniteConstants.FROM_COL_NAME:
-                case IgniteConstants.CREATED_AT_COL_NAME:
-                case IgniteConstants.UPDATED_AT_COL_NAME: {
-                    break;
-                }
-                default: {
                     /*
                      * Build an entry for each property
                      */
                     String propKey   = column.getColName();
-                    String propType  = column.getColType();
-                    Object propValue = column.getColValue();                    
-                   
+                    short propType  = column.getColType().code();
+                    Object propValue = column.getColValue();
 
-                    entries.add(new IgniteEdgeEntry(                           
+                    IgniteEdgeEntry edge = new IgniteEdgeEntry(
                             id,
-                            idType,
                             label,
-                            toId,
-                            toIdType,
-                            fromId,
-                            fromIdType,
+                            toId,toIdType,
+                            fromId,fromIdType,
                             createdAt,
                             updatedAt,
                             propKey,
                             propType,
-                            propValue));
+                            propValue);
 
+                    edge.weight = weight;
+                    entries.add(edge);
                     break;
-                }
             }
         }
+        /*
+         * STEP #2 Check whether the core fields of an edge entry
+         * are provided
+         */
+        if (id == null || label == null || toId == null || fromId == null)
+            throw new Exception("Number of parameters provided is not sufficient to create an edge.");
+
+
         /*
          * STEP #3: Check whether the entries are still empty,
          * i.e. a vertex without properties will be created
          */
         if (entries.isEmpty()) {
-            String emptyValue = "*";
             /*
              * For a create request, we must generate
              * a unique cache key for each entry
              */            
             entries.add(new IgniteEdgeEntry(
-                    id, idType, label, toId, toIdType, fromId, fromIdType,
-                    createdAt, updatedAt, emptyValue, emptyValue, emptyValue));
+                    id, label, toId, toIdType,fromId,fromIdType,
+                    createdAt, updatedAt, "", ValueType.STRING.code(), ""));
 
         }
         /*
@@ -354,8 +329,7 @@ public class IgniteBaseTable {
          * STEP #1: Retrieve all properties that are
          * provided
          */
-        List<IgniteColumn> properties = ignitePut.getProperties()
-                .collect(Collectors.toList());
+        List<IgniteColumn> properties = ignitePut.getProperties().toList();
         /*
          * STEP #2: Distinguish between those properties
          * that are edge properties already and determine
@@ -383,19 +357,16 @@ public class IgniteBaseTable {
                      * the property key of the entry
                      */
                     List<IgniteColumn> property = knownProps.stream()
-                            .filter(p -> p.getColName().equals(propKey)).collect(Collectors.toList());
-                    if(property.size()==0) {
+                            .filter(p -> p.getColName().equals(propKey)).toList();
+                    if(property.isEmpty()) {
                     	return null;
                     }
                     Object newValue = property.get(0).getColValue();
                     return new IgniteEdgeEntry(                          
                             entry.id,
-                            entry.idType,
                             entry.label,
-                            entry.toId,
-                            entry.toIdType,
-                            entry.fromId,
-                            entry.fromIdType,
+                            entry.toId,entry.toIdType,
+                            entry.fromId,entry.fromIdType,
                             entry.createdAt,
                             /*
                              * Update the entry's `updatedAt` timestamp
@@ -403,10 +374,10 @@ public class IgniteBaseTable {
                             System.currentTimeMillis(),
                             entry.propKey,
                             entry.propType,
-                            newValue.toString());
+                            newValue);
 
                 })
-                .filter(entry->entry!=null)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
         writeEdge(updatedEntries);
@@ -420,17 +391,15 @@ public class IgniteBaseTable {
                     
                     return new IgniteEdgeEntry(                          
                             template.id,
-                            template.idType,
                             template.label,
-                            template.toId,
-                            template.toIdType,
-                            template.fromId,
-                            template.fromIdType,
+                            template.toId,template.toIdType,
+                            template.fromId,template.fromIdType,
                             System.currentTimeMillis(),
                             System.currentTimeMillis(),
                             property.getColName(),
-                            property.getColType(),
-                            property.getColValue().toString());
+                            property.getColType().code(),
+                            property.getColValue());
+
                 })
                 .collect(Collectors.toList());
 
@@ -452,19 +421,19 @@ public class IgniteBaseTable {
         /*
          * Check whether the column value is a [Long]
          */
-        String colType = column.getColType();
-        if (!colType.equals(ValueType.LONG.name()))
+        ValueType colType = column.getColType();
+        if (!colType.equals(ValueType.LONG) && !colType.equals(ValueType.INT) && !colType.equals(ValueType.SHORT))
             return null;
         /*
          * Restrict to that edge entry that refer to the
          * provided column
          */
         String colName = column.getColName();
-        String colValue = column.getColValue().toString();
+        Object colValue = column.getColValue();
 
         List<IgniteEdgeEntry> entries = edge.stream()
-                .filter(entry -> entry.propKey.equals(colName) && entry.propType.equals(colType) && entry.propValue.equals(colValue))
-                .collect(Collectors.toList());
+                .filter(entry -> entry.propKey.equals(colName) && entry.propType==colType.code() && entry.propValue.equals(colValue))
+                .toList();
 
         if (entries.isEmpty()) return null;
         IgniteEdgeEntry entry = entries.get(0);
@@ -474,12 +443,9 @@ public class IgniteBaseTable {
 
         IgniteEdgeEntry newEntry = new IgniteEdgeEntry(                
                 entry.id,
-                entry.idType,
                 entry.label,
-                entry.toId,
-                entry.toIdType,
-                entry.fromId,
-                entry.fromIdType,
+                entry.toId,entry.toIdType,
+                entry.fromId,entry.fromIdType,
                 entry.createdAt,
                 System.currentTimeMillis(),
                 entry.propKey,
@@ -495,8 +461,8 @@ public class IgniteBaseTable {
      */
     protected void createVertex(IgnitePut ignitePut) throws Exception {
 
-        String id = null;
-        String idType = null;
+        String id = ignitePut.getId().toString();
+        short idType = ValueUtils.getValueType(ignitePut.getId()).code();
         String label = null;
         long createdAt = System.currentTimeMillis();
         long updatedAt = System.currentTimeMillis();
@@ -508,9 +474,9 @@ public class IgniteBaseTable {
          */
         for (IgniteColumn column : ignitePut.getColumns()) {
             switch (column.getColName()) {
-                case IgniteConstants.ID_COL_NAME: {
+                case IgniteConstants.VERTEX_ID_COL_NAME: {
                     id = column.getColValue().toString();
-                    idType = column.getColType();
+                    idType = column.getColType().code();
                     break;
                 }
                 case IgniteConstants.LABEL_COL_NAME: {
@@ -531,36 +497,15 @@ public class IgniteBaseTable {
                 		updatedAt = Long.parseLong((String) column.getColValue());
                     break;
                 }
-                default:
-                    break;
-            }
-        }
-        /*
-         * Check whether the core fields of a vertex entry
-         * are provided
-         */
-        if (id == null || idType == null || label == null)
-            throw new Exception("Number of parameters provided is not sufficient to create a vertex.");
-        /*
-         * STEP #2: Move through all property columns
-         */
-        for (IgniteColumn column : ignitePut.getColumns()) {
-            switch (column.getColName()) {
-                case IgniteConstants.ID_COL_NAME:
-                case IgniteConstants.LABEL_COL_NAME:
-                case IgniteConstants.CREATED_AT_COL_NAME:
-                case IgniteConstants.UPDATED_AT_COL_NAME: {
-                    break;
-                }
                 default: {
                     /*
                      * Build an entry for each propert
                      */
                     String propKey   = column.getColName();
-                    String propType  = column.getColType();
+                    short propType  = column.getColType().code();
                     Object propValue = column.getColValue();
 
-                    entries.add(new IgniteVertexEntry(                         
+                    entries.add(new IgniteVertexEntry(
                             id,
                             idType,
                             label,
@@ -575,13 +520,19 @@ public class IgniteBaseTable {
             }
         }
         /*
+         * Check whether the core fields of a vertex entry
+         * are provided
+         */
+        if (id == null || label == null)
+            throw new Exception("Number of parameters provided is not sufficient to create a vertex.");
+
+        /*
          * STEP #3: Check whether the entries are still empty,
          * i.e. a vertex without properties will be created
          */
         if (entries.isEmpty()) {
-            String emptyValue = "*";           
             entries.add(new IgniteVertexEntry(
-                    id, idType, label, createdAt, updatedAt, emptyValue, emptyValue, emptyValue));
+                    id, idType, label, createdAt, updatedAt, "", ValueType.STRING.code(), ""));
 
         }
         /*
@@ -601,8 +552,7 @@ public class IgniteBaseTable {
          * STEP #1: Retrieve all properties that are
          * provided
          */
-        List<IgniteColumn> properties = ignitePut.getProperties()
-                .collect(Collectors.toList());
+        List<IgniteColumn> properties = ignitePut.getProperties().toList();
         /*
          * STEP #2: Distinguish between those properties
          * that are edge properties already and determine
@@ -630,8 +580,8 @@ public class IgniteBaseTable {
                      * the property key of the entry
                      */
                     List<IgniteColumn> property = knownProps.stream()
-                            .filter(p -> p.getColName().equals(propKey)).collect(Collectors.toList());
-                    if(property.size()==0) {
+                            .filter(p -> p.getColName().equals(propKey)).toList();
+                    if(property.isEmpty()) {
                     	return null;
                     }
                     Object newValue = property.get(0).getColValue();
@@ -649,7 +599,7 @@ public class IgniteBaseTable {
                             newValue);
 
                 })
-                .filter(entry->entry!=null)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
         writeVertex(updatedEntries);
@@ -671,7 +621,7 @@ public class IgniteBaseTable {
                             System.currentTimeMillis(),
                             System.currentTimeMillis(),
                             property.getColName(),
-                            property.getColType(),
+                            property.getColType().code(),
                             property.getColValue());
                 })
                 .collect(Collectors.toList());
@@ -693,27 +643,25 @@ public class IgniteBaseTable {
         IgniteColumn column = igniteIncrement.getColumn();
         if (column == null) return null;
         /*
-         * Check whether the column value is a [Long]
+         * Check whether the column value is a number
          */
-        String colType = column.getColType();
-        if (!colType.equals(ValueType.LONG.name()))
-            return null;
+        ValueType colType = column.getColType();
+
         /*
-         * Restrict to that vertex entry that refer to the
-         * provided column
+         * Restrict to that vertex entry that refer to the provided column
          */
         String colName = column.getColName();
-        Object colValue = column.getColValue();
+        Number colValue = (Number)column.getColValue();
 
         List<IgniteVertexEntry> entries = vertex.stream()
-                .filter(entry -> entry.propKey.equals(colName) && entry.propType.equals(colType) && entry.propValue.equals(colValue))
-                .collect(Collectors.toList());
+                .filter(entry -> entry.propKey.equals(colName))
+                .toList();
 
         if (entries.isEmpty()) return null;
         IgniteVertexEntry entry = entries.get(0);
 
         long oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).longValue() : Long.parseLong(entry.propValue.toString());
-        Long newValue = oldValue + 1;
+        Long newValue = oldValue + colValue.longValue();
 
         IgniteVertexEntry newEntry = new IgniteVertexEntry(               
                 entry.id,

@@ -54,27 +54,26 @@ public class EdgeReader extends LoadingElementReader<Edge> {
         String inType = null;
         String outType = null;
 
-        String label = null;
-
-        Long createdAt = null;
-        Long updatedAt = null;
+        String label   = result.getLabel();
+        long createdAt = result.getCreatedAt();
+        long updatedAt = result.getUpdatedAt();
 
         Map<String, Object> props = new HashMap<>();
         for (IgniteColumn column : result.getColumns()) {
             String colName = column.getColName();
             switch (colName) {
-            	case IgniteConstants.ID_COL_NAME:
+            	case IgniteConstants.EDGE_ID_COL_NAME:
             		break;
                 case IgniteConstants.LABEL_COL_NAME:
                     label = column.getColValue().toString();
                     break;               
                 case IgniteConstants.FROM_COL_NAME:
                     outVertexId = column.getColValue();
-                    outType = column.getColType();
+                    outType = column.getColTypeName();
                     break;               
                 case IgniteConstants.TO_COL_NAME:
                     inVertexId = column.getColValue();
-                    inType = column.getColType();
+                    inType = column.getColTypeName();
                     break;
                 case IgniteConstants.CREATED_AT_COL_NAME:
                     createdAt = (Long)column.getColValue();

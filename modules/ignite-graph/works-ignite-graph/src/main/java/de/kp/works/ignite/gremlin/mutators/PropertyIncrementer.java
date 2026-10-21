@@ -34,9 +34,9 @@ public class PropertyIncrementer implements Mutator {
     private final ElementType elementType;
 
     private final String key;
-    private final long value;
+    private final Number value;
 
-    public PropertyIncrementer(IgniteGraph graph, Element element, ElementType elementType, String key, long value) {
+    public PropertyIncrementer(IgniteGraph graph, Element element, ElementType elementType, String key, Number value) {
         this.element = element;
         this.elementType = elementType;
 
@@ -49,7 +49,7 @@ public class PropertyIncrementer implements Mutator {
 
         Object id = element.id();
 
-        IgniteIncrement increment = new IgniteIncrement(id, elementType);
+        IgniteIncrement increment = new IgniteIncrement(id, element.label(), elementType);
 
         String colType = ValueUtils.getValueType(value).name();
         increment.addColumn(key, colType, value);

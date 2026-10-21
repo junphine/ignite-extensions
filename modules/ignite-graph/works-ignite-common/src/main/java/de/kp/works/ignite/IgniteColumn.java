@@ -27,23 +27,27 @@ public class IgniteColumn {
     public IgniteColumn(String colName, String colType, Object colValue) {
         this.colName = colName;
         this.colType = colType;
-
         this.colValue = colValue;
     }
 
     public IgniteColumn(String colName) {
         this.colName = colName;
     }
-    public IgniteColumn(String colName, String colType) {
+    public IgniteColumn(String colName, Object colValue) {
         this.colName = colName;
-        this.colType = colType;
+        this.colValue = colValue;
+        this.colType = ValueUtils.getValueType(colValue).name();
     }
 
     public String getColName() {
         return colName;
     }
 
-    public String getColType() {
+    public ValueType getColType() {
+        return ValueType.valueOf(colType);
+    }
+
+    public String getColTypeName() {
         return colType;
     }
 

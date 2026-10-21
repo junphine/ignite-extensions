@@ -23,8 +23,8 @@ import de.kp.works.ignite.graph.ElementType;
 
 public class IgnitePut extends IgniteMutation {
 
-    public IgnitePut(Object id, ElementType elementType) {
-        super(id);
+    public IgnitePut(Object id, String label, ElementType elementType) {
+        super(id,label);
         this.elementType = elementType;
         mutationType = IgniteMutationType.PUT;
     }

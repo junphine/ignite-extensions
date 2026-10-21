@@ -51,15 +51,15 @@ public class VertexReader extends LoadingElementReader<Vertex> {
         if (result==null || result.isEmpty()) {
             throw new IgniteGraphNotFoundException(vertex, "Vertex does not exist: " + vertex.id());
         }
-        String label   = null;
-        Long createdAt = null;
-        Long updatedAt = null;
+        String label   = result.getLabel();
+        long createdAt = result.getCreatedAt();
+        long updatedAt = result.getUpdatedAt();
 
         Map<String, Object> props = new HashMap<>();
         for (IgniteColumn column : result.getColumns()) {
             String colName = column.getColName();
             switch (colName) {
-            	case IgniteConstants.ID_COL_NAME:
+                case IgniteConstants.VERTEX_ID_COL_NAME:
             		break;
                 case IgniteConstants.LABEL_COL_NAME:
                     label = column.getColValue().toString();

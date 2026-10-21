@@ -25,8 +25,8 @@ public class IgniteIncrement extends IgniteMutation {
 
     private IgniteColumn column = null;
 
-    public IgniteIncrement(Object id, ElementType elementType) {
-        super(id);
+    public IgniteIncrement(Object id, String label,ElementType elementType) {
+        super(id,label);
         this.elementType = elementType;
         mutationType = IgniteMutationType.INCREMENT;
     }

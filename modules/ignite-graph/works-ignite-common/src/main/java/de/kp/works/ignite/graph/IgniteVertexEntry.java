@@ -18,25 +18,35 @@ package de.kp.works.ignite.graph;
  *
  */
 
-public class IgniteVertexEntry {    
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Date;
 
-    public String id;
-    public String idType;
+import static de.kp.works.ignite.ValueUtils.convertToBigDecimal;
+
+public class IgniteVertexEntry {
+
+    public String id; // vertex id VERTEX_ID_COL_NAME
+
     public String label;
-    public Long createdAt;
-    public Long updatedAt;
+
     public String propKey;
-    public String propType;
     public Object propValue;
+
+    public short idType;
+    public short propType;
+
+    public long createdAt;
+    public long updatedAt;
 
     public IgniteVertexEntry(           
             String id,
-            String idType,
+            short idType,
             String label,
-            Long createdAt,
-            Long updatedAt,
+            long createdAt,
+            long updatedAt,
             String propKey,
-            String propType,
+            short propType,
             Object propValue) {
     	
         this.id = id;
@@ -55,6 +65,10 @@ public class IgniteVertexEntry {
     public final String getCacheKey() {
     	// String cacheKey = UUID.randomUUID().toString();
     	return id + ':' + propKey;
+    }
+
+    public final BigDecimal getDecimalValue() {
+        return convertToBigDecimal(propValue);
     }
 
 }

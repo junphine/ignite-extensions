@@ -22,8 +22,6 @@ package de.kp.works.ignite.query;
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
 import de.kp.works.ignite.IgniteResultTransform;
-import de.kp.works.ignite.IgniteTransform;
-import de.kp.works.ignite.ValueType;
 import de.kp.works.ignite.ValueUtils;
 import de.kp.works.ignite.graph.EdgeEntryIterator;
 import de.kp.works.ignite.graph.ElementType;
@@ -45,7 +43,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public abstract class IgniteQuery {
 
@@ -90,7 +87,14 @@ public abstract class IgniteQuery {
 
     }
 
-    protected void vertexToFields(Object vertex, Direction direction, HashMap<String, String> fields) {
+    protected String quoteSqlValue(Object v){
+        if(v instanceof Number){
+            return v.toString();
+        }
+        return "'"+v+"'";
+    }
+
+    protected void vertexToFields(Object vertex, Direction direction, HashMap<String, Object> fields) {
         /*
          * An Edge links two Vertex objects. The Direction determines
          * which Vertex is the tail Vertex (out Vertex) and which Vertex
@@ -108,17 +112,17 @@ public abstract class IgniteQuery {
     	if (vertex instanceof ReferenceVertexProperty) {
 			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) vertex;        	
         	if (direction.equals(Direction.BOTH)) {
-                fields.put(IgniteConstants.TO_COL_NAME, key.id().toString());
-                fields.put(IgniteConstants.FROM_COL_NAME, key.id().toString());
+                fields.put(IgniteConstants.TO_COL_NAME, key.id());
+                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
                 fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
                 fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
             }
             if (direction.equals(Direction.IN)) {
-                fields.put(IgniteConstants.TO_COL_NAME, key.id().toString());
+                fields.put(IgniteConstants.TO_COL_NAME, key.id());
                 fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
             }
             else {
-                fields.put(IgniteConstants.FROM_COL_NAME, key.id().toString());
+                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
                 fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
             }
         }
@@ -261,7 +265,7 @@ public abstract class IgniteQuery {
             	 /*
                  * Parse sql result and extract Document specific entries
                  */
-                List<IgniteResult> entries = getSqlResultWithMeta();                
+                List<IgniteResult> entries = getSqlResultWithMeta(null);
                 return entries.iterator();
             }
             else
@@ -282,7 +286,7 @@ public abstract class IgniteQuery {
         return new VertexEntryIterator(sqlResult);
     }
 
-    protected abstract void createSql(Map<String, String> fields);
+    protected abstract void createSql(Map<String, Object> fields);
 
     protected List<List<?>> getSqlResultList() {
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
@@ -293,21 +297,40 @@ public abstract class IgniteQuery {
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
         return cache.query(sqlQuery);
     }
-    
-    public List<IgniteResult> getSqlResultWithMeta() {
+
+    /** query from document */
+    public List<IgniteResult> getSqlResultWithMeta(Object[] args) {
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
+        if(args!=null){
+            sqlQuery.setArgs(args);
+        }
         FieldsQueryCursor<List<?>> cursor = cache.query(sqlQuery);
         List<List<?>> sqlResult = cursor.getAll();
         List<IgniteResult> result = new ArrayList<>();
     	for(List<?> row: sqlResult) {
-    		IgniteResult item = new IgniteResult();
+    		IgniteResult item = new IgniteResult(cache.getName());
     		for(int i=0;i<cursor.getColumnsCount();i++) {
     			Object value = row.get(i);
     			if(value!=null) {
     				String field = cursor.getFieldName(i);
     				if(field.equals("_KEY")) {
-    					field = "id";
+    					item.id = value;
+                        continue;
     				}
+                    if(field.equalsIgnoreCase("createdAt") || field.equalsIgnoreCase("created")) {
+                        Long up = ValueUtils.convertToLongValue(value);
+                        if(up!=null){
+                            item.createdAt = up;
+                        }
+                        continue;
+                    }
+                    if(field.equalsIgnoreCase("updatedAt") || field.equalsIgnoreCase("updated")) {
+                        Long up = ValueUtils.convertToLongValue(value);
+                        if(up!=null){
+                            item.updatedAt = up;
+                        }
+                        continue;
+                    }
     				item.addColumn(field, value.getClass().getSimpleName(), value);
     			}
             }
@@ -324,7 +347,6 @@ public abstract class IgniteQuery {
         List<String> columns = getColumns();
 
         sqlStatement = "select";
-
         sqlStatement += " " + String.join(",", columns);
         sqlStatement += " from " + cache.getName();
 
@@ -339,7 +361,7 @@ public abstract class IgniteQuery {
         /*
          * We want to retrieve the cache key as well
          */
-        columns.add("_key");
+        columns.add("_KEY");
 
         if (cache == null)
             throw new Exception("Cache is not initialized.");
@@ -350,13 +372,11 @@ public abstract class IgniteQuery {
              * The edge identifier used by TinkerPop to
              * identify an equivalent of a data row
              */
-            columns.add(IgniteConstants.ID_COL_NAME);
+            columns.add(IgniteConstants.EDGE_ID_COL_NAME);
             /*
-             * The edge identifier type to reconstruct the
-             * respective value. IgniteGraph supports [Long]
-             * as well as [String] as identifier.
+             edge weight for prop name
              */
-            columns.add(IgniteConstants.ID_TYPE_COL_NAME);
+            columns.add(IgniteConstants.PROPERTY_WEIGHT_COL_NAME);
             /*
              * The edge label used by TinkerPop and IgniteGraph
              */
@@ -395,7 +415,7 @@ public abstract class IgniteQuery {
              * The vertex identifier used by TinkerPop to identify
              * an equivalent of a data row
              */
-            columns.add(IgniteConstants.ID_COL_NAME);
+            columns.add(IgniteConstants.VERTEX_ID_COL_NAME);
             /*
              * The vertex identifier type to reconstruct the
              * respective value. IgniteGraph supports [Long]

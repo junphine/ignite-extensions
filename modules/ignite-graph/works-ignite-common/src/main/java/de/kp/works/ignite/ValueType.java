@@ -56,12 +56,16 @@ public enum ValueType {
     MAP(17),
     SERIALIZABLE(18),
     UUID(19),
-    ANY(20),
+    STRUCT(20),
     COUNTER(21),
     ARRAY(22),    
     JSON_ARRAY(23),
 	JSON_OBJECT(24),
-	COLLECTION(25); // Set || List
+
+    LIST(25),
+	SET(26), // Set || List
+
+    OTHER(0); // Set || List
 
     private final byte code;
 
@@ -69,7 +73,7 @@ public enum ValueType {
         this.code = (byte) code;
     }
 
-    public byte getCode() {
+    public byte code() {
         return code;
     }
 
@@ -114,7 +118,7 @@ public enum ValueType {
             case 19:
                 return UUID;
             case 20:
-                return ANY;
+                return STRUCT;
             case 21:
                 return COUNTER;
             case 22:
@@ -124,9 +128,11 @@ public enum ValueType {
             case 24:
                 return JSON_OBJECT;
             case 25:
-                return COLLECTION;
+                return LIST;
+            case 26:
+                return SET;
             default:
-                return null;
+                return OTHER;
         }
     }
 

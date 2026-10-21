@@ -39,26 +39,24 @@ import java.util.concurrent.TimeUnit;
 
 public class IgniteVertex extends IgniteElement implements Vertex {
 
-    public IgniteVertex(IgniteGraph graph, Object id) {
-        this(graph, id, null, null, null, null, false);
+    public IgniteVertex(IgniteGraph graph, Object id) {        
+        this(graph, id, null, 0, 0, null, false);
     }
 
-    public IgniteVertex(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt, Map<String, Object> properties) {
+    public IgniteVertex(IgniteGraph graph, Object id, String label, long createdAt, long updatedAt, Map<String, Object> properties) {
         this(graph, id, label, createdAt, updatedAt, properties, properties != null);
     }
 
-    public IgniteVertex(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt,
+    public IgniteVertex(IgniteGraph graph, Object id, String label, long createdAt, long updatedAt,
                         Map<String, Object> properties, boolean propertiesFullyLoaded) {
         super(graph, id, label, createdAt, updatedAt, properties, propertiesFullyLoaded);
-
-        if (graph != null) {
-            
-        }
     }
 
     @Override
     public void validate() {
         /* Do nothing */
+        assert id!=null;
+        assert label!=null;
     }
 
     @Override
@@ -114,7 +112,6 @@ public class IgniteVertex extends IgniteElement implements Vertex {
 
     @Override
     public <V> VertexProperty<V> property(final VertexProperty.Cardinality cardinality, final String key, final V value, final Object... keyValues) {
-    	
         if (keyValues.length > 0)
             throw VertexProperty.Exceptions.metaPropertiesNotSupported();
         if (cardinality == VertexProperty.Cardinality.set) {

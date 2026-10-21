@@ -18,49 +18,56 @@ package de.kp.works.ignite.graph;
  *
  */
 
+import java.math.BigDecimal;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.Date;
+
+import static de.kp.works.ignite.ValueUtils.convertToBigDecimal;
+
 public class IgniteEdgeEntry {
     
-    public String id;
-    public String idType;
+    public String id; // edge_id
+
     public String label;
     public String toId;
-    public String toIdType;
+
+    public String toIdType; // to node label
+
     public String fromId;
-    public String fromIdType;
-    public Long createdAt;
-    public Long updatedAt;
+
+    public String fromIdType; // from node label
     public String propKey;
-    public String propType;
     public Object propValue;
+    public short propType;
+    public float weight = 1.0f;
+
+    public long createdAt;
+    public long updatedAt;
 
     public IgniteEdgeEntry(           
             String id,
-            String idType,
             String label,
             String toId,
             String toIdType,
             String fromId,
             String fromIdType,
-            Long createdAt,
-            Long updatedAt,
+            long createdAt,
+            long updatedAt,
             String propKey,
-            String propType,
+            short propType,
             Object propValue) {    	
       
         this.id = id;
-        this.idType = idType;
-
         this.label = label;
-
         this.toId = toId;
         this.toIdType = toIdType;
-
         this.fromId = fromId;
         this.fromIdType = fromIdType;
-
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-
         this.propKey   = propKey;
         this.propType  = propType;
         this.propValue = propValue;
@@ -69,5 +76,9 @@ public class IgniteEdgeEntry {
     
     public final String getCacheKey() {
     	return id + ':' + propKey;
+    }
+
+    public final BigDecimal getDecimalValue() {
+        return convertToBigDecimal(propValue);
     }
 }

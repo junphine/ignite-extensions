@@ -5,7 +5,7 @@ import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSo
 import org.apache.tinkerpop.gremlin.server.GraphManager;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 
-public class GremlinPlugin implements IgnitePlugin{
+public class JanusPlugin implements IgnitePlugin{
 
 	String databaseName;
 	

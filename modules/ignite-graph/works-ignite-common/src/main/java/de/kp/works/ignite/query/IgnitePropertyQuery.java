@@ -36,19 +36,19 @@ public class IgnitePropertyQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
-        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, value.toString());
+        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, quoteSqlValue(value));
 
         createSql(fields);
 
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
 
             buildSelectPart();
@@ -66,13 +66,13 @@ public class IgnitePropertyQuery extends IgniteQuery {
 	             * The value column must match the provided value
 	             */
 	            sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-	            sqlStatement += " = '" + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME) + "'";
+	            sqlStatement += " = " + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME);
             }
             else {
             	sqlStatement += " where ";
 	            sqlStatement += "  \"" + fields.get(IgniteConstants.PROPERTY_KEY_COL_NAME) + "\"";	
 	            
-	            sqlStatement += " = '" + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME) + "'";
+	            sqlStatement += " = " + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME);
 	           
             }
 

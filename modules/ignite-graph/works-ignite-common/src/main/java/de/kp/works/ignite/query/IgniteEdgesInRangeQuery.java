@@ -20,6 +20,7 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
+import de.kp.works.ignite.ValueUtils;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
@@ -38,21 +39,21 @@ public class IgniteEdgesInRangeQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         vertexToFields(vertex, direction, fields);
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
 
-        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, inclusiveFromValue.toString());
-        fields.put(IgniteConstants.EXCLUSIVE_TO_VALUE, exclusiveToValue.toString()); 
+        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, inclusiveFromValue);
+        fields.put(IgniteConstants.EXCLUSIVE_TO_VALUE, exclusiveToValue);
 
         createSql(fields);
 
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
 
@@ -63,7 +64,7 @@ public class IgniteEdgesInRangeQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -73,7 +74,7 @@ public class IgniteEdgesInRangeQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -87,13 +88,25 @@ public class IgniteEdgesInRangeQuery extends IgniteQuery {
              * The value of the value column must in the range of
              * INCLUSIVE_FROM_VALUE >= PROPERTY_VALUE_COL_NAME < EXCLUSIVE_TO_VALUE
              */
-            sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-            sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+            boolean hasNum = ValueUtils.hasNumberValue(fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE));
+            if(hasNum) {
+                sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+                sqlStatement += " >= " + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "";
 
-            sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-            sqlStatement += " < '" + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "'";
+                sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+                sqlStatement += " < " + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "";
 
-            sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " ASC";
+                sqlStatement += " order by " + IgniteConstants.PROPERTY_NUMBER_COL_NAME + " ASC";
+            }
+            else{
+                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
+                sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+
+                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
+                sqlStatement += " < '" + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "'";
+
+                sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " ASC";
+            }
 
         } catch (Exception e) {
             sqlStatement = null;

@@ -16,15 +16,28 @@
  */
 package org.apache.ignite.springdata.repository.support;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import javax.cache.Cache;
 import javax.cache.expiry.ExpiryPolicy;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.cache.CachePeekMode;
+import org.apache.ignite.cache.query.Query;
+import org.apache.ignite.cache.query.QueryCursor;
+import org.apache.ignite.cache.query.ScanQuery;
+import org.apache.ignite.cache.query.TextQuery;
+import org.apache.ignite.client.IgniteClient;
+import org.apache.ignite.console.agent.service.CacheAgentService;
+import org.apache.ignite.console.agent.service.ServiceResult;
 import org.apache.ignite.springdata.proxy.IgniteCacheProxy;
+import org.apache.ignite.springdata.proxy.IgniteClientCacheProxy;
+import org.apache.ignite.springdata.proxy.IgniteClientProxy;
 import org.apache.ignite.springdata.proxy.IgniteNodeCacheProxy;
 import org.apache.ignite.springdata.proxy.IgniteNodeProxy;
 import org.apache.ignite.springdata.proxy.IgniteProxy;
@@ -32,6 +45,8 @@ import org.apache.ignite.springdata.repository.IgniteRepository;
 import org.apache.ignite.springdata.repository.config.RepositoryConfig;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.data.domain.Pageable;
+import org.springframework.util.Assert;
 
 /**
  * General Apache Ignite repository implementation. This bean should've never been loaded by context directly, only via
@@ -48,6 +63,10 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
     private static final String UNSUPPORTED_ERR_MSG = "Current operation is supported only if Ignite node instance is" +
         " used to access the Ignite cluster. See " + RepositoryConfig.class.getName() + "#igniteInstance.";
 
+    /** Name of the cluster service used to run full-text/scan queries when a thin client is used (TextQuery is not
+     * supported by the thin client protocol). */
+    private static final String CACHE_QUERY_DATA_SERVICE = "CacheQueryDataService";
+
     /**
      * Ignite Cache bound to the repository
      */
@@ -58,6 +77,12 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
      */
     private final IgniteProxy ignite;
 
+    /** Domain (value) type bound to the repository, or {@code null} if it could not be determined. */
+    private final Class<?> domainType;
+
+    /** SQL type name of the domain type used by {@link TextQuery} and the query service, or {@code null}. */
+    private final String typeName;
+
 
     /**
      * Repository constructor.
@@ -66,8 +91,21 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
      * @param cache  Initialized cache instance.
      */
     public IgniteRepositoryImpl(IgniteProxy ignite, IgniteCacheProxy<K, V> cache) {
+        this(ignite, cache, null);
+    }
+
+    /**
+     * Repository constructor.
+     *
+     * @param ignite    the ignite
+     * @param cache     Initialized cache instance.
+     * @param domainType Domain (value) type bound to the repository, used to resolve text-index type names.
+     */
+    public IgniteRepositoryImpl(IgniteProxy ignite, IgniteCacheProxy<K, V> cache, @Nullable Class<?> domainType) {
         this.cache = cache;
         this.ignite = ignite;
+        this.domainType = domainType;
+        this.typeName = domainType == null ? null : domainType.getSimpleName();
     }
 
     /** {@inheritDoc} */
@@ -275,5 +313,172 @@ public class IgniteRepositoryImpl<V, K extends Serializable> implements IgniteRe
     /** {@inheritDoc} */
     @Override public void deleteAll() {
         cache.clear();
+    }
+
+    /** {@inheritDoc} */
+    @Override public Iterable<V> findAllByText(@Nullable String query, Pageable pageable) {
+        Assert.notNull(pageable, "pageable must not be null");
+
+        if (typeName == null) {
+            throw new IllegalStateException("Domain type is unknown for this repository. " +
+                "findAllByText requires the repository to be created via " + IgniteRepositoryFactory.class.getName()
+                + ".");
+        }
+
+        long offset = pageable.isPaged() ? pageable.getOffset() : 0L;
+        int limit = pageable.isPaged() ? pageable.getPageSize() : Integer.MAX_VALUE;
+
+        if (cache instanceof IgniteClientCacheProxy)
+            return findAllByTextThinClient(query, offset, limit);
+
+        return findAllByTextNode(query, offset, limit);
+    }
+
+    /**
+     * Runs a {@link TextQuery} (or a {@link ScanQuery} when the query is empty) directly on the Ignite node and
+     * applies the requested offset/limit.
+     *
+     * @param query  Full-text keyword, or {@code null}/blank to scan all entities.
+     * @param offset Number of matching entries to skip.
+     * @param limit  Maximum number of entities to return.
+     * @return Matching entities.
+     */
+    private Iterable<V> findAllByTextNode(@Nullable String query, long offset, int limit) {
+        Query<Cache.Entry<K, V>> iQry = isBlank(query)
+            ? new ScanQuery<K, V>()
+            : new TextQuery<K, V>(typeName, query);
+
+        QueryCursor<Cache.Entry<K, V>> cursor = cache.query(iQry);
+
+        try {
+            List<V> res = new ArrayList<>();
+
+            Iterator<Cache.Entry<K, V>> it = cursor.iterator();
+
+            for (long i = 0; i < offset && it.hasNext(); i++)
+                it.next();
+
+            while (res.size() < limit && it.hasNext())
+                res.add(it.next().getValue());
+
+            return res;
+        }
+        finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * Runs the full-text (or scan, when the query is empty) search through the {@code CacheQueryDataService} cluster
+     * service, because the thin client does not support {@link TextQuery}. The returned service payload is parsed
+     * and the requested offset/limit are applied.
+     *
+     * @param query  Full-text keyword, or {@code null}/blank to scan all entities.
+     * @param offset Number of matching entries to skip.
+     * @param limit  Maximum number of entities to return.
+     * @return Matching entities.
+     */
+    private Iterable<V> findAllByTextThinClient(@Nullable String query, long offset, int limit) {
+        IgniteClient cli = ((IgniteClientProxy)ignite).delegate();
+
+        // Ask the service for offset + limit entries so the offset can be applied client side.
+        long requested = (limit == Integer.MAX_VALUE) ? Integer.MAX_VALUE : offset + limit;
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", typeName);
+        payload.put("qry", isBlank(query) ? "" : query);
+        payload.put("queryType", "SCAN");
+        payload.put("pageSize", (int)Math.min(requested, Integer.MAX_VALUE));
+
+        CacheAgentService svc = cli.services().serviceProxy(CACHE_QUERY_DATA_SERVICE, CacheAgentService.class);
+
+        ServiceResult result = svc.call(cache.getName(), payload);
+
+        return parseServiceResult(result, offset, limit);
+    }
+
+    /**
+     * Parses the {@code CacheQueryDataService} response into domain entities, honoring offset/limit.
+     * <p>
+     * The service returns a {@link ServiceResult} whose {@code data} entry holds the query result serialized as JSON
+     * in the {@code CacheQueryResult} shape: {@code {"items":[[key,value],...],"last":...,"queryId":...}}.
+     *
+     * @param result Service response.
+     * @param offset Number of matching entries to skip.
+     * @param limit  Maximum number of entities to return.
+     * @return Matching entities.
+     */
+    @SuppressWarnings("unchecked")
+    private Iterable<V> parseServiceResult(@Nullable ServiceResult result, long offset, int limit) {
+        if (result == null)
+            return Collections.emptyList();
+
+        if (!result.isAcknowledged() || result.getErrorType() != null) {
+            throw new IllegalStateException("CacheQueryDataService query failed [errorType=" + result.getErrorType()
+                + ", messages=" + result.getMessages() + "]");
+        }
+
+        Map<String, Object> res = result.getResult();
+
+        Object data = res == null ? null : res.get("data");
+
+        if (data == null)
+            return Collections.emptyList();
+
+        ObjectMapper mapper = createJsonMapper();
+
+        try {
+            JsonNode root = mapper.readTree(data.toString());
+            JsonNode items = root == null ? null : root.get("items");
+
+            List<V> values = new ArrayList<>();
+
+            if (items == null || !items.isArray())
+                return values;
+
+            long skipped = 0;
+
+            for (JsonNode item : items) {
+                if (skipped < offset) {
+                    skipped++;
+                    continue;
+                }
+
+                if (values.size() >= limit)
+                    break;
+
+                // Each item is a [key, value] pair; keep the value.
+                JsonNode valNode = (item.isArray() && item.size() > 1) ? item.get(1) : item;
+
+                values.add((V)mapper.convertValue(valNode, domainType));
+            }
+
+            return values;
+        }
+        catch (IOException e) {
+            throw new IllegalStateException("Failed to parse CacheQueryDataService response.", e);
+        }
+    }
+
+    /**
+     * @return Jackson mapper able to resolve the {@code @class} type hints emitted by the Ignite REST mapper.
+     */
+    private static ObjectMapper createJsonMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+
+        mapper.activateDefaultTypingAsProperty(
+            LaissezFaireSubTypeValidator.instance,
+            ObjectMapper.DefaultTyping.NON_FINAL,
+            "@class");
+
+        return mapper;
+    }
+
+    /**
+     * @param str String to check.
+     * @return {@code true} if the string is {@code null} or blank.
+     */
+    private static boolean isBlank(@Nullable String str) {
+        return str == null || str.trim().isEmpty();
     }
 }

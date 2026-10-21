@@ -22,7 +22,7 @@ import org.apache.ignite.plugin.PluginConfiguration;
 /**
  * Configuration of ML plugin that defines which ML inference services should be start up on Ignite startup.
  */
-public class GremlinPluginConfiguration implements PluginConfiguration {
+public class JanusPluginConfiguration implements PluginConfiguration {
     private boolean isWithBinaryStorage  = false;
     private boolean isPersistenceEnabled = false;
     

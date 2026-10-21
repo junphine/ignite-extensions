@@ -2,7 +2,6 @@ package de.kp.works.ignite;
 
 
 import org.apache.ignite.configuration.*;
-import org.apache.ignite.internal.processors.cache.GridCacheDefaultAffinityKeyMapper;
 import org.apache.ignite.binary.*;
 import org.apache.ignite.*;
 import org.apache.ignite.affinity.KeyPrefixAffinityKeyMapper;
@@ -107,45 +106,51 @@ public final class IgniteUtil{
     
     public LinkedHashMap<String, String> buildEdgeFields() {
         final LinkedHashMap<String, String> fields = new LinkedHashMap<>();
-        fields.put("id", "java.lang.String");
-        fields.put("id_type", "java.lang.String");
-        fields.put("label", "java.lang.String");
-        fields.put("to", "java.lang.String");
-        fields.put("to_type", "java.lang.String");
-        fields.put("source", "java.lang.String");
-        fields.put("source_type", "java.lang.String");
-        fields.put("created_at", "java.lang.Long");
-        fields.put("updated_at", "java.lang.Long");
-        fields.put("property_key", "java.lang.String");
-        fields.put("property_type", "java.lang.String");
-        fields.put("property_value", "java.lang.String");
+        fields.put(IgniteConstants.EDGE_ID_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.PROPERTY_WEIGHT_COL_NAME, "java.lang.Float");
+        fields.put(IgniteConstants.LABEL_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.TO_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.TO_TYPE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.FROM_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.FROM_TYPE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.CREATED_AT_COL_NAME, "java.lang.Long");
+        fields.put(IgniteConstants.UPDATED_AT_COL_NAME, "java.lang.Long");
+        fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.PROPERTY_TYPE_COL_NAME, "java.lang.Short");
+        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.PROPERTY_NUMBER_COL_NAME, "java.math.BigDecimal");
         return fields;
     }
     
     public List<QueryIndex> buildEdgeIndexs() {
         final List<QueryIndex> indexes = new ArrayList<>();
-        indexes.add(new QueryIndex("source"));
-        indexes.add(new QueryIndex("to"));
+        indexes.add(new QueryIndex(IgniteConstants.EDGE_ID_COL_NAME));
+        indexes.add(new QueryIndex(IgniteConstants.FROM_COL_NAME));
+        indexes.add(new QueryIndex(IgniteConstants.TO_COL_NAME));
+        indexes.add(new QueryIndex(IgniteConstants.LABEL_COL_NAME));
         return indexes;
     }
     
     public LinkedHashMap<String, String> buildVertexFields() {
         final LinkedHashMap<String, String> fields = new LinkedHashMap<>();
-        fields.put("id", "java.lang.String");
-        fields.put("id_type", "java.lang.String");
-        fields.put("label", "java.lang.String");
-        fields.put("created_at", "java.lang.Long");
-        fields.put("updated_at", "java.lang.Long");
-        fields.put("property_key", "java.lang.String");
-        fields.put("property_type", "java.lang.String");
-        fields.put("property_value", "java.lang.String");
+        fields.put(IgniteConstants.VERTEX_ID_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.ID_TYPE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.LABEL_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.CREATED_AT_COL_NAME, "java.lang.Long");
+        fields.put(IgniteConstants.UPDATED_AT_COL_NAME, "java.lang.Long");
+        fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.PROPERTY_TYPE_COL_NAME, "java.lang.Short");
+        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.PROPERTY_NUMBER_COL_NAME, "java.math.BigDecimal");
         return fields;
     }
     
     public List<QueryIndex> buildVertexIndexs() {
         final List<QueryIndex> indexes = new ArrayList<>();
-        indexes.add(new QueryIndex("id"));
-        indexes.add(new QueryIndex(Arrays.asList("label","property_key"),QueryIndexType.SORTED));        
+        indexes.add(new QueryIndex(IgniteConstants.VERTEX_ID_COL_NAME));
+        indexes.add(new QueryIndex(IgniteConstants.LABEL_COL_NAME));
+        indexes.add(new QueryIndex(Arrays.asList(IgniteConstants.LABEL_COL_NAME,IgniteConstants.PROPERTY_KEY_COL_NAME),QueryIndexType.SORTED));
+        indexes.add(new QueryIndex(IgniteConstants.PROPERTY_NUMBER_COL_NAME,QueryIndexType.SORTED,false));
         return indexes;
     }
     
@@ -165,8 +170,8 @@ public final class IgniteUtil{
     
     public List<QueryIndex> buildDocumentIndexs() {
         final List<QueryIndex> indexes = new ArrayList<>();
-        indexes.add(new QueryIndex("id"));
-        indexes.add(new QueryIndex("updated_at"));        
+        indexes.add(new QueryIndex("name",QueryIndexType.SORTED));
+        indexes.add(new QueryIndex("updated_at",QueryIndexType.SORTED,false));
         return indexes;
     }
 }

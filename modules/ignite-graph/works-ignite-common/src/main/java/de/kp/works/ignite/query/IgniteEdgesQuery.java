@@ -39,7 +39,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
          * Transform the provided properties into fields
          */
         this.direction = direction;
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         vertexToFields(vertex, direction, fields);
         if(labels.length>0)
         	fields.put(IgniteConstants.LABEL_COL_NAME, String.join(",", labels));
@@ -53,7 +53,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         vertexToFields(vertex, direction, fields);
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
@@ -66,7 +66,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();            
             
@@ -76,7 +76,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -86,7 +86,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -95,7 +95,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
                 sqlStatement += " = '" + fields.get(IgniteConstants.FROM_COL_NAME) + "'";                
                 if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
                 
@@ -103,7 +103,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
                 sqlStatement += " = '" + fields.get(IgniteConstants.TO_COL_NAME) + "')";
                 if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -125,7 +125,7 @@ public class IgniteEdgesQuery extends IgniteQuery {
             }
             if(fields.containsKey(IgniteConstants.LABEL_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.LABEL_COL_NAME;
-                String labels = fields.get(IgniteConstants.LABEL_COL_NAME);
+                String labels = fields.get(IgniteConstants.LABEL_COL_NAME).toString();
 
                 String[] tokens = labels.split(",");
                 if (tokens.length == 1) {

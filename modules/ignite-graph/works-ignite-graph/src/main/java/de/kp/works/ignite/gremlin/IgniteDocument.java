@@ -18,7 +18,7 @@ public class IgniteDocument extends IgniteVertex {
 	 * @param id [stringId,label]
 	 */
 	public IgniteDocument(IgniteGraph graph, ReferenceVertexProperty id) {
-		super(graph, id, id.label(), null, null, null, false);		
+		super(graph, id, id.label(), 0, 0, null, false);
 	}
 	
 	public IgniteDocument(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt, Map<String, Object> properties) {

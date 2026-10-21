@@ -17,15 +17,9 @@
 package de.kp.works.janus.gremlin.plugin;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.Serializable;
-import java.net.BindException;
-import java.net.Socket;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 
-import org.apache.commons.configuration2.builder.fluent.Configurations;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteLogger;
 import org.apache.ignite.cluster.ClusterNode;
@@ -35,16 +29,12 @@ import org.apache.ignite.internal.util.typedef.internal.U;
 import org.apache.ignite.plugin.CachePluginContext;
 import org.apache.ignite.plugin.CachePluginProvider;
 import org.apache.ignite.plugin.ExtensionRegistry;
-import org.apache.ignite.plugin.IgnitePlugin;
 import org.apache.ignite.plugin.PluginConfiguration;
 import org.apache.ignite.plugin.PluginContext;
 import org.apache.ignite.plugin.PluginProvider;
 import org.apache.ignite.plugin.PluginValidationException;
-import org.apache.tinkerpop.gremlin.server.GraphManager;
-import org.apache.tinkerpop.gremlin.server.GremlinServer;
 import org.apache.tinkerpop.gremlin.server.Settings;
-import org.apache.tinkerpop.gremlin.server.util.ServerGremlinExecutor;
-import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.janusgraph.graphdb.server.JanusGraphSettings;
 import org.jetbrains.annotations.Nullable;
 import org.janusgraph.core.ConfiguredGraphFactory;
 import org.janusgraph.core.JanusGraph;
@@ -52,28 +42,29 @@ import org.janusgraph.core.JanusGraphFactory;
 import org.janusgraph.graphdb.management.JanusGraphManager;
 import org.janusgraph.graphdb.server.JanusGraphServer;
 
+import static org.apache.ignite.spi.IgnitePortProtocol.TCP;
 
 
 /**
  * Security processor provider for tests.
  */
-public class GremlinServerPluginProvider implements PluginProvider<GremlinPluginConfiguration> {
+public class JanusServerPluginProvider implements PluginProvider<JanusPluginConfiguration> {
 
-	//One Gremlin Server for all ignite instances
+	// One Gremlin Server for all ignite instances
 	public static JanusGraphServer janusGraphServer;
 	
 	public static Settings settings;	
 
 	private String databaseName;
 
-	private GremlinPlugin gremlin = new GremlinPlugin();
+	private JanusPlugin gremlin = new JanusPlugin();
 	
 	private static int counter = 0;
 
 	/** Ignite logger. */
 	private IgniteLogger log;
 
-	private GremlinPluginConfiguration cfg;
+	private JanusPluginConfiguration cfg;
 
 	/** {@inheritDoc} */
 	@Override
@@ -84,7 +75,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 	/** {@inheritDoc} */
 	@Override
 	public String version() {
-		return "3.7.2";
+		return "3.7.3";
 	}
 
 	/** {@inheritDoc} */
@@ -95,7 +86,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 
 	/** {@inheritDoc} */
 	@Override
-	public GremlinPlugin plugin() {
+	public JanusPlugin plugin() {
 		return gremlin;
 	}
 
@@ -106,13 +97,12 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 
 		Ignite ignite = ctx.grid();
 		this.log = ctx.log(this.getClass());
-
 		this.cfg = null;
 
 		if (igniteCfg.getPluginConfigurations() != null) {
 			for (PluginConfiguration pluginCfg : igniteCfg.getPluginConfigurations()) {
-				if (pluginCfg instanceof GremlinPluginConfiguration) {
-					cfg = (GremlinPluginConfiguration) pluginCfg;
+				if (pluginCfg instanceof JanusPluginConfiguration) {
+					cfg = (JanusPluginConfiguration) pluginCfg;
 					break;
 				}
 			}
@@ -120,7 +110,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		
 		if (cfg == null && "janus_backend".equals(ctx.grid().name()) && !ignite.configuration().isClientMode()) {
 			// if node name == 'janus-backend' auto enable create gremlin server
-			cfg = new GremlinPluginConfiguration();
+			cfg = new JanusPluginConfiguration();
 		}
 
 		boolean per = igniteCfg.getDataStorageConfiguration().getDefaultDataRegionConfiguration().isPersistenceEnabled();
@@ -128,10 +118,23 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 			cfg.setPersistenceEnabled(true);
 		}
 
-		if (cfg != null) {
+		if (cfg != null && settings==null) {
 			databaseName = igniteCfg.getIgniteInstanceName();
 			gremlin.databaseName = databaseName;				
 			counter++;
+			String configBase = U.getIgniteHome() + "/config/gremlin-server/";
+
+			try {
+				settings = JanusGraphSettings.read(configBase + cfg.getGremlinServerCfg());
+				janusGraphServer = new JanusGraphServer(configBase + cfg.getGremlinServerCfg());
+
+				IgniteEx igniteEx = (IgniteEx) ignite;
+				igniteEx.context().ports().registerPort(settings.port, TCP, getClass());
+
+			} catch (Exception e) {
+				log.error(e.getMessage(), e);
+				throw new RuntimeException(e.getMessage());
+			}
 		}
 
 	}
@@ -165,21 +168,15 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 	@Override
 	public void onIgniteStart() {
 		// start gremlin server singerton when janus-backend grid start
-		if (janusGraphServer == null && cfg != null) {
+		if (cfg != null || janusGraphServer != null) {
 			try {
 				JanusGraphManager.resetInstance();
-				String configBase = U.getIgniteHome() + "/config/gremlin-server/";
-				janusGraphServer = new JanusGraphServer(configBase + cfg.getGremlinServerCfg());
 		        janusGraphServer.start().exceptionally(t -> {
-		        	
 		        	log.error("JanusGraph Server was unable to start and will now begin shutdown", t);
 		            janusGraphServer.stop().join();
 		            return null;
 		            
-		        }).join();				
-				
-		        settings = janusGraphServer.getJanusGraphSettings();
-		        
+		        }).join();
 				log.info("JanaGremlinServer", "listern on " + settings.host + ":" + settings.port);
 
 			} catch (Exception e) {
@@ -191,6 +188,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 		
 		if (cfg != null && janusGraphServer!=null) {
 			gremlin.graphManager = janusGraphServer.getGremlinServer().getServerGremlinExecutor().getGraphManager();
+
 			if(gremlin.graphManager.getGraph(databaseName)==null) {
 				// Open a {@link JanusGraph} using a previously created Configuration				
 				if(!settings.graphs.containsKey(databaseName)) {

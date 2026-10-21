@@ -23,8 +23,8 @@ import de.kp.works.ignite.graph.ElementType;
 
 public class IgniteDelete extends IgniteMutation {
 
-    public IgniteDelete(Object id, ElementType elementType) {
-        super(id);
+    public IgniteDelete(Object id, String label,ElementType elementType) {
+        super(id,label);
         this.elementType = elementType;
         mutationType = IgniteMutationType.DELETE;
     }

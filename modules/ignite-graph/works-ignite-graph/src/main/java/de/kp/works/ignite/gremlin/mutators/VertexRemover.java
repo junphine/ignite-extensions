@@ -37,7 +37,7 @@ public final class VertexRemover implements Mutator {
 
     @Override
     public Iterator<IgniteMutation> constructMutations() {
-       IgniteDelete delete = new IgniteDelete(vertex.id(), ElementType.VERTEX);
+       IgniteDelete delete = new IgniteDelete(vertex.id(),vertex.label(),ElementType.VERTEX);
        return IteratorUtils.of(delete);
     }
 }

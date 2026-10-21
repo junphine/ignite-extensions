@@ -33,30 +33,23 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.text.ParseException;
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+
+import static de.kp.works.ignite.ValueType.*;
 
 public final class ValueUtils {
 	private static final Logger logger = LoggerFactory.getLogger(ValueUtils.class);  
 	// 属性存储类型
 	public static enum PropertyType{
-		STRING, 
-		JSON, 
-		BINARY_OBJECT, 
-		ANY;
+		STRING, // base64
+		JSON
 	};
 	
-	public static PropertyType defaultPropertyType = PropertyType.ANY;
+	public static PropertyType defaultPropertyType = PropertyType.JSON;
 	
 	public static ObjectMapper mapper = new ObjectMapper();
 
@@ -85,14 +78,16 @@ public final class ValueUtils {
             return ValueType.DATE;
         } else if (o.getClass() ==  LocalTime.class) {
             return ValueType.TIME;
-        } else if (o.getClass() ==  LocalDateTime.class) {
+        } else if (o.getClass() ==  LocalDateTime.class || o.getClass() ==  Instant.class) {
             return ValueType.TIMESTAMP;
         } else if (o.getClass() ==  Duration.class) {
             return ValueType.INTERVAL;
         } else if (o.getClass() ==  byte[].class) {
             return ValueType.BINARY;
-        } else if (o instanceof Enum) {
+        } else if (o.getClass().isEnum()) {
             return ValueType.ENUM;
+		} else if (o.getClass().isRecord()) {
+			return ValueType.STRUCT;
         } else if (o.getClass() ==  UUID.class) {
             return ValueType.UUID;
         } else if (o instanceof Map) {
@@ -100,10 +95,18 @@ public final class ValueUtils {
         		return ValueType.JSON_OBJECT;
         	}
             return ValueType.MAP;
-        } else if (o instanceof Collection) {        	
-            return ValueType.COLLECTION;
-        } 
-        else if (o.getClass().isArray()) {
+        } else if (o instanceof Set) {
+			if(defaultPropertyType==PropertyType.JSON) {
+				return ValueType.JSON_ARRAY;
+			}
+            return ValueType.SET;
+        } else if (o instanceof Collection) {
+			if(defaultPropertyType==PropertyType.JSON) {
+				return ValueType.JSON_ARRAY;
+			}
+			return ValueType.LIST;
+		}
+		else if (o.getClass().isArray()) {
         	if(defaultPropertyType==PropertyType.JSON) {
         		return ValueType.JSON_ARRAY;
         	}
@@ -116,9 +119,40 @@ public final class ValueUtils {
         	if(defaultPropertyType==PropertyType.JSON) {
         		return ValueType.JSON_OBJECT;
         	}
-            throw new IllegalArgumentException("Unexpected data of type : " + o.getClass().getName());
+            return ValueType.OTHER;
         }
     }
+
+	public static boolean hasNumberValue(Object propValue){
+		if(propValue instanceof Number){
+			return true;
+		}
+		else if(propValue instanceof Instant){
+			return true;
+		}
+		else if(propValue instanceof Date){
+			return true;
+		}
+		return false;
+	}
+
+	public static String objectToString(Object propValue,ValueType propType){
+		String value;
+		if (propType.equals(JSON_ARRAY) || propType.equals(JSON_OBJECT)) {
+			value = ValueUtils.serializeToJsonString(propValue);
+		} else if (propType.equals(ARRAY) || propType.equals(STRUCT)) {
+			value = ValueUtils.serializeToJsonString(propValue);
+		} else if (propType.equals(MAP) || propType.equals(LIST) || propType.equals(SET) || propType.equals(SERIALIZABLE)) {
+			value = ValueUtils.serializeToString(propValue);
+		} else if (propType.equals(BINARY)) {
+			value = Base64.getEncoder().encodeToString((byte[]) propValue);
+		} else if (propType.equals(ENUM)) {
+			value = ((Enum) propValue).name();
+		} else {
+			value = propValue.toString();
+		}
+		return value;
+	}
 
     public static Object deserialize(byte[] target) {
         if (target == null) return null;
@@ -147,23 +181,6 @@ public final class ValueUtils {
 			return o.toString();
 		}
     }
-    
-       
-    public static String convertNumberToString(Number num) {  
-        String str = String.valueOf(num); 
-        String[] partS = str.split("\\.");
-        if(partS.length==2)
-        	return StringUtils.leftPad(partS[0], 16)+"."+partS[1];
-        else {
-        	if(str.charAt(0)=='-') {
-        		return StringUtils.leftPad(str,20);
-        	}
-        	else {
-        		return StringUtils.leftPad(str,20,'0');
-        	}
-        }
-    }
-    
     
     public static Object parseValue(String input,ValueType toType) {
     	if(input==null) {
@@ -209,18 +226,19 @@ public final class ValueUtils {
     	if(toType==ValueType.ENUM) {
     		return deserializeFromString(input);
     	} 
-    	if(toType==ValueType.ARRAY || toType==ValueType.MAP || toType==ValueType.SERIALIZABLE) {
+    	if(toType==ValueType.ARRAY || toType==ValueType.MAP || toType==ValueType.LIST || toType==ValueType.SET
+				|| toType==ValueType.SERIALIZABLE || toType==ValueType.STRUCT) {
     		return deserializeFromString(input);
-    	}    	
-    	if(toType==ValueType.JSON_ARRAY || toType==ValueType.COLLECTION) {    		
-    		try {
-    			return mapper.readerForListOf(String.class).readValue(input);
-				
+    	}
+		if(toType==ValueType.JSON_ARRAY) {
+			try {
+				return mapper.readerForListOf(String.class).readValue(input);
+
 			} catch (IOException e) {
 				logger.error(e.getMessage(),e);
 				return input;
 			}
-    	}
+		}
     	if(toType==ValueType.JSON_OBJECT) {    		
     		try {    			
 				return mapper.readerForMapOf(Object.class).readValue(input);
@@ -247,24 +265,57 @@ public final class ValueUtils {
 		}
 		return id.toString();
 	}
-	
-	 public static void main(String[] args) {
-	    	String s ="  -1234";
-	    	String s4="  -2234";
 
-	    	long i = Integer.parseInt(s.trim());
-	    	String o = convertNumberToString(i);
-	    	String o4 = convertNumberToString(1234);
-	    	int diff = o.compareTo(o4);
-	    	
-	    	int i4 = Integer.parseInt(o.trim());
-	    	
-	    	String s2="-00000012.321000";
-	    	double d = Double.parseDouble(s2);
-	    	
-	    	String o2 = convertNumberToString(d);
-	    	double d2 = Double.parseDouble(o2);
-	    	int ii = 10;
-	    	
-	 }
+	public static Long convertToLongValue(Object propValue) {
+		if(propValue instanceof Number num){
+			return num.longValue();
+		}
+		else if(propValue instanceof Instant ins){
+			long second = ins.getEpochSecond();
+			return second;
+		}
+		else if(propValue instanceof Date ins){
+			long second = ins.getTime()/1000;
+			return second;
+		}
+		else if(propValue instanceof LocalDateTime ins){
+			ZoneId zone = ZoneId.systemDefault();
+			long second = ins.atZone(zone).toInstant().getEpochSecond();
+			return second;
+		}
+		else if(propValue instanceof LocalDate ins){
+			ZoneId zone = ZoneId.systemDefault();
+			long second = ins.atStartOfDay(zone).toInstant().getEpochSecond();
+			return second;
+		}
+		return null;
+	}
+
+	public static BigDecimal convertToBigDecimal(Object propValue) {
+		if(propValue instanceof Number){
+			if(propValue instanceof BigDecimal){
+				return (BigDecimal)propValue;
+			}
+			return new BigDecimal(propValue.toString());
+		}
+		else if(propValue instanceof Instant ins){
+			long ms = ins.toEpochMilli();
+			return BigDecimal.valueOf(ms);
+		}
+		else if(propValue instanceof Date ins){
+			long ms = ins.getTime();
+			return BigDecimal.valueOf(ms);
+		}
+		else if(propValue instanceof LocalDateTime ins){
+			ZoneId zone = ZoneId.systemDefault();
+			long ms = ins.atZone(zone).toInstant().toEpochMilli();
+			return BigDecimal.valueOf(ms);
+		}
+		else if(propValue instanceof LocalDate ins){
+			ZoneId zone = ZoneId.systemDefault();
+			long ms = ins.atStartOfDay(zone).toInstant().toEpochMilli();
+			return BigDecimal.valueOf(ms);
+		}
+		return null;
+	}
 }

@@ -37,7 +37,7 @@ public class EdgeRemover implements Mutator {
 
     @Override
     public Iterator<IgniteMutation> constructMutations() {
-        IgniteDelete delete = new IgniteDelete(edge.id(), ElementType.EDGE);
+        IgniteDelete delete = new IgniteDelete(edge.id(), edge.label(), ElementType.EDGE);
         return IteratorUtils.of(delete);
     }
 }

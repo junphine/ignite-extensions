@@ -211,7 +211,7 @@ public class IgniteRepositoryFactory extends RepositoryFactorySupport {
 
     /** {@inheritDoc} */
     @Override protected Object getTargetRepository(RepositoryInformation metadata) {
-        return getTargetRepositoryViaReflection(metadata, ignite, cache);
+        return getTargetRepositoryViaReflection(metadata, ignite, cache, metadata.getDomainType());
     }
 
     /** {@inheritDoc} */

@@ -49,21 +49,14 @@ public class PropertyWriter implements Mutator {
     public Iterator<IgniteMutation> constructMutations() {
 
         Object id = element.id();
-        IgnitePut put = new IgnitePut(id, elementType);
+        IgnitePut put = new IgnitePut(id,element.label(),elementType);
 
-        put.addColumn(IgniteConstants.ID_COL_NAME, ValueUtils.getValueType(id).name(),
-                id);
-
-        Long updatedAt = ((IgniteElement) element).updatedAt();
-        put.addColumn(IgniteConstants.UPDATED_AT_COL_NAME, IgniteConstants.LONG_COL_TYPE,
-                updatedAt);
+        long updatedAt = ((IgniteElement) element).updatedAt();
+        put.addColumn(IgniteConstants.UPDATED_AT_COL_NAME, IgniteConstants.LONG_COL_TYPE, updatedAt);
 
         /* Put property */
-
         String colType = ValueUtils.getValueType(value).name();
-        Object colValue = value;
-
-        put.addColumn(key, colType, colValue);
+        put.addColumn(key, colType, value);
         return IteratorUtils.of(put);
 
     }

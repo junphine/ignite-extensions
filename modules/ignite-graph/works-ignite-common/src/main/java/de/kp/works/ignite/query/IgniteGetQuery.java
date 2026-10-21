@@ -38,9 +38,9 @@ public class IgniteGetQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
-        fields.put(IgniteConstants.ID_COL_NAME," = '"+id+"'");
+        fields.put("ID"," = "+quoteSqlValue(id));
         createSql(fields);
 
     }
@@ -53,19 +53,19 @@ public class IgniteGetQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         
         StringBuilder sqlStatement = new StringBuilder("");       
         if (ids.size() == 1) {
-            sqlStatement.append(" = '" + ids.get(0) + "'");
+            sqlStatement.append(" = " + quoteSqlValue(ids.get(0)));
         } else {
             List<String> inPart = Stream.of(ids)
-                    .map(token -> "'" + token + "'").collect(Collectors.toList());
+                    .map(token -> quoteSqlValue(token)).collect(Collectors.toList());
 
             sqlStatement.append(" IN (" + String.join(",", inPart) + ")");
         }
         
-        fields.put(IgniteConstants.ID_COL_NAME, sqlStatement.toString());
+        fields.put("ID", sqlStatement.toString());
 
         createSql(fields);
 
@@ -73,19 +73,22 @@ public class IgniteGetQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
             /*
              * Build the `where` clause and thereby distinguish
              * between a single or multiple identifier values
              */
-            String keyField = IgniteConstants.ID_COL_NAME;
+            String keyField = IgniteConstants.VERTEX_ID_COL_NAME;
             if(this.elementType == ElementType.DOCUMENT) {
             	keyField = "_key";
             }
+            else if(this.elementType == ElementType.EDGE) {
+                keyField = IgniteConstants.EDGE_ID_COL_NAME;
+            }
             sqlStatement += " where " + keyField;
-            String ids = fields.get(IgniteConstants.ID_COL_NAME);
+            Object ids = fields.get("ID");
             sqlStatement += ids;
 
         } catch (Exception e) {

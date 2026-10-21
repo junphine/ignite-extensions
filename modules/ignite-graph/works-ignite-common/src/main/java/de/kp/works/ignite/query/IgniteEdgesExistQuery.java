@@ -32,7 +32,7 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
                             Object vertex) {
         super(cacheName, admin);
 
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
         fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
         fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
@@ -50,7 +50,7 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
             /*
@@ -61,7 +61,7 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
             
             if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                 sqlStatement += " = '" + id_type + "'";
             }
 
@@ -70,7 +70,7 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
             
             if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                 sqlStatement += " = '" + id_type + "'";
             }
 

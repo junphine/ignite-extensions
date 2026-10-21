@@ -113,7 +113,7 @@ public class IgniteTable extends IgniteBaseTable {
                 return incrementVertex(igniteIncrement);
             }
             else
-                throw new Exception("Table '" + name +  "' is not supported.");
+                throw new Exception("Table '" + name +  "' is not supported increment.");
 
 
         } catch (Exception e) {
@@ -288,7 +288,7 @@ public class IgniteTable extends IgniteBaseTable {
 
     }
     
-    public IgniteSqlQuery getIgniteSqlQuery(String sql, Object[] args) {
-    	return new IgniteSqlQuery(name,admin,sql, args);
+    public IgniteSqlQuery getIgniteSqlQuery(String sql) {
+    	return new IgniteSqlQuery(name,admin,sql);
     }
 }

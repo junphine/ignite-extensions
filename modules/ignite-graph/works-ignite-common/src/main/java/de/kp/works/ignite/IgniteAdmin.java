@@ -18,6 +18,7 @@ import org.apache.ignite.configuration.CacheConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
@@ -29,8 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
-
-import javax.cache.CacheException;
+import static de.kp.works.ignite.ValueType.*;
 
 public class IgniteAdmin {
 
@@ -178,33 +178,27 @@ public class IgniteAdmin {
         for (IgniteEdgeEntry entry : entries) {
             BinaryObjectBuilder valueBuilder = ignite.binary().builder(cacheName);
 
-            valueBuilder.setField(IgniteConstants.ID_COL_NAME,         entry.id);
-            valueBuilder.setField(IgniteConstants.ID_TYPE_COL_NAME,    entry.idType);
-            valueBuilder.setField(IgniteConstants.LABEL_COL_NAME,      entry.label);
-
+            valueBuilder.setField(IgniteConstants.EDGE_ID_COL_NAME, entry.id);
+            valueBuilder.setField(IgniteConstants.LABEL_COL_NAME,   entry.label);
             valueBuilder.setField(IgniteConstants.TO_COL_NAME,      entry.toId);
-            valueBuilder.setField(IgniteConstants.TO_TYPE_COL_NAME, entry.toIdType);
-
+            valueBuilder.setField(IgniteConstants.TO_TYPE_COL_NAME,   entry.toId);
             valueBuilder.setField(IgniteConstants.FROM_COL_NAME,      entry.fromId);
-            valueBuilder.setField(IgniteConstants.FROM_TYPE_COL_NAME, entry.fromIdType);
-
+            valueBuilder.setField(IgniteConstants.FROM_TYPE_COL_NAME,  entry.fromIdType);
             valueBuilder.setField(IgniteConstants.CREATED_AT_COL_NAME, entry.createdAt);
             valueBuilder.setField(IgniteConstants.UPDATED_AT_COL_NAME, entry.updatedAt);
 
             valueBuilder.setField(IgniteConstants.PROPERTY_KEY_COL_NAME,  entry.propKey);
             valueBuilder.setField(IgniteConstants.PROPERTY_TYPE_COL_NAME,  entry.propType);
+
+            BigDecimal number = entry.getDecimalValue();
             String value = null;
-            if(entry.propType.equals("ARRAY")  || entry.propType.equals("MAP") || entry.propType.equals("SERIALIZABLE")) {
-            	value = ValueUtils.serializeToString(entry.propValue);
+            if(number==null) {
+                ValueType propType = ValueType.valueOf(entry.propType);
+                value = ValueUtils.objectToString(entry.propValue,propType);
             }
-            else if(entry.propType.equals("JSON_ARRAY") || entry.propType.equals("JSON_OBJECT") || entry.propType.equals("COLLECTION")) {
-            	value = ValueUtils.serializeToJsonString(entry.propValue);
-            }
-            else if(entry.propType.equals("BINARY")) {
-            	value = Base64.getEncoder().encodeToString((byte[])entry.propValue);
-            }           
-            else {
-            	value = entry.propValue.toString();
+            else{
+                value = entry.propValue.toString();
+                valueBuilder.setField(IgniteConstants.PROPERTY_NUMBER_COL_NAME, number);
             }
             valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
 
@@ -335,7 +329,7 @@ public class IgniteAdmin {
         for (IgniteVertexEntry entry : entries) {
             BinaryObjectBuilder valueBuilder = ignite.binary().builder(cacheName);
 
-            valueBuilder.setField(IgniteConstants.ID_COL_NAME,         entry.id);
+            valueBuilder.setField(IgniteConstants.VERTEX_ID_COL_NAME,  entry.id);
             valueBuilder.setField(IgniteConstants.ID_TYPE_COL_NAME,    entry.idType);
             valueBuilder.setField(IgniteConstants.LABEL_COL_NAME,      entry.label);
             valueBuilder.setField(IgniteConstants.CREATED_AT_COL_NAME, entry.createdAt);
@@ -343,35 +337,15 @@ public class IgniteAdmin {
 
             valueBuilder.setField(IgniteConstants.PROPERTY_KEY_COL_NAME,  entry.propKey);
             valueBuilder.setField(IgniteConstants.PROPERTY_TYPE_COL_NAME,  entry.propType);
+            BigDecimal number = entry.getDecimalValue();
+            valueBuilder.setField(IgniteConstants.PROPERTY_NUMBER_COL_NAME, number);
             String value = null;
-            if(entry.propType.equals("ARRAY")  || entry.propType.equals("MAP") || entry.propType.equals("SERIALIZABLE")) {
-            	value = ValueUtils.serializeToString(entry.propValue);
+            if(number==null) {
+                ValueType propType = ValueType.valueOf(entry.propType);
+                value = ValueUtils.objectToString(entry.propValue,propType);
             }
-            else if(entry.propType.equals("JSON_ARRAY") || entry.propType.equals("JSON_OBJECT")) {
-            	value = ValueUtils.serializeToJsonString(entry.propValue);
-            }
-            else if(entry.propType.equals("BINARY")) {
-            	value = Base64.getEncoder().encodeToString((byte[])entry.propValue);
-            }
-            else if(entry.propType.equals("ENUM")) {
-            	value = ValueUtils.serializeToString(entry.propValue);
-            }
-            else if(entry.propType.equals("COLLECTION")) { // 字符串集合
-            	Collection list = ((Collection)entry.propValue);
-            	int i = 0;
-            	for(Object item: list) {
-            		valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, item.toString());
-
-                    String cacheKey = entry.getCacheKey()+'.'+i;
-                    BinaryObject cacheValue = valueBuilder.build();
-
-                    row.put(cacheKey, cacheValue);
-                    i++;
-            	}
-            	continue;
-            }
-            else {
-            	value = entry.propValue.toString();            	
+            else{
+                value = entry.propValue.toString();
             }
             valueBuilder.setField(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
 
@@ -397,7 +371,7 @@ public class IgniteAdmin {
             BinaryObjectBuilder valueBuilder = ignite.binary().builder(cacheName);
             
             for (IgniteColumn column : entry.getColumns()) {
-            	if(IgniteConstants.ID_COL_NAME.equals(column.getColName())){
+            	if(IgniteConstants.VERTEX_ID_COL_NAME.equals(column.getColName())){
             		continue;
             	}
             	if(IgniteConstants.LABEL_COL_NAME.equals(column.getColName())){
@@ -424,7 +398,7 @@ public class IgniteAdmin {
         BinaryObjectBuilder valueBuilder = ignite.binary().builder(cacheName);
         
         for (IgniteColumn column : entry.getColumns()) {
-        	if(IgniteConstants.ID_COL_NAME.equals(column.getColName())){
+        	if(IgniteConstants.VERTEX_ID_COL_NAME.equals(column.getColName())){
         		continue;
         	}
         	if(IgniteConstants.LABEL_COL_NAME.equals(column.getColName())){
@@ -437,7 +411,6 @@ public class IgniteAdmin {
        
         cache.put(ValueUtils.getDocId(entry.id), cacheValue);        
     }
-    
 
     /**
      * Supports create and update operations for vertices index for document
@@ -447,12 +420,12 @@ public class IgniteAdmin {
         Ignite ignite = connect.getIgnite();
         IgniteCache<String, BinaryObject> cache = ignite.cache(cacheName);
 
-        String indexField = null;
+        String indexField = entry.getId().toString();
         String fieldType = "java.lang.String";
         Map<String,Object> properties = new HashMap<>();
         
         for (IgniteColumn column : entry.getColumns()) {
-        	if(IgniteConstants.ID_COL_NAME.equals(column.getColName())){
+        	if(IgniteConstants.VERTEX_ID_COL_NAME.equals(column.getColName())){
         		indexField = column.getColValue().toString();
         		continue;
         	}
@@ -460,13 +433,12 @@ public class IgniteAdmin {
         		continue;
         	}
         	properties.put(column.getColName(), column.getColValue());
-        }        
-        
+        }
         
         CacheConfiguration<String, BinaryObject> cfg = cache.getConfiguration(CacheConfiguration.class);
         QueryEntity queryEntity;
         List<QueryIndex> indexes;
-        if(cfg.getQueryEntities().size()>0) {
+        if(!cfg.getQueryEntities().isEmpty()) {
         	
         	queryEntity = cfg.getQueryEntities().iterator().next();
         	indexes = new ArrayList<>(queryEntity.getIndexes());
@@ -492,8 +464,9 @@ public class IgniteAdmin {
 			}
 		}
     	
-		if(properties.containsKey("isUnique")) {      			
-			
+		if(properties.containsKey("isUnique")) {
+            if(Boolean.TRUE.equals(properties.get("isUnique")))
+			    throw new UnsupportedOperationException("unigue index is not support!");
 		}   		
         
         IndexMetadata.State state = (IndexMetadata.State)properties.get("state");

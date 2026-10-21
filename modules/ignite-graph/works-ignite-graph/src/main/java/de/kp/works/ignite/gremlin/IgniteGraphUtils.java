@@ -116,7 +116,7 @@ public final class IgniteGraphUtils {
             		props.put(keyStr, value);
             	}            	
             	else if(value instanceof Number) {
-            		props.put(keyStr, ValueUtils.convertNumberToString(((Number) value)));
+            		props.put(keyStr, value);
             	}
             	else {
             		props.put(keyStr, value.toString());

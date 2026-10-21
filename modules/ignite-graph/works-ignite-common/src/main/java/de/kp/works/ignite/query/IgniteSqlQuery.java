@@ -29,20 +29,20 @@ import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
 
 public class IgniteSqlQuery extends IgniteQuery {
-	private Object[] args;
+
     /**
      * Retrieve all elements that refer to the
      * selected Ignite cache
      */
-    public IgniteSqlQuery(String cacheName, IgniteAdmin admin, String sql, Object[] args) {
+    public IgniteSqlQuery(String cacheName, IgniteAdmin admin, String sql) {
         super(cacheName, admin);
         this.sqlStatement = sql;
-        this.args = args;
+
         /*
          * This query does not take fields
          */
-        Map<String, String> fields = new HashMap<>();
-        createSql(fields);
+
+        createSql(null);
     }
     
     public void setSqlStatment(String sql) {
@@ -50,7 +50,7 @@ public class IgniteSqlQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String,String> fields) {
+    protected void createSql(Map<String,Object> fields) {
         try {
             /*
              * This query does not have a `where` clause
@@ -64,32 +64,5 @@ public class IgniteSqlQuery extends IgniteQuery {
         } catch (Exception e) {
             sqlStatement = null;
         }
-
     }
-    
-    @Override
-    public List<IgniteResult> getSqlResultWithMeta() {
-        SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
-        sqlQuery.setArgs(this.args);
-        
-        FieldsQueryCursor<List<?>> cursor = cache.query(sqlQuery);
-        List<List<?>> sqlResult = cursor.getAll();
-        List<IgniteResult> result = new ArrayList<>();
-    	for(List<?> row: sqlResult) {
-    		IgniteResult item = new IgniteResult();
-    		for(int i=0;i<cursor.getColumnsCount();i++) {
-    			Object value = row.get(i);
-    			if(value!=null) {
-    				String field = cursor.getFieldName(i);
-    				if(field.equals("_KEY")) {
-    					field = "id";
-    				}
-    				item.addColumn(field, value.getClass().getSimpleName(), value);
-    			}
-            }
-    		result.add(item);
-    	}    	
-    	return result;
-    }
-
 }

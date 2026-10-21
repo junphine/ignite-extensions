@@ -69,6 +69,7 @@ public final class NumericUtils {
    * @see #sortableIntToFloat
    */
   public static int floatToSortableInt(float value) {
+
     return sortableFloatBits(Float.floatToIntBits(value));
   }
 
@@ -77,6 +78,7 @@ public final class NumericUtils {
    * @see #floatToSortableInt
    */
   public static float sortableIntToFloat(int encoded) {
+
     return Float.intBitsToFloat(sortableFloatBits(encoded));
   }
   

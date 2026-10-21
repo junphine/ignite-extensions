@@ -38,7 +38,7 @@ public class IgniteEdgeQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         
         fields.put(IgniteConstants.FROM_COL_NAME, fromId.toString());
         fields.put(IgniteConstants.TO_COL_NAME,   toId.toString());
@@ -60,7 +60,7 @@ public class IgniteEdgeQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
 
         try {
             buildSelectPart();
@@ -76,12 +76,12 @@ public class IgniteEdgeQuery extends IgniteQuery {
             
             if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                 sqlStatement += " = '" + id_type + "'";
             }
             if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                 sqlStatement += " = '" + id_type + "'";
             }
 

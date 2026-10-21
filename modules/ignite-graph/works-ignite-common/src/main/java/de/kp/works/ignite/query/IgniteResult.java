@@ -19,24 +19,43 @@ package de.kp.works.ignite.query;
  */
 
 import de.kp.works.ignite.IgniteColumn;
-import de.kp.works.ignite.IgniteConstants;
+import de.kp.works.ignite.ValueType;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class IgniteResult {
+    final String label;
+    Object id;
+    short idType;
+    long createdAt;
+    long updatedAt;
+
+    private List<IgniteColumn> columns = new ArrayList<>();
+
     /**
      * [IgniteResult] represents all cache entries
      * that refer to a certain edge, row, etc.
      */
-    public IgniteResult() {}
+    public IgniteResult(Object id, String label) {
+        this.id = id;
+        this.label = label;
+    }
 
-    private List<IgniteColumn> columns = new ArrayList<>();
+    public IgniteResult(String label) {
+        this.label = label;
+    }
 
     public void addColumn(String colName, String colType, Object colValue) {
-    	if(!colName.equals("*")) {
+    	if(!colName.isEmpty()) {
     		columns.add(new IgniteColumn(colName, colType, colValue));
     	}
+    }
+
+    public void addColumn(String colName, short colType, Object colValue) {
+        if(!colName.isEmpty()) {
+            columns.add(new IgniteColumn(colName, ValueType.valueOf(colType).name(), colValue));
+        }
     }
 
     /**
@@ -44,18 +63,49 @@ public class IgniteResult {
      * to edges, vertices and other
      */
     public Object getId() {
-        return getValue(IgniteConstants.ID_COL_NAME);
+        return id;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setId(Object id) {
+        this.id = id;
+    }
+
+    public short getIdType() {
+        return idType;
+    }
+
+    public void setIdType(short idType) {
+        this.idType = idType;
+    }
+
+
+    public long getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(long createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public long getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(long updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public Object getValue(String key) {
-
         Object value = null;
         for (IgniteColumn column : columns) {
             if (column.getColName().equals(key)) {
                 value = column.getColValue();
             }
         }
-
         return value;
 
     }

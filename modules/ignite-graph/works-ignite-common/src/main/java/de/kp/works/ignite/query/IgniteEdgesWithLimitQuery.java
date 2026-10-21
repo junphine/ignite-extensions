@@ -20,6 +20,7 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
+import de.kp.works.ignite.ValueUtils;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 
 import java.util.HashMap;
@@ -34,13 +35,13 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
         vertexToFields(vertex, direction, fields);
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
 
-        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, InclusiveFromValue.toString());
+        fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, InclusiveFromValue);
         fields.put(IgniteConstants.LIMIT_VALUE, String.valueOf(limit));
 
         fields.put(IgniteConstants.REVERSED_VALUE, String.valueOf(reversed));
@@ -49,7 +50,7 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
 
@@ -59,7 +60,7 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -69,7 +70,7 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    String id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                     sqlStatement += " = '" + id_type + "'";
                 }
             }
@@ -83,16 +84,26 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
              * The value of the value column must in the range of
              * INCLUSIVE_FROM_VALUE >= PROPERTY_VALUE_COL_NAME
              */
-            sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-            sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+            String orderBy = IgniteConstants.PROPERTY_VALUE_COL_NAME;
+            boolean hasNum = ValueUtils.hasNumberValue(fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE));
+            if(hasNum) {
+                sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+                sqlStatement += " >= " + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + " ";
+                orderBy = IgniteConstants.PROPERTY_NUMBER_COL_NAME;
+            }
+            else{
+                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
+                sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
+            }
+
             /*
              * Determine sorting order
              */
             if (fields.get(IgniteConstants.REVERSED_VALUE).equals("true")) {
-                sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " DESC";
+                sqlStatement += " order by " + orderBy + " DESC";
             }
             else {
-                sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " ASC";
+                sqlStatement += " order by " + orderBy + " ASC";
             }
 
             sqlStatement += " limit " + fields.get(IgniteConstants.LIMIT_VALUE);

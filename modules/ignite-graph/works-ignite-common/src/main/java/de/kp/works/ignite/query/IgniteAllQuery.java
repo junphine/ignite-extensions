@@ -33,12 +33,12 @@ public class IgniteAllQuery extends IgniteQuery {
         /*
          * This query does not take fields
          */
-        Map<String, String> fields = new HashMap<>();
+        Map<String, Object> fields = new HashMap<>();
         createSql(fields);
     }
 
     @Override
-    protected void createSql(Map<String,String> fields) {
+    protected void createSql(Map<String,Object> fields) {
         try {
             /*
              * This query does not have a `where` clause

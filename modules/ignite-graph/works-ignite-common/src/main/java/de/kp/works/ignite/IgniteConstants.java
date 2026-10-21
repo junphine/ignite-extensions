@@ -42,12 +42,16 @@ public class IgniteConstants {
 
     public static final String LABEL_COL_NAME = "label";
 
-    public static final String ID_COL_NAME   = "id";
+    public static final String VERTEX_ID_COL_NAME   = "vertex_id";
+    public static final String EDGE_ID_COL_NAME   = "edge_id";
     public static final String ID_TYPE_COL_NAME   = "id_type";
 
     public static final String PROPERTY_KEY_COL_NAME = "property_key";
     public static final String PROPERTY_TYPE_COL_NAME = "property_type";
+
     public static final String PROPERTY_VALUE_COL_NAME = "property_value";
+    public static final String PROPERTY_NUMBER_COL_NAME = "property_number";
+    public static final String PROPERTY_WEIGHT_COL_NAME = "weight";
 
     public static final String INCLUSIVE_FROM_VALUE = "inclusive_from_value";
     public static final String EXCLUSIVE_TO_VALUE = "inclusive_to_value";

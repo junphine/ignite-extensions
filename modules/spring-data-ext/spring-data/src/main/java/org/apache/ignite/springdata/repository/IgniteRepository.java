@@ -21,7 +21,9 @@ import java.util.Map;
 import javax.cache.expiry.ExpiryPolicy;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteCache;
+import org.apache.ignite.cache.query.TextQuery;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.CrudRepository;
 
 /**
@@ -105,5 +107,24 @@ public interface IgniteRepository<V, K extends Serializable> extends CrudReposit
      * @param ids List of ids to delete.
      */
     public void deleteAllById(Iterable<? extends K> ids);
+
+    /**
+     * Finds all entities matching the given full-text query across every text index ({@link TextQuery}) of the
+     * repository domain type.
+     * <p>
+     * If the provided {@code query} is {@code null} or blank, a {@link org.apache.ignite.cache.query.ScanQuery} is
+     * executed instead, returning all entities of the underlying cache.
+     * <p>
+     * The {@link Pageable} is honored: results are skipped up to {@link Pageable#getOffset()} and at most
+     * {@link Pageable#getPageSize()} entities are returned. Use {@link Pageable#unpaged()} to fetch every match.
+     * <p>
+     * Note that when the repository is backed by an Ignite thin client (which does not support
+     * {@link TextQuery}), the query is transparently routed through the {@code CacheQueryDataService} cluster service.
+     *
+     * @param query    Full-text search keyword, or {@code null}/blank to scan all entities.
+     * @param pageable Pagination (offset and page size) to apply to the results.
+     * @return the entities matching the search, never {@code null}.
+     */
+    public Iterable<V> findAllByText(@Nullable String query, Pageable pageable);
 
 }

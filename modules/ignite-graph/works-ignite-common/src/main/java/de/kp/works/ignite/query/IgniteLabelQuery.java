@@ -35,7 +35,7 @@ public class IgniteLabelQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, String> fields = new HashMap<>();
+        HashMap<String, Object> fields = new HashMap<>();
 
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         createSql(fields);
@@ -43,7 +43,7 @@ public class IgniteLabelQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String, String> fields) {
+    protected void createSql(Map<String, Object> fields) {
         try {
             buildSelectPart();
             /*
