@@ -19,73 +19,50 @@ package de.kp.works.ignite.query;
  */
 
 import de.kp.works.ignite.IgniteAdmin;
-import de.kp.works.ignite.IgniteConstants;
-import de.kp.works.ignite.ValueUtils;
 import de.kp.works.ignite.graph.ElementType;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
+/**
+ * Retrieves all vertices that match the provided label(s), the
+ * property predicates registered via {@link IgniteQuery#addProperty}
+ * and the optional element window (see {@link IgniteQuery#withRange}).
+ */
 public class IgniteVertexQuery extends IgniteQuery {
 
     /**
-     * Retrieve all elements that refer to the provided
-     * label, either edges or vertices.
+     * Retrieve all vertices that refer to the provided label.
      */
     public IgniteVertexQuery(String cacheName, IgniteAdmin admin, String label) {
+        this(cacheName, admin, label == null ? List.of() : List.of(label));
+    }
+
+    /**
+     * Retrieve all vertices that refer to at least one of the provided
+     * labels; an empty list does not restrict the query by label.
+     */
+    public IgniteVertexQuery(String cacheName, IgniteAdmin admin, List<String> labels) {
         super(cacheName, admin);
-        fields.put(IgniteConstants.LABEL_COL_NAME, label);
+        if (labels != null) this.labels.addAll(labels);
     }
 
     @Override
     protected void createSql() {
         try {
-            buildSelectPart();
             /*
-             * Build the `clause` of the SQL statement
-             * from the provided fields
+             * `label` restriction and all registered property predicates
+             * are pushed down; predicates that are not pushable are still
+             * applied by the caller (in-memory post filter).
+             *
+             * Document caches are label specific and provide no `label`
+             * column, i.e. no label clause is added for them.
              */
-            if(this.elementType != ElementType.DOCUMENT) {
-            	
-            	sqlStatement += " where " + IgniteConstants.LABEL_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.LABEL_COL_NAME) + "'";
-
-                createWhereSql();
-            }
-
-            orderById();
-
-        } catch (Exception e) {
-            sqlStatement = null;
-        }
-
-    }
-
-    protected void createWhereSql() {
-        try {
-
-            sqlStatement += " and " + IgniteConstants.PROPERTY_KEY_COL_NAME;
-            sqlStatement += " = '" + fields.get(IgniteConstants.PROPERTY_KEY_COL_NAME) + "'";
+            if (elementType != ElementType.DOCUMENT) addLabelClause();
             /*
-             * The value of the value column must in the range of
-             * INCLUSIVE_FROM_VALUE >= PROPERTY_VALUE_COL_NAME < EXCLUSIVE_TO_VALUE
+             * Assemble select/where/order-by (and the optional element
+             * window) parts of the SQL statement.
              */
-            boolean hasNum = ValueUtils.hasNumberValue(fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE));
-            if(hasNum) {
-                sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
-                sqlStatement += " >= " + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "";
-
-                sqlStatement += " and " + IgniteConstants.PROPERTY_NUMBER_COL_NAME;
-                sqlStatement += " < " + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "";
-            }
-            else{
-                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-                sqlStatement += " >= '" + fields.get(IgniteConstants.INCLUSIVE_FROM_VALUE) + "'";
-
-                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-                sqlStatement += " < '" + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "'";
-            }
-
+            buildElementSql();
 
         } catch (Exception e) {
             sqlStatement = null;

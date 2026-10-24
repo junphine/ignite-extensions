@@ -23,115 +23,106 @@ import de.kp.works.ignite.IgniteConstants;
 import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+/**
+ * Retrieves edges and supports the following (combinable) restrictions:
+ *
+ * <ul>
+ *   <li>an incident vertex and a direction,</li>
+ *   <li>one or more edge labels,</li>
+ *   <li>property predicates registered via {@link IgniteQuery#addProperty},</li>
+ *   <li>an element window registered via {@link IgniteQuery#withRange}.</li>
+ * </ul>
+ *
+ * Note: an empty label list means "all labels" - not "no result".
+ */
 public class IgniteEdgesQuery extends IgniteQuery {
-	
-	Direction direction;
 
+    private Direction direction;
 
     public IgniteEdgesQuery(String cacheName, IgniteAdmin admin, List<String> labels) {
         super(cacheName, admin);
-
-        fields.put(IgniteConstants.LABEL_COL_NAME, labels);
+        if (labels != null) this.labels.addAll(labels);
     }
 
-    public IgniteEdgesQuery addVertex(Object vertex,Direction direction){
-        this.direction = direction;
-        vertexToFields(vertex, direction, fields);
+    /**
+     * Restricts the query to edges that are incident to the provided
+     * vertex in the provided direction.
+     */
+    public IgniteEdgesQuery addVertex(Object vertex, Direction direction) {
+        if (vertex != null && direction != null) {
+            this.direction = direction;
+            vertexToFields(vertex, direction, fields);
+        }
         return this;
     }
 
-    public IgniteEdgesQuery addProperty(
-                            Object vertex, Direction direction, String key, Object value) {
-
-        this.direction = direction;
-        vertexToFields(vertex, direction, fields);
-        fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
-        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
-
+    /**
+     * Restricts the query to edges that are incident to the provided
+     * vertex in the provided direction and share a certain property
+     * key/value pair.
+     *
+     * The property predicate is converted into an element-id subquery,
+     * i.e. all property rows of a matching edge are returned and the
+     * resulting edges are complete.
+     */
+    public IgniteEdgesQuery addProperty(Object vertex, Direction direction, String key, Object value) {
+        addVertex(vertex, direction);
+        addProperty(key, value, Compare.eq);
         return this;
     }
-
 
     @Override
     protected void createSql() {
         try {
-            buildSelectPart();            
-            
-            if (this.direction == Direction.IN && fields.containsKey(IgniteConstants.TO_COL_NAME)) {
-                sqlStatement += " where " + IgniteConstants.TO_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.TO_COL_NAME) + "'";                
-                
-                if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
-                    sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
-                }
-            }
-            else if(this.direction == Direction.OUT && fields.containsKey(IgniteConstants.FROM_COL_NAME)){
-                sqlStatement += " where " + IgniteConstants.FROM_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.FROM_COL_NAME) + "'";
-                
-                if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
-                    sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
-                }
-            }
-            else if(this.direction == Direction.BOTH){
-                sqlStatement += " where (" + IgniteConstants.FROM_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.FROM_COL_NAME) + "'";                
-                if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
-                    sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
-                }
-                
-                sqlStatement += " OR " + IgniteConstants.TO_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.TO_COL_NAME) + "')";
-                if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
-                    sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
-                }
-            }
-            if (fields.containsKey(IgniteConstants.PROPERTY_KEY_COL_NAME)) {
-                /*
-                 * A query for those edges of a certain vertex that
-                 * match a specific label and value of the selected
-                 * property.
-                 */
-                sqlStatement += " and " + IgniteConstants.PROPERTY_KEY_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.PROPERTY_KEY_COL_NAME) + "'";
-
-                sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME) + "'";
-
-                sqlStatement += " and " + IgniteConstants.LABEL_COL_NAME;
-                sqlStatement += " = '" + fields.get(IgniteConstants.LABEL_COL_NAME) + "'";
-
-            }
-            if(fields.containsKey(IgniteConstants.LABEL_COL_NAME)){
-                sqlStatement += " and " + IgniteConstants.LABEL_COL_NAME;
-                List<String> labels = (List)fields.get(IgniteConstants.LABEL_COL_NAME);
-
-
-                if (labels.size() == 1) {
-                    sqlStatement += " = '" + labels.get(0) + "'";
-                } else {
-                    sqlStatement += " IN (" + String.join("','", labels) + ")";
-                }
-            }
-            orderById();
+            addDirectionClause();
+            addLabelClause();
+            buildElementSql();
 
         } catch (Exception e) {
             sqlStatement = null;
         }
 
+    }
+
+    /**
+     * Builds the incident-vertex restriction; the `BOTH` variant groups
+     * the out and in conditions correctly:
+     *
+     * <pre>
+     *   source = 'x' [and source_type = 't']
+     *   to     = 'x' [and to_type     = 't']
+     *   (source = 'x' [and source_type = 't']) or (to = 'x' [and to_type = 't'])
+     * </pre>
+     */
+    private void addDirectionClause() {
+        if (direction == null) return;
+
+        if (direction == Direction.IN && fields.containsKey(IgniteConstants.TO_COL_NAME)) {
+            addWhereClause(vertexCondition(IgniteConstants.TO_COL_NAME, IgniteConstants.TO_TYPE_COL_NAME));
+        }
+        else if (direction == Direction.OUT && fields.containsKey(IgniteConstants.FROM_COL_NAME)) {
+            addWhereClause(vertexCondition(IgniteConstants.FROM_COL_NAME, IgniteConstants.FROM_TYPE_COL_NAME));
+        }
+        else if (direction == Direction.BOTH
+                && fields.containsKey(IgniteConstants.FROM_COL_NAME)
+                && fields.containsKey(IgniteConstants.TO_COL_NAME)) {
+            StringBuilder both = new StringBuilder();
+            both.append("(").append(vertexCondition(IgniteConstants.FROM_COL_NAME, IgniteConstants.FROM_TYPE_COL_NAME)).append(")");
+            both.append(" or ");
+            both.append("(").append(vertexCondition(IgniteConstants.TO_COL_NAME, IgniteConstants.TO_TYPE_COL_NAME)).append(")");
+            addWhereClause("(" + both + ")");
+        }
+    }
+
+    private String vertexCondition(String idColumn, String typeColumn) {
+        StringBuilder condition = new StringBuilder();
+        condition.append(idColumn).append(" = '").append(escapeValue(fields.get(idColumn))).append("'");
+        if (fields.containsKey(typeColumn)) {
+            condition.append(" and ").append(typeColumn).append(" = '")
+                    .append(escapeValue(fields.get(typeColumn))).append("'");
+        }
+        return condition.toString();
     }
 }

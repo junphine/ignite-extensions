@@ -400,10 +400,6 @@ public class IgniteGraph implements Graph {
         return getVertexModel().vertices(0,-1);
     }
 
-    public Iterator<Vertex> allVertices(Object fromId, int limit) {
-        return getVertexModel().vertices(fromId, limit);
-    }
-
     public Iterator<Vertex> verticesByLabel(String label, int offset,int limit) {
     	if(this.isDocumentModel(label)) {
     		return this.getDocumentModel(label).vertices(label,offset,limit);
@@ -416,28 +412,6 @@ public class IgniteGraph implements Graph {
     		return this.getDocumentModel(label).vertices(label,key,value);
     	}
         return getVertexModel().vertices(label, key, value);
-    }
-
-    public Iterator<Vertex> verticesInRange(String label, String key, Object inclusiveFromValue, Object exclusiveToValue) {
-    	if(this.isDocumentModel(label)) {
-    		return this.getDocumentModel(label).verticesInRange(label, key, inclusiveFromValue, exclusiveToValue);
-    	}
-    	return getVertexModel().verticesInRange(label, key, inclusiveFromValue, exclusiveToValue);
-    }
-    
-
-    public Iterator<Vertex> verticesWithLimit(String label, String key, Object fromValue, int limit) {
-    	if(this.isDocumentModel(label)) {
-    		return this.getDocumentModel(label).verticesWithLimit(label, key, fromValue, limit, false);
-    	}
-        return verticesWithLimit(label, key, fromValue, limit, false);
-    }
-
-    public Iterator<Vertex> verticesWithLimit(String label, String key, Object fromValue, int limit, boolean reversed) {
-    	if(this.isDocumentModel(label)) {
-    		return this.getDocumentModel(label).verticesWithLimit(label, key, fromValue, limit, reversed);
-    	}
-        return getVertexModel().verticesWithLimit(label, key, fromValue, limit, reversed);
     }
 
     /** EDGE RELATED **/
@@ -518,11 +492,6 @@ public class IgniteGraph implements Graph {
     public Iterator<Edge> allEdges() {
         return getEdgeModel().edges(0,-1);
     }
-
-    public Iterator<Edge> allEdges(Object fromId, int limit) {
-        return getEdgeModel().edges(fromId, limit);
-    }
-    
     
     @Override
     public <C extends GraphComputer> C compute(final Class<C> graphComputerClass) {
@@ -583,6 +552,31 @@ public class IgniteGraph implements Graph {
         else {
         	vertexReletionCache.invalidateAll();
         }        
+    }
+
+    /**
+     * Invalidates all cached edge lists that belong to the provided
+     * vertex, i.e. the entries for all directions (OUT, IN and BOTH).
+     *
+     * This is the correct invalidation for modifications that add or
+     * remove an edge: invalidating only a single direction leaves the
+     * `BOTH` list (and the list of the other endpoint) stale.
+     */
+    public void invalidateVertexRelations(Object vertexId) {
+        if (vertexId == null) return;
+        vertexReletionCache.asMap().keySet().removeIf(key -> vertexId.equals(key.getValue(0)));
+    }
+
+    /**
+     * Invalidates all cached edge lists that contain the edge with the
+     * provided identifier; used when an edge is removed.
+     */
+    public void invalidateRelationsOfEdge(Object edgeId) {
+        if (edgeId == null) return;
+        vertexReletionCache.asMap().entrySet().removeIf(entry -> {
+            List<Edge> edges = entry.getValue();
+            return edges != null && edges.stream().anyMatch(edge -> edgeId.equals(edge.id()));
+        });
     }
     
     /**

@@ -21,10 +21,6 @@ package de.kp.works.ignite.query;
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
 public class IgniteEdgeQuery extends IgniteQuery {
@@ -38,17 +34,15 @@ public class IgniteEdgeQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, Object> fields = new HashMap<>();
-        
         fields.put(IgniteConstants.FROM_COL_NAME, fromId.toString());
         fields.put(IgniteConstants.TO_COL_NAME,   toId.toString());
-        
+
         if (fromId instanceof ReferenceVertexProperty) {
-			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) fromId;			
-            fields.put(IgniteConstants.FROM_COL_NAME, key.id().toString());           
+			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) fromId;
+            fields.put(IgniteConstants.FROM_COL_NAME, key.id().toString());
             fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
         }
-        
+
         if (toId instanceof ReferenceVertexProperty) {
 			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) toId;
 			fields.put(IgniteConstants.TO_COL_NAME, key.id().toString());
@@ -61,28 +55,21 @@ public class IgniteEdgeQuery extends IgniteQuery {
     protected void createSql() {
 
         try {
-            buildSelectPart();
-            /*
-             * Build the `where` clause and thereby distinguish
-             * between a single or multiple identifier values
-             */
-            sqlStatement += " where " + IgniteConstants.FROM_COL_NAME;
-            sqlStatement += " = '" + fields.get(IgniteConstants.FROM_COL_NAME) + "'";
+            addWhereClause(IgniteConstants.FROM_COL_NAME + " = '"
+                    + escapeValue(fields.get(IgniteConstants.FROM_COL_NAME)) + "'");
+            addWhereClause(IgniteConstants.TO_COL_NAME + " = '"
+                    + escapeValue(fields.get(IgniteConstants.TO_COL_NAME)) + "'");
 
-            sqlStatement += " and " + IgniteConstants.TO_COL_NAME;
-            sqlStatement += " = '" + fields.get(IgniteConstants.TO_COL_NAME) + "'";
-            
-            if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
-                sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
-                sqlStatement += " = '" + id_type + "'";
+            if (fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)) {
+                addWhereClause(IgniteConstants.FROM_TYPE_COL_NAME + " = '"
+                        + escapeValue(fields.get(IgniteConstants.FROM_TYPE_COL_NAME)) + "'");
             }
-            if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
-                sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
-                sqlStatement += " = '" + id_type + "'";
+            if (fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)) {
+                addWhereClause(IgniteConstants.TO_TYPE_COL_NAME + " = '"
+                        + escapeValue(fields.get(IgniteConstants.TO_TYPE_COL_NAME)) + "'");
             }
-            orderById();
+
+            buildElementSql();
 
         } catch (Exception e) {
             sqlStatement = null;

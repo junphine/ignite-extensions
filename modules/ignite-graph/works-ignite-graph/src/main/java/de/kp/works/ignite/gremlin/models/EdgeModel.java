@@ -32,7 +32,12 @@ import org.apache.commons.lang3.Streams;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.javatuples.Pair;
+import org.javatuples.Tuple;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
@@ -62,27 +67,6 @@ public class EdgeModel extends ElementModel {
         Mutators.write(table, writer);
     }
 
-    /** READ **/
-    public Iterator<Edge> edgesByLabel(String label, int offset, int limit) {
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        final EdgeReader parser = new EdgeReader(graph);
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getEdgesQuery(label);
-        
-        if(limit>0) {
-        	igniteQuery.withRange(offset,limit);
-        }
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-    
     /** READ **/
     public Iterator<Edge> edgesQuery(IgniteEdgesQuery igniteEdgesQuery) {
         /*
@@ -115,41 +99,46 @@ public class EdgeModel extends ElementModel {
                 .map(igniteQuery.getResult(),parser::parse);
     }
 
-    public Iterator<Edge> edges(Object fromId, int limit) {
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        final EdgeReader parser = new EdgeReader(graph);
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery;        
-       
-        igniteQuery = table.getLimitQuery(fromId, limit);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
     /**
      * Method to find all edges that refer to the provided
      * vertex that match direction and the provided labels
+     *
+     * Incident edge lists are cached per (vertex id, direction); a cache
+     * hit avoids the SQL round trip. The cache is label agnostic, so the
+     * label filter is applied in memory (and the cache is invalidated
+     * whenever an incident edge is added or removed).
      */
     public Iterator<Edge> edges(IgniteVertex vertex, Direction direction, String... labels) {
+        Tuple cacheKey = Pair.with(vertex.id(), direction);
+
+        Iterator<Edge> cached = graph.getVertexReletionFromCache(cacheKey);
+        if (cached != null) {
+            return filterLabels(cached, labels);
+        }
+
         /*
          * The parser converts results from Ignite
          * queries to vertices.
          */
         final EdgeReader parser = new EdgeReader(graph);
         /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
+         * All incident edges (i.e. without label restriction) are
+         * retrieved: the cache entry is shared by all label specific
+         * traversals of this vertex/direction.
          */
-        IgniteQuery igniteQuery = table.getEdgesQuery(List.of(labels)).addVertex(vertex.id(), direction);
+        IgniteQuery igniteQuery = table.getEdgesQuery(Collections.<String>emptyList()).addVertex(vertex.id(), direction);
 
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
+        List<Edge> edges = IteratorUtils.list(IgniteResultTransform.map(igniteQuery.getResult(), parser::parse));
+        graph.cacheVertexReletion(cacheKey, edges);
+
+        return filterLabels(edges.iterator(), labels);
+    }
+
+    private Iterator<Edge> filterLabels(Iterator<Edge> edges, String... labels) {
+        if (labels == null || labels.length == 0) return edges;
+
+        List<String> requested = Arrays.asList(labels);
+        return IteratorUtils.filter(edges, edge -> requested.contains(edge.label()));
     }
     /**
      * Method to retrieve all edges that refer to the provided
@@ -174,50 +163,6 @@ public class EdgeModel extends ElementModel {
     }
 
     /**
-     * Method to retrieve all edges that refer to the provided
-     * vertex and match direction, label, property and a range
-     * of property values
-     */
-    public Iterator<Edge> edgesInRange(IgniteVertex vertex, Direction direction, String label,
-                                       String key, Object inclusiveFromValue, Object exclusiveToValue) {
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        final EdgeReader parser = new EdgeReader(graph);
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getEdgesInRangeQuery(vertex.id(), direction, label, key,
-                inclusiveFromValue, exclusiveToValue);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-    /**
-     * Method to retrieve all edges that refer to the provided
-     * vertex and match direction, label, property and a range
-     * of property values with a start value and a limit
-     */
-    public Iterator<Edge> edgesWithLimit(IgniteVertex vertex, Direction direction, String label,
-                                         String key, Object fromValue, int limit, boolean reversed) {
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        final EdgeReader parser = new EdgeReader(graph);
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getEdgesWithLimitQuery(vertex.id(), direction, label, key,
-                fromValue, limit, reversed);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-    /**
      * Method to retrieve all vertices that refer to the provided
      * vertex that can be reached via related edges
      */
@@ -232,17 +177,6 @@ public class EdgeModel extends ElementModel {
         return edgesToVertices(vertex, edges);
     }
 
-    public Iterator<Vertex> verticesInRange(IgniteVertex vertex, Direction direction, String label,
-                                            String edgeKey, Object inclusiveFromEdgeValue, Object exclusiveToEdgeValue) {
-        Iterator<Edge> edges = edgesInRange(vertex, direction, label, edgeKey, inclusiveFromEdgeValue, exclusiveToEdgeValue);
-        return edgesToVertices(vertex, edges);
-    }
-
-    public Iterator<Vertex> verticesWithLimit(IgniteVertex vertex, Direction direction, String label,
-                                              String edgeKey, Object fromEdgeValue, int limit, boolean reversed) {
-        Iterator<Edge> edges = edgesWithLimit(vertex, direction, label, edgeKey, fromEdgeValue, limit, reversed);
-        return edgesToVertices(vertex, edges);
-    }
 
     private Iterator<Vertex> edgesToVertices(IgniteVertex vertex, Iterator<Edge> edges) {
         /*

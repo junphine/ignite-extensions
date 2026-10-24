@@ -1,4 +1,3 @@
-package de.kp.works.ignite.gremlin.models;
 /*
  * Copyright (c) 20129 - 2021 Dr. Krusche & Partner PartG. All rights reserved.
  *
@@ -17,7 +16,7 @@ package de.kp.works.ignite.gremlin.models;
  * @author Stefan Krusche, Dr. Krusche & Partner PartG
  *
  */
-
+package de.kp.works.ignite.gremlin.models;
 import de.kp.works.ignite.query.IgniteQuery;
 import de.kp.works.ignite.query.IgniteResult;
 import de.kp.works.ignite.IgniteResultTransform;
@@ -35,7 +34,6 @@ import de.kp.works.ignite.query.IgniteVertexQuery;
 import org.apache.tinkerpop.gremlin.structure.Element;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
-import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -58,7 +56,6 @@ public class VertexModel extends ElementModel {
      *
      * @param elements The elements
      */
-    @SuppressWarnings("unchecked")
     public void load(List<? extends Element> elements) {
         LOGGER.trace("Executing Batch Get, type: {}", getClass().getSimpleName());
         List<IgniteDocument> docs = new LinkedList<>();
@@ -79,7 +76,7 @@ public class VertexModel extends ElementModel {
             .map(Element::id)            
             .collect(Collectors.toList());
         
-        if(ids.size()>0) {
+        if(!ids.isEmpty()) {
 	        List<IgniteResult> results = table.get(ids);
 	        for (int i = 0; i < results.size(); i++) {
 	            try {
@@ -90,10 +87,8 @@ public class VertexModel extends ElementModel {
 	        }
         }
         
-        if(docs.size()>0) {
-        	docs.forEach( doc -> {        		
-            	doc.load();         	
-            });
+        if(!docs.isEmpty()) {
+        	docs.forEach(IgniteElement::load);
         }
     }
     
@@ -125,24 +120,6 @@ public class VertexModel extends ElementModel {
         if(limit>0) {
         	igniteQuery.withRange(offset,limit);
         }
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-
-    public Iterator<Vertex> vertices(Object fromId, int limit) {
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        final VertexReader parser = getReader();
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery;
-       
-        igniteQuery = table.getLimitQuery(fromId, limit);
 
         return IgniteResultTransform
                 .map(igniteQuery.getResult(),parser::parse);
@@ -206,40 +183,4 @@ public class VertexModel extends ElementModel {
                 .map(igniteQuery.getResult(),parser::parse);
     }
 
-    public Iterator<Vertex> verticesInRange(String label, String key, Object inclusiveFrom, Object exclusiveTo) {
-
-        ElementHelper.validateProperty(key, inclusiveFrom);
-        ElementHelper.validateProperty(key, exclusiveTo);
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        VertexReader parser = getReader();
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getRangeQuery(label, key, inclusiveFrom, exclusiveTo);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-
-    public Iterator<Vertex> verticesWithLimit(String label, String key, Object from, int limit, boolean reversed) {
-
-        ElementHelper.validateProperty(key, from != null ? from : new Object());
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        VertexReader parser = getReader();
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getLimitQuery(label, key, from, limit, reversed);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
 }

@@ -20,33 +20,21 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 
-import java.util.HashMap;
-import java.util.Map;
-
+/**
+ * Retrieves all elements that refer to the selected Ignite cache.
+ * The optional element window (see {@link IgniteQuery#withRange}) is
+ * pushed down (with element - not row - semantics).
+ */
 public class IgniteAllQuery extends IgniteQuery {
-    /**
-     * Retrieve all elements that refer to the
-     * selected Ignite cache
-     */
+
     public IgniteAllQuery(String cacheName, IgniteAdmin admin) {
         super(cacheName, admin);
-        /*
-         * This query does not take fields
-         */
-        Map<String, Object> fields = new HashMap<>();
-        
     }
 
     @Override
     protected void createSql() {
         try {
-            /*
-             * This query does not have a `where` clause
-             * and just contains the `select` part
-             */
-            buildSelectPart();
-
-            orderById();
+            buildElementSql();
 
         } catch (Exception e) {
             sqlStatement = null;

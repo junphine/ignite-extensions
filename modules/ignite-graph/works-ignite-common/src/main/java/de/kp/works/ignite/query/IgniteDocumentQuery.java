@@ -20,8 +20,15 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 
-import java.util.Map;
-
+/**
+ * Retrieves all documents of a per-label document cache.
+ *
+ * Document caches contain a single row per document and derive their
+ * table name from the label, i.e. there is neither a `label` column
+ * nor a fixed property schema. Therefore only the element window
+ * (see {@link IgniteQuery#withRange}) is pushed down - property
+ * predicates are evaluated in memory.
+ */
 public class IgniteDocumentQuery extends IgniteVertexQuery {
 
     /**
@@ -31,7 +38,7 @@ public class IgniteDocumentQuery extends IgniteVertexQuery {
     public IgniteDocumentQuery(String cacheName, IgniteAdmin admin, String label) {
         super(cacheName, admin, label);
     }
-    
+
     public void setSqlStatment(String sql) {
     	this.sqlStatement = sql;
     }
@@ -40,14 +47,16 @@ public class IgniteDocumentQuery extends IgniteVertexQuery {
     protected void createSql() {
         try {
             /*
-             * This query does not have a `where` clause
-             * and just contains the `select` part
+             * A custom SQL statement is used as is.
              */
-        	if(sqlStatement==null || sqlStatement.isBlank()) {
-        		sqlStatement = "select _key, * ";               
-                sqlStatement += " from " + cache.getName();
-                orderById();
-        	}
+            if (sqlStatement != null && !sqlStatement.isBlank()) return;
+
+            /*
+             * Document tables are label-specific and do not
+             * provide a `label` column, i.e. no label clause
+             * is added here.
+             */
+            buildElementSql();
 
         } catch (Exception e) {
             sqlStatement = null;

@@ -181,9 +181,11 @@ public class IgniteAdmin {
             valueBuilder.setField(IgniteConstants.EDGE_ID_COL_NAME, entry.id);
             valueBuilder.setField(IgniteConstants.LABEL_COL_NAME,   entry.label);
             valueBuilder.setField(IgniteConstants.TO_COL_NAME,      entry.toId);
-            valueBuilder.setField(IgniteConstants.TO_TYPE_COL_NAME,   entry.toId);
+            valueBuilder.setField(IgniteConstants.TO_TYPE_COL_NAME,   entry.toIdType);
             valueBuilder.setField(IgniteConstants.FROM_COL_NAME,      entry.fromId);
             valueBuilder.setField(IgniteConstants.FROM_TYPE_COL_NAME,  entry.fromIdType);
+            if(entry.weight!=1.0f)
+                valueBuilder.setField(IgniteConstants.PROPERTY_WEIGHT_COL_NAME,   entry.weight);
             valueBuilder.setField(IgniteConstants.CREATED_AT_COL_NAME, entry.createdAt);
             valueBuilder.setField(IgniteConstants.UPDATED_AT_COL_NAME, entry.updatedAt);
 

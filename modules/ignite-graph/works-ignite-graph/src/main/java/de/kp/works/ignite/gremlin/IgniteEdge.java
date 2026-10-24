@@ -27,8 +27,6 @@ import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -117,6 +115,11 @@ public class IgniteEdge extends IgniteElement implements Edge {
     public void remove() {
         // Get rid of the endpoints and edge themselves.
         deleteFromModel();
+        /*
+         * Cached incident edge lists of both endpoints
+         * must no longer contain this edge.
+         */
+        graph().invalidateRelationsOfEdge(id);
 
         setDeleted(true);
         if (isCached()) {

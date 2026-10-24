@@ -26,8 +26,6 @@ import org.apache.tinkerpop.gremlin.structure.*;
 import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
-import org.javatuples.Pair;
-import org.javatuples.Tuple;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -81,8 +79,8 @@ public class IgniteVertex extends IgniteElement implements Vertex {
         newEdge.validate();
         newEdge.writeToModel();
 
-        graph.invalidateVertexReletionCache(Pair.with(this.id(),Direction.OUT));
-        graph.invalidateVertexReletionCache(Pair.with(inVertex.id(),Direction.IN));
+        graph.invalidateVertexRelations(this.id());
+        graph.invalidateVertexRelations(inVertex.id());
         
         Edge edge = graph.findOrCreateEdge(idValue);
         ((IgniteEdge) edge).copyFrom(newEdge);
@@ -194,21 +192,6 @@ public class IgniteVertex extends IgniteElement implements Vertex {
         return getEdgeModel().edges(this, direction, label, key, value);
     }
 
-    public Iterator<Edge> edgesInRange(final Direction direction, final String label, final String key,
-                                       final Object inclusiveFromValue, final Object exclusiveToValue) {
-        return getEdgeModel().edgesInRange(this, direction, label, key, inclusiveFromValue, exclusiveToValue);
-    }
-
-    public Iterator<Edge> edgesWithLimit(final Direction direction, final String label, final String key,
-                                         final Object fromValue, final int limit) {
-        return edgesWithLimit(direction, label, key, fromValue, limit, false);
-    }
-
-    public Iterator<Edge> edgesWithLimit(final Direction direction, final String label, final String key,
-                                         final Object fromValue, final int limit, final boolean reversed) {
-        return getEdgeModel().edgesWithLimit(this, direction, label, key, fromValue, limit, reversed);
-    }
-
     /** VERTEX RELATED **/
 
     @Override
@@ -218,21 +201,6 @@ public class IgniteVertex extends IgniteElement implements Vertex {
 
     public Iterator<Vertex> vertices(final Direction direction, final String label, final String key, final Object value) {
         return getEdgeModel().vertices(this, direction, label, key, value);
-    }
-
-    public Iterator<Vertex> verticesInRange(final Direction direction, final String label, final String key,
-                                            final Object inclusiveFromValue, final Object exclusiveToValue) {
-        return getEdgeModel().verticesInRange(this, direction, label, key, inclusiveFromValue, exclusiveToValue);
-    }
-
-    public Iterator<Vertex> verticesWithLimit(final Direction direction, final String label, final String key,
-                                              final Object fromValue, final int limit) {
-        return verticesWithLimit(direction, label, key, fromValue, limit, false);
-    }
-
-    public Iterator<Vertex> verticesWithLimit(final Direction direction, final String label, final String key,
-                                              final Object fromValue, final int limit, final boolean reversed) {
-        return getEdgeModel().verticesWithLimit(this, direction, label, key, fromValue, limit, reversed);
     }
 
     @Override

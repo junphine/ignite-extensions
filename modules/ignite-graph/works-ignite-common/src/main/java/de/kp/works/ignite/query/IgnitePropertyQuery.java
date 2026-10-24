@@ -25,6 +25,7 @@ import de.kp.works.ignite.graph.ElementType;
 import java.util.HashMap;
 import java.util.Map;
 
+@Deprecated
 public class IgnitePropertyQuery extends IgniteQuery {
     /**
      * Retrieves all elements that are referenced by
@@ -36,13 +37,10 @@ public class IgnitePropertyQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, Object> fields = new HashMap<>();
-
         fields.put(IgniteConstants.LABEL_COL_NAME, label);
         
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
         fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, quoteSqlValue(value));
-
         
 
     }

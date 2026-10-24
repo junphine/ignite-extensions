@@ -22,13 +22,12 @@ import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
 import de.kp.works.ignite.graph.ElementType;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class IgniteGetQuery extends IgniteQuery {
+
+    private static final String ID_FIELD = "ID";
+
     /**
      * Retrieve the element (edge or vertex) that refers
      * to the provided identifier
@@ -38,12 +37,9 @@ public class IgniteGetQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, Object> fields = new HashMap<>();
-
-        fields.put("ID"," = "+quoteSqlValue(id));
-        
-
+        this.fields.put(ID_FIELD, " = " + quoteSqlValue(id));
     }
+
     /**
      * Retrieve all elements (edges or vertices) that refer
      * to the provided list of identifiers
@@ -53,19 +49,21 @@ public class IgniteGetQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        HashMap<String, Object> fields = new HashMap<>();
-        
-        StringBuilder sqlStatement = new StringBuilder("");       
-        if (ids.size() == 1) {
-            sqlStatement.append(" = " + quoteSqlValue(ids.get(0)));
-        } else {
-            List<String> inPart = Stream.of(ids)
-                    .map(token -> quoteSqlValue(token)).collect(Collectors.toList());
+        StringBuilder sqlStatement = new StringBuilder();
 
-            sqlStatement.append(" IN (" + String.join(",", inPart) + ")");
+        if (ids.size() == 1) {
+            sqlStatement.append(" = ").append(quoteSqlValue(ids.get(0)));
         }
-        
-        fields.put("ID", sqlStatement.toString());
+        else {
+            StringBuilder inPart = new StringBuilder();
+            for (int i = 0; i < ids.size(); i++) {
+                if (i > 0) inPart.append(",");
+                inPart.append(quoteSqlValue(ids.get(i)));
+            }
+            sqlStatement.append(" IN (").append(inPart).append(")");
+        }
+
+        this.fields.put(ID_FIELD, sqlStatement.toString());
     }
 
     @Override
@@ -83,9 +81,21 @@ public class IgniteGetQuery extends IgniteQuery {
             else if(this.elementType == ElementType.EDGE) {
                 keyField = IgniteConstants.EDGE_ID_COL_NAME;
             }
-            sqlStatement += " where " + keyField;
-            Object ids = fields.get("ID");
-            sqlStatement += ids;
+
+            Object ids = fields.get(ID_FIELD);
+            if (ids == null) {
+                /*
+                 * No identifier(s) provided: select nothing
+                 */
+                sqlStatement = null;
+                return;
+            }
+
+            sqlStatement += " where " + keyField + ids;
+            /*
+             * Rows of a single element must be grouped
+             */
+            sqlStatement += " order by " + keyField;
 
         } catch (Exception e) {
             sqlStatement = null;

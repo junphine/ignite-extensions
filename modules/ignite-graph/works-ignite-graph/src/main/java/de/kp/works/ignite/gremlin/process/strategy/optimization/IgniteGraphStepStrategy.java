@@ -24,6 +24,7 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
 import org.apache.tinkerpop.gremlin.process.traversal.step.HasContainerHolder;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.HasStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.filter.RangeGlobalStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.NoOpBarrierStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.HasContainer;
@@ -55,6 +56,31 @@ public final class IgniteGraphStepStrategy
                     traversal.removeStep(currentStep);
                 }
                 currentStep = currentStep.getNextStep();
+            }
+
+            /*
+             * A directly following RangeGlobalStep is replaced by the
+             * GraphStep itself: the step either pushes the window down
+             * into the SQL statement or applies it in memory. This way
+             * the window is never applied twice.
+             *
+             * Only start steps are supported: for mid-traversal steps the
+             * range is a global (barrier) operation whereas the step
+             * processes one traverser at a time.
+             */
+            if (igniteGraphStep.isStartStep() && currentStep instanceof RangeGlobalStep) {
+                long low = ((RangeGlobalStep<?>) currentStep).getLowRange();
+                long high = ((RangeGlobalStep<?>) currentStep).getHighRange();
+
+                /*
+                 * Only bounded windows are supported; `skip(n)` and
+                 * `tail(n)` (high == -1) remain unchanged.
+                 */
+                if (low >= 0 && high > low) {
+                    igniteGraphStep.setRange(low, high);
+                    TraversalHelper.copyLabels(currentStep, igniteGraphStep, false);
+                    traversal.removeStep(currentStep);
+                }
             }
         }
     }

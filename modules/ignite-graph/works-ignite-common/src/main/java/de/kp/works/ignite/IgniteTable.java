@@ -228,15 +228,20 @@ public class IgniteTable extends IgniteBaseTable {
             return new IgniteDocumentQuery(name, admin, label);
         }
         return new IgniteVertexQuery(name, admin, label);
-    }   
-
-    public IgniteQuery getLimitQuery(Object fromId, int limit) {
-        return new IgniteLimitQuery(name, admin, fromId, limit);
     }
 
-    public IgniteQuery getLimitQuery(String label, String key, Object inclusiveFrom, int limit, boolean reversed) {
-        return new IgniteLimitQuery(name, admin, label, key, inclusiveFrom, limit, reversed);    
+    /**
+     * Returns an [IgniteVertexQuery] that retrieves all vertices which
+     * refer to at least one of the provided labels; an empty label list
+     * does not restrict the query by label.
+     */
+    public IgniteVertexQuery getVertexQuery(List<String> labels) {
+        if (elementType.equals(ElementType.DOCUMENT) && labels != null && labels.size() == 1) {
+            return new IgniteDocumentQuery(name, admin, labels.get(0));
+        }
+        return new IgniteVertexQuery(name, admin, labels);
     }
+
     /**
      * Returns an [IgniteQuery] to retrieve all elements
      * that are referenced by a certain label and share
@@ -244,14 +249,6 @@ public class IgniteTable extends IgniteBaseTable {
      */
     public IgniteQuery getPropertyQuery(String label, String key, Object value) {
         return new IgnitePropertyQuery(name, admin, label, key, value);
-    }
-    /**
-     * Returns an [IgniteQuery] to retrieve all elements
-     * that are referenced by a certain label and share
-     * a certain property key and value range
-     */
-    public IgniteQuery getRangeQuery(String label, String key, Object inclusiveFrom, Object exclusiveTo) {
-        return new IgniteRangeQuery(name, admin, label, key, inclusiveFrom, exclusiveTo);
     }
 
     /* EDGE READ SUPPORT */
@@ -277,25 +274,15 @@ public class IgniteTable extends IgniteBaseTable {
                                      String key, Object value) {
         return new IgniteEdgesQuery(name, admin, List.of(label)).addProperty(vertexId, direction, key, value);
     }
-    /**
-     * Method to retrieve all edges that refer to the provided
-     * vertex and match direction, label, property and a range
-     * of property values
-     */
-    public IgniteQuery getEdgesInRangeQuery(Object vertexId, Direction direction, String label,
-                                       String key, Object inclusiveFromValue, Object exclusiveToValue) {
-        return new IgniteEdgesInRangeQuery(name, admin, vertexId, direction, label,
-                key, inclusiveFromValue, exclusiveToValue);
-    }
 
-    public IgniteQuery getEdgesWithLimitQuery(Object vertexId, Direction direction, String label,
-                                      String key, Object fromValue, int limit, boolean reversed) {
-         return new IgniteEdgesWithLimitQuery(name, admin, vertexId, direction, label,
-                key, fromValue, limit, reversed);
-
-    }
-    
     public IgniteDocumentQuery getIgniteSqlQuery(String sql) {
-    	return new IgniteDocumentQuery(name,admin,sql);
+        /*
+         * The SQL statement must be registered as such; passing it as
+         * label (as before) let the query silently fall back to the
+         * default `select` statement.
+         */
+        IgniteDocumentQuery igniteQuery = new IgniteDocumentQuery(name, admin, null);
+        igniteQuery.setSqlStatment(sql);
+    	return igniteQuery;
     }
 }
