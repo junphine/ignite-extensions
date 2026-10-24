@@ -20,29 +20,16 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import org.apache.ignite.cache.query.FieldsQueryCursor;
-import org.apache.ignite.cache.query.SqlFieldsQuery;
-
-public class IgniteSqlQuery extends IgniteQuery {
+public class IgniteDocumentQuery extends IgniteVertexQuery {
 
     /**
      * Retrieve all elements that refer to the
      * selected Ignite cache
      */
-    public IgniteSqlQuery(String cacheName, IgniteAdmin admin, String sql) {
-        super(cacheName, admin);
-        this.sqlStatement = sql;
-
-        /*
-         * This query does not take fields
-         */
-
-        createSql(null);
+    public IgniteDocumentQuery(String cacheName, IgniteAdmin admin, String label) {
+        super(cacheName, admin, label);
     }
     
     public void setSqlStatment(String sql) {
@@ -50,7 +37,7 @@ public class IgniteSqlQuery extends IgniteQuery {
     }
 
     @Override
-    protected void createSql(Map<String,Object> fields) {
+    protected void createSql() {
         try {
             /*
              * This query does not have a `where` clause
@@ -59,6 +46,7 @@ public class IgniteSqlQuery extends IgniteQuery {
         	if(sqlStatement==null || sqlStatement.isBlank()) {
         		sqlStatement = "select _key, * ";               
                 sqlStatement += " from " + cache.getName();
+                orderById();
         	}
 
         } catch (Exception e) {

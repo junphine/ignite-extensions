@@ -20,6 +20,8 @@ package de.kp.works.ignite;
 
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.ignite.Ignite;
 import org.apache.ignite.IgniteIllegalStateException;
 import org.apache.ignite.Ignition;
@@ -27,16 +29,12 @@ import org.apache.ignite.configuration.IgniteConfiguration;
 import org.apache.ignite.logger.java.JavaLogger;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-
 import de.kp.works.janus.IgniteStore;
-import jline.internal.Log;
 
 public class IgniteContext {
-	
-	
+
+	private static final Log log = LogFactory.getLog(IgniteContext.class);
 	public static ConcurrentHashMap<String, IgniteContext> instances = new ConcurrentHashMap<>();
-	
-	public static JavaLogger logger = new JavaLogger();
 	
 	/*
 	 * Reference to Apache Ignite that is transferred to the key value store to
@@ -95,7 +93,7 @@ public class IgniteContext {
 			instance = new IgniteContext(cfg,name);
 		}
 		else {
-			Log.warn("ignite instance "+name+" already use as other janus graph backend");
+			log.warn("ignite instance "+name+" already use as other janus graph backend");
 		}
 		return instance;
 	}
@@ -107,7 +105,7 @@ public class IgniteContext {
 		if (instance == null)
 			instance = new IgniteContext(config);
 		else {
-			Log.warn("ignite instance "+config.getIgniteInstanceName()+" already use as other janus graph backend");
+			log.warn("ignite instance "+config.getIgniteInstanceName()+" already use as other janus graph backend");
 		}
 		return instance;
 	}

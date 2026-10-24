@@ -33,16 +33,13 @@ public class IgniteLimitQuery extends IgniteQuery {
     /** 从edge里面查询来源id为fromId的关系数据 */
     public IgniteLimitQuery(String cacheName, IgniteAdmin admin, Object fromId, int limit) {
         super(cacheName, admin);
-        /*
-         * Transform the provided properties into fields
-         */
-        HashMap<String, Object> fields = new HashMap<>();
+
 
         fields.put(IgniteConstants.FROM_COL_NAME, fromId.toString());
         fields.put(IgniteConstants.LIMIT_VALUE, String.valueOf(limit));
 
         queryType = "withFrom";
-        createSql(fields);
+        
     }
     
     /**
@@ -67,11 +64,11 @@ public class IgniteLimitQuery extends IgniteQuery {
         fields.put(IgniteConstants.REVERSED_VALUE, String.valueOf(reversed));
 
         queryType = "withProp";
-        createSql(fields);
+        
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();
 
@@ -86,6 +83,8 @@ public class IgniteLimitQuery extends IgniteQuery {
                 if (fields.containsKey(IgniteConstants.LIMIT_VALUE)) {
                 	sqlStatement += " limit " + fields.get(IgniteConstants.LIMIT_VALUE);
                 }
+
+                orderById();
 
             }
             else if(this.elementType!=ElementType.DOCUMENT){ // "withProp"

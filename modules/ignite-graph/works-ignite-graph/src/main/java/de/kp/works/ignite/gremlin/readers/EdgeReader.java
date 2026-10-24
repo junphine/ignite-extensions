@@ -62,11 +62,7 @@ public class EdgeReader extends LoadingElementReader<Edge> {
         for (IgniteColumn column : result.getColumns()) {
             String colName = column.getColName();
             switch (colName) {
-            	case IgniteConstants.EDGE_ID_COL_NAME:
-            		break;
-                case IgniteConstants.LABEL_COL_NAME:
-                    label = column.getColValue().toString();
-                    break;               
+
                 case IgniteConstants.FROM_COL_NAME:
                     outVertexId = column.getColValue();
                     outType = column.getColTypeName();
@@ -75,12 +71,7 @@ public class EdgeReader extends LoadingElementReader<Edge> {
                     inVertexId = column.getColValue();
                     inType = column.getColTypeName();
                     break;
-                case IgniteConstants.CREATED_AT_COL_NAME:
-                    createdAt = (Long)column.getColValue();
-                    break;
-                case IgniteConstants.UPDATED_AT_COL_NAME:
-                    updatedAt = (Long)column.getColValue();
-                    break;
+
                 default:
                     props.put(colName, column.getColValue());
                     break;

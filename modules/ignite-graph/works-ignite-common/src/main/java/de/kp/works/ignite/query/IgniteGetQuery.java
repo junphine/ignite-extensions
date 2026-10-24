@@ -41,7 +41,7 @@ public class IgniteGetQuery extends IgniteQuery {
         HashMap<String, Object> fields = new HashMap<>();
 
         fields.put("ID"," = "+quoteSqlValue(id));
-        createSql(fields);
+        
 
     }
     /**
@@ -66,14 +66,10 @@ public class IgniteGetQuery extends IgniteQuery {
         }
         
         fields.put("ID", sqlStatement.toString());
-
-        createSql(fields);
-
-
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();
             /*

@@ -34,26 +34,23 @@ import java.util.Iterator;
 import java.util.Map;
 
 public class IgniteEdge extends IgniteElement implements Edge {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(IgniteEdge.class);
-
     private Vertex inVertex;
     private Vertex outVertex;
 
     public IgniteEdge(IgniteGraph graph, Object id) {
-        this(graph, id, null, null, null, null, null, null);
+        this(graph, id, null, 0, 0, null, null, null);
     }
 
-    public IgniteEdge(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt, Map<String, Object> properties) {
+    public IgniteEdge(IgniteGraph graph, Object id, String label, long createdAt, long updatedAt, Map<String, Object> properties) {
         this(graph, id, label, createdAt, updatedAt, properties, properties != null, null, null);
     }
 
-    public IgniteEdge(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt, Map<String, Object> properties,
+    public IgniteEdge(IgniteGraph graph, Object id, String label, long createdAt, long updatedAt, Map<String, Object> properties,
                       Vertex inVertex, Vertex outVertex) {
         this(graph, id, label, createdAt, updatedAt, properties, properties != null, inVertex, outVertex);
     }
 
-    public IgniteEdge(IgniteGraph graph, Object id, String label, Long createdAt, Long updatedAt, Map<String, Object> properties,
+    public IgniteEdge(IgniteGraph graph, Object id, String label, long createdAt, long updatedAt, Map<String, Object> properties,
                       boolean propertiesFullyLoaded, Vertex inVertex, Vertex outVertex) {
         super(graph, id, label, createdAt, updatedAt, properties, propertiesFullyLoaded);
 

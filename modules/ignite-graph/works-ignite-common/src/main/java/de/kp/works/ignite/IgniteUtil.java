@@ -134,7 +134,7 @@ public final class IgniteUtil{
     public LinkedHashMap<String, String> buildVertexFields() {
         final LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put(IgniteConstants.VERTEX_ID_COL_NAME, "java.lang.String");
-        fields.put(IgniteConstants.ID_TYPE_COL_NAME, "java.lang.String");
+        fields.put(IgniteConstants.ID_TYPE_COL_NAME, "java.lang.Short");
         fields.put(IgniteConstants.LABEL_COL_NAME, "java.lang.String");
         fields.put(IgniteConstants.CREATED_AT_COL_NAME, "java.lang.Long");
         fields.put(IgniteConstants.UPDATED_AT_COL_NAME, "java.lang.Long");

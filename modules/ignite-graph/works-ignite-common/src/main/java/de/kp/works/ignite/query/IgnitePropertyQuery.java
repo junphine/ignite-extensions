@@ -43,12 +43,12 @@ public class IgnitePropertyQuery extends IgniteQuery {
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
         fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, quoteSqlValue(value));
 
-        createSql(fields);
+        
 
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
 
             buildSelectPart();
@@ -75,6 +75,8 @@ public class IgnitePropertyQuery extends IgniteQuery {
 	            sqlStatement += " = " + fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME);
 	           
             }
+
+            orderById();
 
         } catch (Exception e) {
             sqlStatement = null;

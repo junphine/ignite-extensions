@@ -45,12 +45,12 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
             fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
         }       
 
-        createSql(fields);
+        
 
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();
             /*
@@ -73,6 +73,8 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
                 Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
                 sqlStatement += " = '" + id_type + "'";
             }
+
+            orderById();
 
         } catch (Exception e) {
             sqlStatement = null;

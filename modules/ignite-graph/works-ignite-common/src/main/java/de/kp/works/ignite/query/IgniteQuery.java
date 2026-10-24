@@ -33,6 +33,7 @@ import org.apache.ignite.IgniteCache;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.SqlFieldsQuery;
+import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 import org.slf4j.Logger;
@@ -51,8 +52,13 @@ public abstract class IgniteQuery {
     protected IgniteCache<String, BinaryObject> cache;
     protected String sqlStatement;
 
-    protected ElementType elementType;    
-    
+    protected ElementType elementType;
+
+    /*
+     * Transform the provided properties into fields 字段名
+     */
+    protected HashMap<String, Object> fields = new HashMap<>();
+
 
     public IgniteQuery(String name, IgniteAdmin admin) {
 
@@ -138,8 +144,48 @@ public abstract class IgniteQuery {
         }
 
     }
+
+
+    public IgniteQuery addProperty(String key, Object value, Compare op) {
+        Object k = fields.get(IgniteConstants.PROPERTY_KEY_COL_NAME);
+        if(k==null) {
+            fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
+            fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
+            fields.put("op", op);
+        }
+        else if(!(k instanceof List)){
+            Object v = fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME);
+            Object lastOp = fields.get("op");
+            List klist = new ArrayList();
+            klist.add(k);
+            klist.add(key);
+
+            List vlist = new ArrayList();
+            vlist.add(v);
+            vlist.add(value);
+
+            List oplist = new ArrayList();
+            oplist.add(lastOp);
+            oplist.add(op);
+
+            fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, klist);
+            fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, vlist);
+            fields.put("op", oplist);
+        }
+        else{
+            List klist = (List) k;
+            List vlist = (List)fields.get(IgniteConstants.PROPERTY_VALUE_COL_NAME);
+            List oplist = (List) fields.get("op");
+            klist.add(key);
+            vlist.add(value);
+            oplist.add(op);
+        }
+
+        return this;
+    }
     
     public IgniteQuery withRange(int offset, int limit) {
+        this.createSql();
         if(offset>0) {
         	sqlStatement += " limit " + offset + ',' + limit;
         }
@@ -148,6 +194,17 @@ public abstract class IgniteQuery {
         }
         return this;
     }
+
+    protected IgniteQuery orderById() {
+        if(elementType == ElementType.VERTEX) {
+            orderBy(IgniteConstants.VERTEX_ID_COL_NAME,false);
+        }
+        else if(elementType == ElementType.EDGE){
+            orderBy(IgniteConstants.EDGE_ID_COL_NAME,false);
+        }
+        return this;
+    }
+
     
     public IgniteQuery orderBy(String order, boolean desc) {
         if(desc) {
@@ -167,7 +224,7 @@ public abstract class IgniteQuery {
          * is not defined yet.
          */
         if (sqlStatement == null)
-            return entries.iterator();
+            this.createSql();
 
         if (!elementType.equals(ElementType.EDGE))
             return entries.iterator();
@@ -195,7 +252,7 @@ public abstract class IgniteQuery {
          * is not defined yet.
          */
         if (sqlStatement == null)
-            return entries.iterator();
+            this.createSql();
 
         if (!elementType.equals(ElementType.VERTEX))
             return entries.iterator();
@@ -224,12 +281,13 @@ public abstract class IgniteQuery {
     public Iterator<IgniteResult> getResult() {
 
         List<IgniteResult> result = new ArrayList<>();
+
         /*
          * An empty result is returned, if the SQL statement
          * is not defined yet.
          */
         if (sqlStatement == null)
-            return result.iterator();
+            this.createSql();
 
         try {
             if (cache == null)
@@ -286,20 +344,42 @@ public abstract class IgniteQuery {
         return new VertexEntryIterator(sqlResult);
     }
 
-    protected abstract void createSql(Map<String, Object> fields);
+    protected abstract void createSql();
+
+    protected void createWhereSql(){
+
+    }
 
     protected List<List<?>> getSqlResultList() {
+        /*
+         * An empty result is returned, if the SQL statement
+         * is not defined yet.
+         */
+        if (sqlStatement == null)
+            this.createSql();
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
         return cache.query(sqlQuery).getAll();
     }
     
     protected FieldsQueryCursor<List<?>> getSqlResult() {
+        /*
+         * An empty result is returned, if the SQL statement
+         * is not defined yet.
+         */
+        if (sqlStatement == null)
+            this.createSql();
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
         return cache.query(sqlQuery);
     }
 
     /** query from document */
     public List<IgniteResult> getSqlResultWithMeta(Object[] args) {
+        /*
+         * An empty result is returned, if the SQL statement
+         * is not defined yet.
+         */
+        if (sqlStatement == null)
+            this.createSql();
         SqlFieldsQuery sqlQuery = new SqlFieldsQuery(sqlStatement);
         if(args!=null){
             sqlQuery.setArgs(args);
@@ -313,18 +393,18 @@ public abstract class IgniteQuery {
     			Object value = row.get(i);
     			if(value!=null) {
     				String field = cursor.getFieldName(i);
-    				if(field.equals("_KEY")) {
+    				if(field.equals("_key")) {
     					item.id = value;
                         continue;
     				}
-                    if(field.equalsIgnoreCase("createdAt") || field.equalsIgnoreCase("created")) {
+                    if(field.equalsIgnoreCase("created_at") || field.equalsIgnoreCase("created")) {
                         Long up = ValueUtils.convertToLongValue(value);
                         if(up!=null){
                             item.createdAt = up;
                         }
                         continue;
                     }
-                    if(field.equalsIgnoreCase("updatedAt") || field.equalsIgnoreCase("updated")) {
+                    if(field.equalsIgnoreCase("updated_at") || field.equalsIgnoreCase("updated")) {
                         Long up = ValueUtils.convertToLongValue(value);
                         if(up!=null){
                             item.updatedAt = up;
@@ -361,7 +441,7 @@ public abstract class IgniteQuery {
         /*
          * We want to retrieve the cache key as well
          */
-        columns.add("_KEY");
+        columns.add("_key");
 
         if (cache == null)
             throw new Exception("Cache is not initialized.");

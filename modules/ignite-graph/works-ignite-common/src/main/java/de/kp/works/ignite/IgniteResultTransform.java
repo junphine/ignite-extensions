@@ -14,9 +14,9 @@ public final class IgniteResultTransform {
 	
 	public static class CloseableEdgeIterator implements CloseableIterator<IgniteResult>, AutoCloseable  {
 		private IgniteEdgeEntry last = null;
-		final EdgeEntryIterator entries;
+		final Iterator<IgniteEdgeEntry> entries;
 		
-		public CloseableEdgeIterator(final EdgeEntryIterator entries) {
+		public CloseableEdgeIterator(final Iterator<IgniteEdgeEntry> entries) {
 			this.entries = entries;
 		}
 
@@ -27,7 +27,7 @@ public final class IgniteResultTransform {
 		
 		@Override
 	    public void close() {
-			entries.close();
+			CloseableIterator.closeIterator(entries);
 	    }
 
 		@Override
@@ -76,9 +76,9 @@ public final class IgniteResultTransform {
 	
 	public static class CloseableVertexIterator implements CloseableIterator<IgniteResult>, AutoCloseable  {
 		private IgniteVertexEntry last = null;
-		final VertexEntryIterator entries;
+		final Iterator<IgniteVertexEntry> entries;
 		
-		public CloseableVertexIterator(final VertexEntryIterator entries) {
+		public CloseableVertexIterator(final Iterator<IgniteVertexEntry> entries) {
 			this.entries = entries;
 		}
 		
@@ -89,7 +89,7 @@ public final class IgniteResultTransform {
 		
 		@Override
 	    public void close() {
-			entries.close();
+			CloseableIterator.closeIterator(entries);
 	    }
 		
 		@Override
@@ -126,13 +126,11 @@ public final class IgniteResultTransform {
 		
 	};
 
-	public static Iterator<IgniteResult> transformEdgeEntries(final EdgeEntryIterator entries) {
-		
+	public static Iterator<IgniteResult> transformEdgeEntries(final Iterator<IgniteEdgeEntry> entries) {
 		return new CloseableEdgeIterator(entries);		
 	}
 	
-	public static Iterator<IgniteResult> transformVertexEntries(final VertexEntryIterator entries) {
-		
+	public static Iterator<IgniteResult> transformVertexEntries(final Iterator<IgniteVertexEntry> entries) {
 		return new CloseableVertexIterator(entries);
 	}
 

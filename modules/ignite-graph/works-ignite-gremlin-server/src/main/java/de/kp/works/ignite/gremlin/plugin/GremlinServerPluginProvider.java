@@ -97,6 +97,24 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 	/** {@inheritDoc} */
 	@Override
 	public void initExtensions(PluginContext ctx, ExtensionRegistry registry) {
+	}
+
+	/** {@inheritDoc} */
+	@SuppressWarnings("unchecked")
+	@Override
+	public @Nullable <T> T createComponent(PluginContext ctx, Class<T> cls) {
+		return null;
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public CachePluginProvider createCacheProvider(CachePluginContext ctx) {
+		return null;
+	}
+
+	/** {@inheritDoc} */
+	@Override
+	public void start(PluginContext ctx) {
 		IgniteConfiguration igniteCfg = ctx.igniteConfiguration();
 
 		Ignite ignite = ctx.grid();
@@ -126,11 +144,13 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 			try {
 				databaseName = igniteCfg.getIgniteInstanceName();
 				gremlin.databaseName = databaseName;
-				
+
 				String configBase = U.getIgniteHome() + "/config/gremlin-server/";
-				
+
 				if(settings==null) {
 					settings = Settings.read(configBase + cfg.getGremlinServerCfg());
+					// 设置默认的ignite
+					IgniteConnect.defaultIgnite = ignite;
 				}
 
 				File graphFile = new File(configBase, "ignite-" + databaseName + ".properties");
@@ -142,38 +162,17 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 					log.info(databaseName + "::load default gremlim graph config file " + graphFile.getAbsolutePath());
 					gremlin.graphConfigFile = graphFile.getAbsolutePath();
 				}
-				
-				settings.graphs.put(databaseName, gremlin.graphConfigFile);
 
-				IgniteEx igniteEx = (IgniteEx) ignite;
+				settings.graphs.put(databaseName, gremlin.graphConfigFile);
+				IgniteEx igniteEx = (IgniteEx) IgniteConnect.defaultIgnite;
 				igniteEx.context().ports().registerPort(settings.port, TCP, getClass());
-				// 设置默认的ignite
-				IgniteConnect.defaultIgnite = ignite;
+
 				counter++;
 			} catch (Exception e) {
 				log.error(e.getMessage(), e);
 				throw new RuntimeException(e.getMessage());
 			}
 		}
-
-	}
-
-	/** {@inheritDoc} */
-	@SuppressWarnings("unchecked")
-	@Override
-	public @Nullable <T> T createComponent(PluginContext ctx, Class<T> cls) {
-		return null;
-	}
-
-	/** {@inheritDoc} */
-	@Override
-	public CachePluginProvider createCacheProvider(CachePluginContext ctx) {
-		return null;
-	}
-
-	/** {@inheritDoc} */
-	@Override
-	public void start(PluginContext ctx) {
 	}
 
 	/** {@inheritDoc} */
@@ -258,7 +257,7 @@ public class GremlinServerPluginProvider implements PluginProvider<GremlinPlugin
 			counter--;
 			if (counter<=0 && gremlinServer!= null) {
 				try {
-					log.info("GremlinServer", "shutting down " + gremlinServer.toString());
+					log.info("GremlinServer", "shutting down " + gremlinServer);
 					gremlinServer.stop();					
 					gremlinServer = null;
 				} catch (Exception e) {

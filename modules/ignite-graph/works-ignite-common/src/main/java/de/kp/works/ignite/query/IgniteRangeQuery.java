@@ -45,12 +45,12 @@ public class IgniteRangeQuery extends IgniteQuery {
         fields.put(IgniteConstants.INCLUSIVE_FROM_VALUE, inclusiveFromValue);
         fields.put(IgniteConstants.EXCLUSIVE_TO_VALUE, exclusiveToValue);
 
-        createSql(fields);
+        
 
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();
             /*
@@ -81,7 +81,7 @@ public class IgniteRangeQuery extends IgniteQuery {
                 sqlStatement += " and " + IgniteConstants.PROPERTY_VALUE_COL_NAME;
                 sqlStatement += " < '" + fields.get(IgniteConstants.EXCLUSIVE_TO_VALUE) + "'";
             }
-            sqlStatement += " order by " + IgniteConstants.PROPERTY_VALUE_COL_NAME + " ASC";
+            orderById();
 
         } catch (Exception e) {
             sqlStatement = null;

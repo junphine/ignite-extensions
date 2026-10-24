@@ -19,7 +19,6 @@ package de.kp.works.ignite;
  */
 
 import de.kp.works.ignite.graph.ElementType;
-import de.kp.works.ignite.graph.IgniteVertexEntry;
 import de.kp.works.ignite.mutate.*;
 import de.kp.works.ignite.query.*;
 import org.apache.tinkerpop.gremlin.structure.Direction;
@@ -224,8 +223,11 @@ public class IgniteTable extends IgniteBaseTable {
      * Returns an [IgniteQuery] to retrieve all elements
      * that are referenced by a certain label
      */
-    public IgniteQuery getLabelQuery(String label) {
-        return new IgniteLabelQuery(name, admin, label);
+    public IgniteVertexQuery getVertexQuery(String label) {
+        if (elementType.equals(ElementType.DOCUMENT)) {
+            return new IgniteDocumentQuery(name, admin, label);
+        }
+        return new IgniteVertexQuery(name, admin, label);
     }   
 
     public IgniteQuery getLimitQuery(Object fromId, int limit) {
@@ -258,9 +260,14 @@ public class IgniteTable extends IgniteBaseTable {
      * Method to find all edges that refer to the provided
      * vertex that match direction and the provided labels
      */
-    public IgniteQuery getEdgesQuery(Object vertexId, Direction direction, String... labels) {
-        return new IgniteEdgesQuery(name, admin, vertexId, direction, labels);
+    public IgniteEdgesQuery getEdgesQuery(List<String> labels) {
+        return new IgniteEdgesQuery(name, admin, labels);
     }
+
+    public IgniteEdgesQuery getEdgesQuery(String... labels) {
+        return new IgniteEdgesQuery(name, admin, List.of(labels));
+    }
+
     /**
      * Method to retrieve all edges that refer to the provided
      * vertex and match direction, label, and a property with
@@ -268,7 +275,7 @@ public class IgniteTable extends IgniteBaseTable {
      */
     public IgniteQuery getEdgesQuery(Object vertexId, Direction direction, String label,
                                      String key, Object value) {
-        return new IgniteEdgesQuery(name, admin, vertexId, direction, label, key, value);
+        return new IgniteEdgesQuery(name, admin, List.of(label)).addProperty(vertexId, direction, key, value);
     }
     /**
      * Method to retrieve all edges that refer to the provided
@@ -288,7 +295,7 @@ public class IgniteTable extends IgniteBaseTable {
 
     }
     
-    public IgniteSqlQuery getIgniteSqlQuery(String sql) {
-    	return new IgniteSqlQuery(name,admin,sql);
+    public IgniteDocumentQuery getIgniteSqlQuery(String sql) {
+    	return new IgniteDocumentQuery(name,admin,sql);
     }
 }

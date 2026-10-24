@@ -20,6 +20,7 @@ package de.kp.works.ignite.query;
 
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
+import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 
 import java.util.HashMap;
@@ -32,41 +33,33 @@ public class IgniteEdgesQuery extends IgniteQuery {
 	
 	Direction direction;
 
-    public IgniteEdgesQuery(String cacheName, IgniteAdmin admin,
-                            Object vertex, Direction direction, String... labels) {
+
+    public IgniteEdgesQuery(String cacheName, IgniteAdmin admin, List<String> labels) {
         super(cacheName, admin);
-        /*
-         * Transform the provided properties into fields
-         */
+
+        fields.put(IgniteConstants.LABEL_COL_NAME, labels);
+    }
+
+    public IgniteEdgesQuery addVertex(Object vertex,Direction direction){
         this.direction = direction;
-        HashMap<String, Object> fields = new HashMap<>();
         vertexToFields(vertex, direction, fields);
-        if(labels.length>0)
-        	fields.put(IgniteConstants.LABEL_COL_NAME, String.join(",", labels));
-        createSql(fields);
-
+        return this;
     }
 
-    public IgniteEdgesQuery(String cacheName, IgniteAdmin admin,
-                            Object vertex, Direction direction, String label, String key, Object value) {
-        super(cacheName, admin);
-        /*
-         * Transform the provided properties into fields
-         */
-        HashMap<String, Object> fields = new HashMap<>();
+    public IgniteEdgesQuery addProperty(
+                            Object vertex, Direction direction, String key, Object value) {
+
+        this.direction = direction;
         vertexToFields(vertex, direction, fields);
-
-        fields.put(IgniteConstants.LABEL_COL_NAME, label);
-
         fields.put(IgniteConstants.PROPERTY_KEY_COL_NAME, key);
-        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, value.toString());
+        fields.put(IgniteConstants.PROPERTY_VALUE_COL_NAME, value);
 
-        createSql(fields);
-
+        return this;
     }
+
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();            
             
@@ -125,19 +118,16 @@ public class IgniteEdgesQuery extends IgniteQuery {
             }
             if(fields.containsKey(IgniteConstants.LABEL_COL_NAME)){
                 sqlStatement += " and " + IgniteConstants.LABEL_COL_NAME;
-                String labels = fields.get(IgniteConstants.LABEL_COL_NAME).toString();
+                List<String> labels = (List)fields.get(IgniteConstants.LABEL_COL_NAME);
 
-                String[] tokens = labels.split(",");
-                if (tokens.length == 1) {
-                    sqlStatement += " = '" + tokens[0] + "'";
+
+                if (labels.size() == 1) {
+                    sqlStatement += " = '" + labels.get(0) + "'";
                 } else {
-                    List<String> inPart = Stream.of(tokens)
-                            .map(token -> "'" + token + "'").collect(Collectors.toList());
-
-                    sqlStatement += " IN (" + String.join(",", inPart) + ")";
+                    sqlStatement += " IN (" + String.join("','", labels) + ")";
                 }
-            }            
-
+            }
+            orderById();
 
         } catch (Exception e) {
             sqlStatement = null;

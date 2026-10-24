@@ -20,17 +20,14 @@ package de.kp.works.ignite.gremlin.readers;
 
 import de.kp.works.ignite.IgniteColumn;
 import de.kp.works.ignite.IgniteConstants;
+import de.kp.works.ignite.ValueType;
 import de.kp.works.ignite.gremlin.IgniteGraph;
 import de.kp.works.ignite.gremlin.IgniteVertex;
 import de.kp.works.ignite.gremlin.exception.IgniteGraphNotFoundException;
 import de.kp.works.ignite.query.IgniteResult;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class VertexReader extends LoadingElementReader<Vertex> {
 
@@ -58,36 +55,33 @@ public class VertexReader extends LoadingElementReader<Vertex> {
         Map<String, Object> props = new HashMap<>();
         for (IgniteColumn column : result.getColumns()) {
             String colName = column.getColName();
-            switch (colName) {
-                case IgniteConstants.VERTEX_ID_COL_NAME:
-            		break;
-                case IgniteConstants.LABEL_COL_NAME:
-                    label = column.getColValue().toString();
-                    break;
-                case IgniteConstants.CREATED_AT_COL_NAME:
-                    createdAt = (Long)column.getColValue();
-                    break;
-                case IgniteConstants.UPDATED_AT_COL_NAME:
-                    updatedAt = (Long)column.getColValue();
-                    break;
-                default:
-                	Object oriV = props.get(colName);
-                	if(oriV!=null) {
-                		if(oriV instanceof Collection) {
-                			Collection<Object> list = (Collection)oriV;
-                			list.add(column.getColValue());
-                		}
-                		else {
-                			List<Object> list = new ArrayList<>(4);
-                			list.add(oriV);
-                			list.add(column.getColValue());
-                			props.put(colName, list);
-                		}
-                	}
-                	else {
-                		props.put(colName, column.getColValue());
-                	}
-                    break;
+            Object oriV = props.get(colName);
+            if(oriV!=null) {
+                if(oriV instanceof Collection) {
+                    Collection<Object> list = (Collection)oriV;
+                    list.add(column.getColValue());
+                }
+                else {
+                    ValueType type = column.getColType();
+                    if(type==ValueType.ARRAY || type==ValueType.LIST) {
+                        List<Object> list = new ArrayList<>(4);
+                        list.add(oriV);
+                        list.add(column.getColValue());
+                        props.put(colName, list);
+                    }
+                    else if(type==ValueType.SET) {
+                        Set<Object> list = new HashSet<>(4);
+                        list.add(oriV);
+                        list.add(column.getColValue());
+                        props.put(colName, list);
+                    }
+                    else{
+                        // ignore dup column name
+                    }
+                }
+            }
+            else {
+                props.put(colName, column.getColValue());
             }
 
         }

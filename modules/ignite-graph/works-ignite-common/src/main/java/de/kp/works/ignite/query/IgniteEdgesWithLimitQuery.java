@@ -45,12 +45,12 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
         fields.put(IgniteConstants.LIMIT_VALUE, String.valueOf(limit));
 
         fields.put(IgniteConstants.REVERSED_VALUE, String.valueOf(reversed));
-        createSql(fields);
+        
 
     }
 
     @Override
-    protected void createSql(Map<String, Object> fields) {
+    protected void createSql() {
         try {
             buildSelectPart();
 
@@ -60,8 +60,8 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.TO_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.TO_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
+                    Object to_type = fields.get(IgniteConstants.TO_TYPE_COL_NAME);
+                    sqlStatement += " = '" + to_type + "'";
                 }
             }
             else {
@@ -70,8 +70,8 @@ public class IgniteEdgesWithLimitQuery extends IgniteQuery {
                 
                 if(fields.containsKey(IgniteConstants.FROM_TYPE_COL_NAME)){
                     sqlStatement += " and " + IgniteConstants.FROM_TYPE_COL_NAME;
-                    Object id_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
-                    sqlStatement += " = '" + id_type + "'";
+                    Object from_type = fields.get(IgniteConstants.FROM_TYPE_COL_NAME);
+                    sqlStatement += " = '" + from_type + "'";
                 }
             }
 

@@ -31,6 +31,7 @@ import de.kp.works.ignite.gremlin.exception.IgniteGraphNotFoundException;
 import de.kp.works.ignite.gremlin.mutators.*;
 import de.kp.works.ignite.gremlin.readers.VertexReader;
 
+import de.kp.works.ignite.query.IgniteVertexQuery;
 import org.apache.tinkerpop.gremlin.structure.Element;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
@@ -147,6 +148,20 @@ public class VertexModel extends ElementModel {
                 .map(igniteQuery.getResult(),parser::parse);
     }
 
+    public Iterator<Vertex> verticesQuery(IgniteVertexQuery igniteQuery) {
+        /*
+         * The parser converts results from Ignite
+         * queries to vertices.
+         */
+        final VertexReader parser = getReader();
+        /*
+         * The query is responsible for retrieving the
+         * requested vertices from the Ignite cache.
+         */
+        return IgniteResultTransform
+                .map(igniteQuery.getResult(),parser::parse);
+    }
+
     /**
      * This method retrieves all vertices that refer to
      * the same label.
@@ -161,7 +176,7 @@ public class VertexModel extends ElementModel {
          * The query is responsible for retrieving the
          * requested vertices from the Ignite cache.
          */
-        IgniteQuery igniteQuery = table.getLabelQuery(label);
+        IgniteQuery igniteQuery = table.getVertexQuery(label);
         if(limit>0) {
         	igniteQuery.withRange(offset,limit);
         }

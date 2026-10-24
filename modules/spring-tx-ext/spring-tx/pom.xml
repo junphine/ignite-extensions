@@ -107,6 +107,12 @@
             <version>${ignite-spring-data-commons.release.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.ignite</groupId>
+            <artifactId>ignite-spring-data-commons</artifactId>
+            <version>3.2.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <!--

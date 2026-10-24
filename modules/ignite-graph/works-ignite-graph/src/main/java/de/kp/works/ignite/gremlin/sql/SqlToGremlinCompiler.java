@@ -34,7 +34,7 @@ public class SqlToGremlinCompiler {
 	public Traversal<Vertex, ?> select(GraphTraversalSource g, String table, String sql, Object[] args){
 			
 		DocumentModel model = this.graph.getDocumentModel(table);
-		Iterator<Vertex> vs = model.vertices(sql,args);
+		Iterator<Vertex> vs = model.verticesQuery(sql,args);
 		ArrayList<Object> list = new ArrayList<>();
 		while(vs.hasNext()) {
 			list.add(vs.next().id());

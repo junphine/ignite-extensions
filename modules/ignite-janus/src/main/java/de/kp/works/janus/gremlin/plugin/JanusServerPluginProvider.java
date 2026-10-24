@@ -93,50 +93,6 @@ public class JanusServerPluginProvider implements PluginProvider<JanusPluginConf
 	/** {@inheritDoc} */
 	@Override
 	public void initExtensions(PluginContext ctx, ExtensionRegistry registry) {
-		IgniteConfiguration igniteCfg = ctx.igniteConfiguration();
-
-		Ignite ignite = ctx.grid();
-		this.log = ctx.log(this.getClass());
-		this.cfg = null;
-
-		if (igniteCfg.getPluginConfigurations() != null) {
-			for (PluginConfiguration pluginCfg : igniteCfg.getPluginConfigurations()) {
-				if (pluginCfg instanceof JanusPluginConfiguration) {
-					cfg = (JanusPluginConfiguration) pluginCfg;
-					break;
-				}
-			}
-		}
-		
-		if (cfg == null && "janus_backend".equals(ctx.grid().name()) && !ignite.configuration().isClientMode()) {
-			// if node name == 'janus-backend' auto enable create gremlin server
-			cfg = new JanusPluginConfiguration();
-		}
-
-		boolean per = igniteCfg.getDataStorageConfiguration().getDefaultDataRegionConfiguration().isPersistenceEnabled();
-		if (cfg != null && per) {
-			cfg.setPersistenceEnabled(true);
-		}
-
-		if (cfg != null && settings==null) {
-			databaseName = igniteCfg.getIgniteInstanceName();
-			gremlin.databaseName = databaseName;				
-			counter++;
-			String configBase = U.getIgniteHome() + "/config/gremlin-server/";
-
-			try {
-				settings = JanusGraphSettings.read(configBase + cfg.getGremlinServerCfg());
-				janusGraphServer = new JanusGraphServer(configBase + cfg.getGremlinServerCfg());
-
-				IgniteEx igniteEx = (IgniteEx) ignite;
-				igniteEx.context().ports().registerPort(settings.port, TCP, getClass());
-
-			} catch (Exception e) {
-				log.error(e.getMessage(), e);
-				throw new RuntimeException(e.getMessage());
-			}
-		}
-
 	}
 
 	/** {@inheritDoc} */
@@ -155,7 +111,48 @@ public class JanusServerPluginProvider implements PluginProvider<JanusPluginConf
 	/** {@inheritDoc} */
 	@Override
 	public void start(PluginContext ctx) {
+		IgniteConfiguration igniteCfg = ctx.igniteConfiguration();
 
+		Ignite ignite = ctx.grid();
+		this.log = ctx.log(this.getClass());
+		this.cfg = null;
+
+		if (igniteCfg.getPluginConfigurations() != null) {
+			for (PluginConfiguration pluginCfg : igniteCfg.getPluginConfigurations()) {
+				if (pluginCfg instanceof JanusPluginConfiguration) {
+					cfg = (JanusPluginConfiguration) pluginCfg;
+					break;
+				}
+			}
+		}
+
+		if (cfg == null && "janus_backend".equals(ignite.name()) && !ignite.configuration().isClientMode()) {
+			// if node name == 'janus-backend' auto enable create gremlin server
+			cfg = new JanusPluginConfiguration();
+		}
+
+		boolean per = igniteCfg.getDataStorageConfiguration().getDefaultDataRegionConfiguration().isPersistenceEnabled();
+		if (cfg != null && per) {
+			cfg.setPersistenceEnabled(true);
+		}
+
+		if (cfg != null && settings==null) {
+			databaseName = igniteCfg.getIgniteInstanceName();
+			gremlin.databaseName = databaseName;
+			counter++;
+			String configBase = U.getIgniteHome() + "/config/gremlin-server/";
+
+			try {
+				settings = JanusGraphSettings.read(configBase + cfg.getGremlinServerCfg());
+				janusGraphServer = new JanusGraphServer(configBase + cfg.getGremlinServerCfg());
+				IgniteEx igniteEx = (IgniteEx) ctx.grid();;
+				igniteEx.context().ports().registerPort(settings.port, TCP, getClass());
+
+			} catch (Exception e) {
+				log.error(e.getMessage(), e);
+				throw new RuntimeException(e.getMessage());
+			}
+		}
 	}
 
 	/** {@inheritDoc} */

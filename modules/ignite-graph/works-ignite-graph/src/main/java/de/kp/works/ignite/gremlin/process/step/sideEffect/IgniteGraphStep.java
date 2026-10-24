@@ -20,13 +20,18 @@ package de.kp.works.ignite.gremlin.process.step.sideEffect;
 
 import de.kp.works.ignite.gremlin.CloseableIteratorUtils;
 import de.kp.works.ignite.gremlin.IgniteGraph;
+import de.kp.works.ignite.query.IgniteDocumentQuery;
+import de.kp.works.ignite.query.IgniteEdgesQuery;
+import de.kp.works.ignite.query.IgniteVertexQuery;
 import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
+import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.step.HasContainerHolder;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.HasStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.RangeGlobalStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.EdgeVertexStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.HasContainer;
 import org.apache.tinkerpop.gremlin.process.traversal.util.AndP;
 import org.apache.tinkerpop.gremlin.structure.Direction;
@@ -47,21 +52,21 @@ public final class IgniteGraphStep<S, E extends Element> extends GraphStep<S, E>
     public IgniteGraphStep(final GraphStep<S, E> originalGraphStep) {
         super(originalGraphStep.getTraversal(), originalGraphStep.getReturnClass(), originalGraphStep.isStartStep(), originalGraphStep.getIds());
         originalGraphStep.getLabels().forEach(this::addLabel);
-        this.setIteratorSupplier(() -> (Iterator<E>) (Vertex.class.isAssignableFrom(this.returnClass) ? this.vertices() : this.edges()));
+        this.setIteratorSupplier(() -> Vertex.class.isAssignableFrom(this.returnClass) ? this.vertices() : this.edges());
     }
 
-    private Iterator<? extends Edge> edges() {
+    private Iterator<E> edges() {
         if (null == this.ids)
             return Collections.emptyIterator();
         final IgniteGraph graph = (IgniteGraph) this.getTraversal().getGraph().get();
-        return lookupEdges(graph, this.hasContainers, this.ids);        
+        return (Iterator)lookupEdges(graph, this.hasContainers, this.ids);
     }
 
-    private Iterator<? extends Vertex> vertices() {
+    private Iterator<E> vertices() {
         if (null == this.ids)
             return Collections.emptyIterator();
         final IgniteGraph graph = (IgniteGraph) this.getTraversal().getGraph().get();
-        return lookupVertices(graph, this.hasContainers, this.ids);
+        return (Iterator)lookupVertices(graph, this.hasContainers, this.ids);
     }
 
     private Iterator<Vertex> lookupVertices(final IgniteGraph graph, final List<HasContainer> hasContainers, final Object... ids) {
@@ -75,40 +80,46 @@ public final class IgniteGraphStep<S, E extends Element> extends GraphStep<S, E>
                 .filter(hasContainer -> Compare.eq == hasContainer.getBiPredicate())
                 .map(hasContainer -> (String) hasContainer.getValue())
                 .findAny();
+
+        int limit = 0;
+        int offset = 0;
         if (label.isPresent()) {
-        	Optional<RangeGlobalStep<Vertex>> range = this.traversal.getSteps().stream().filter(step -> step instanceof RangeGlobalStep).findAny();
-        	int limit = 0;
-        	if(range.isPresent()) {
-        		limit = (int)range.get().getHighRange();
-        	}
-        	Optional<HasStep<Element>> kv = this.traversal.getSteps().stream().filter(step -> step instanceof HasStep).findAny();
-        	if(kv.isPresent()) {
-        		List<HasContainer> hasValue = kv.get().getHasContainers();
-        		for(HasContainer hasC: hasValue) {
-        			if(hasC.getBiPredicate() == Compare.eq) {
-        				return IteratorUtils.stream(graph.verticesByLabel(label.get(),hasC.getKey(),hasC.getValue()))
-                                .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
-        			}
-        			else if(hasC.getBiPredicate() == Compare.gt || hasC.getBiPredicate() == Compare.gte) {
-        				return IteratorUtils.stream(graph.verticesWithLimit(label.get(),hasC.getKey(),hasC.getValue(),limit))
-                                .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
-        			}
-        			else if(hasC.getBiPredicate() == Compare.lt || hasC.getBiPredicate() == Compare.lte) {
-        				return IteratorUtils.stream(graph.verticesInRange(label.get(),hasC.getKey(),null, hasC.getValue()))
-                                .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
-        			}
-        		}
-        		
-        	}
+            this.addLabel(label.get());
+            IgniteVertexQuery igniteQuery = graph.getVertexModel().getTable().getVertexQuery(label.get());
+            for(Object step: this.traversal.getSteps()){
+                if(step instanceof RangeGlobalStep range){
+                    offset = (int) range.getLowRange();
+                    limit = (int)range.getHighRange();
+                }
+                else if (step instanceof PropertiesStep props){
+                    props.getPropertyKeys();
+                }
+                else if (step instanceof HasStep kv){
+                    List<HasContainer> hasValue = kv.getHasContainers();
+                    for (HasContainer hasC : hasValue) {
+                        if (hasC.getBiPredicate() instanceof Compare op) {
+                            igniteQuery.addProperty(hasC.getKey(), hasC.getValue(),op);
+                        }
+                    }
+                }
+            }
+
+            for (HasContainer hasC : hasContainers) {
+                if (hasC.getBiPredicate() instanceof Compare op) {
+                    igniteQuery.addProperty(hasC.getKey(), hasC.getValue(),op);
+                }
+            }
         	
-        	if(range.isPresent()) {
+        	if(limit>0) {
         		// find a vertex by label with limit
-        		RangeGlobalStep<Vertex> rangeValue = range.get();
-                return IteratorUtils.stream(graph.verticesByLabel(label.get(),(int)rangeValue.getLowRange(),(int)rangeValue.getHighRange()))
-                        .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
+                igniteQuery.withRange(offset,limit);
         	}
             // find a vertex by label
-            return IteratorUtils.stream(graph.verticesByLabel(label.get(),0,-1))
+            if(igniteQuery instanceof IgniteDocumentQuery documentQuery){
+                return IteratorUtils.stream(graph.getDocumentModel(label.get()).verticesQuery(documentQuery))
+                        .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
+            }
+            return IteratorUtils.stream(graph.getVertexModel().verticesQuery(igniteQuery))
                     .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
         } else {
             // linear scan
@@ -120,39 +131,48 @@ public final class IgniteGraphStep<S, E extends Element> extends GraphStep<S, E>
         // ids are present, filter on them first
         if (ids.length > 0)
             return CloseableIteratorUtils.filter(graph.edges(this.ids), edge -> HasContainer.testAll(edge, this.hasContainers));
-        ////// do index lookups //////
+        ////// do index lookups
+
         // get a label being search on
-        Optional<String> label = hasContainers.stream()
+        List<String> labels = hasContainers.stream()
                 .filter(hasContainer -> hasContainer.getKey().equals(T.label.getAccessor()))
                 .filter(hasContainer -> Compare.eq == hasContainer.getBiPredicate())
                 .map(hasContainer -> (String) hasContainer.getValue())
-                .findAny();
-        if (label.isPresent()) {
-        	Optional<RangeGlobalStep<Edge>> range = this.traversal.getSteps().stream().filter(step -> step instanceof RangeGlobalStep).findAny();
-        	int limit = 0;
-        	if(range.isPresent()) {
-        		limit = (int)range.get().getHighRange();
-        	}
-        	Optional<HasStep<Element>> kv = this.traversal.getSteps().stream().filter(step -> step instanceof HasStep).findAny();
-        	if(kv.isPresent()) {
-        		List<HasContainer> hasValue = kv.get().getHasContainers();
-        		for(HasContainer hasC: hasValue) {
-        			if(hasC.getBiPredicate() == Compare.eq) {
-        				return IteratorUtils.stream(graph.getEdgeModel().edgesByLabel(label.get(),hasC.getKey(),hasC.getValue()))
-                                .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
-        			}
-        		}
-        		
-        	}
+                .toList();
+
+        int limit = 0;
+        int offset = 0;
+        if (!labels.isEmpty()) {
+            labels.forEach(this::addLabel);
+            IgniteEdgesQuery igniteQuery = graph.getEdgeModel().getTable().getEdgesQuery(labels);
+            for(Object step: this.traversal.getSteps()) {
+                if (step instanceof RangeGlobalStep range) {
+                    offset = (int) range.getLowRange();
+                    limit = (int) range.getHighRange();
+                } else if (step instanceof PropertiesStep props) {
+                    props.getPropertyKeys();
+                } else if (step instanceof HasStep kv) {
+                    List<HasContainer> hasValue = kv.getHasContainers();
+                    for (HasContainer hasC : hasValue) {
+                        if (hasC.getBiPredicate() instanceof Compare op) {
+                            igniteQuery.addProperty(hasC.getKey(), hasC.getValue(),op);
+                        }
+                    }
+                }
+            }
+
+            for (HasContainer hasC : hasContainers) {
+                if (hasC.getBiPredicate() instanceof Compare op) {
+                    igniteQuery.addProperty(hasC.getKey(), hasC.getValue(),op);
+                }
+            }
         	
-        	if(range.isPresent()) {
+        	if(limit>0) {
         		// find a vertex by label with limit
-        		RangeGlobalStep<Edge> rangeValue = range.get();
-                return IteratorUtils.stream(graph.getEdgeModel().edgesByLabel(label.get(),(int)rangeValue.getLowRange(),(int)rangeValue.getHighRange()))
-                        .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
+                igniteQuery.withRange(offset,limit);
         	}
-            // find a vertex by label
-            return IteratorUtils.stream(graph.getEdgeModel().edgesByLabel(label.get(),0,-1))
+            // find a edge by label
+            return IteratorUtils.stream(graph.getEdgeModel().edgesQuery(igniteQuery))
                     .filter(vertex -> HasContainer.testAll(vertex, hasContainers)).iterator();
         } else {
             // linear scan           

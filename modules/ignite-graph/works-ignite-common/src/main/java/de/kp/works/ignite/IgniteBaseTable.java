@@ -213,7 +213,7 @@ public class IgniteBaseTable {
     protected void createEdge(IgnitePut ignitePut) throws Exception {
 
         String id         = ignitePut.getId().toString();
-        String label      = null;
+        String label      = ignitePut.getLabel();
         String toId       = null;
         String toIdType   = null;
         String fromId     = null;
@@ -221,7 +221,7 @@ public class IgniteBaseTable {
         float weight = 1.0f;
 
         long createdAt = System.currentTimeMillis();
-        long updatedAt = System.currentTimeMillis();
+        long updatedAt = createdAt;
 
         List<IgniteEdgeEntry> entries = new ArrayList<>();
         /*
@@ -230,14 +230,6 @@ public class IgniteBaseTable {
          */
         for (IgniteColumn column : ignitePut.getColumns()) {
             switch (column.getColName()) {
-                case IgniteConstants.EDGE_ID_COL_NAME: {
-                    id = column.getColValue().toString();
-                    break;
-                }
-                case IgniteConstants.LABEL_COL_NAME: {
-                    label = column.getColValue().toString();
-                    break;
-                }
                 case IgniteConstants.TO_COL_NAME: {
                     toId = column.getColValue().toString();
                     toIdType = column.getColTypeName();
@@ -249,17 +241,11 @@ public class IgniteBaseTable {
                     break;
                 }
                 case IgniteConstants.CREATED_AT_COL_NAME: {
-                	if(column.getColValue() instanceof Long)
-                		createdAt = (Long) column.getColValue();
-                	else
-                		createdAt = Long.parseLong((String) column.getColValue());
+                    createdAt = ValueUtils.convertToLongValue(column.getColValue());
                     break;
                 }
                 case IgniteConstants.UPDATED_AT_COL_NAME: {
-                	if(column.getColValue() instanceof Long)
-                		updatedAt = (Long) column.getColValue();
-                	else
-                		updatedAt = Long.parseLong((String) column.getColValue());
+                    updatedAt = ValueUtils.convertToLongValue(column.getColValue());
                     break;
                 }
                 default:
@@ -422,24 +408,23 @@ public class IgniteBaseTable {
          * Check whether the column value is a [Long]
          */
         ValueType colType = column.getColType();
-        if (!colType.equals(ValueType.LONG) && !colType.equals(ValueType.INT) && !colType.equals(ValueType.SHORT))
-            return null;
+
         /*
          * Restrict to that edge entry that refer to the
          * provided column
          */
         String colName = column.getColName();
-        Object colValue = column.getColValue();
+        Number colValue = (Number)column.getColValue();
 
         List<IgniteEdgeEntry> entries = edge.stream()
-                .filter(entry -> entry.propKey.equals(colName) && entry.propType==colType.code() && entry.propValue.equals(colValue))
+                .filter(entry -> entry.propKey.equals(colName))
                 .toList();
 
         if (entries.isEmpty()) return null;
         IgniteEdgeEntry entry = entries.get(0);
 
-        long oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).longValue(): Long.parseLong(entry.propValue.toString());
-        Long newValue = oldValue + 1;
+        double oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).doubleValue(): Double.parseDouble(entry.propValue.toString());
+        double newValue = oldValue + colValue.doubleValue();
 
         IgniteEdgeEntry newEntry = new IgniteEdgeEntry(                
                 entry.id,
@@ -463,9 +448,9 @@ public class IgniteBaseTable {
 
         String id = ignitePut.getId().toString();
         short idType = ValueUtils.getValueType(ignitePut.getId()).code();
-        String label = null;
+        String label = ignitePut.getLabel();
         long createdAt = System.currentTimeMillis();
-        long updatedAt = System.currentTimeMillis();
+        long updatedAt = createdAt;
 
         List<IgniteVertexEntry> entries = new ArrayList<>();
         /*
@@ -474,27 +459,12 @@ public class IgniteBaseTable {
          */
         for (IgniteColumn column : ignitePut.getColumns()) {
             switch (column.getColName()) {
-                case IgniteConstants.VERTEX_ID_COL_NAME: {
-                    id = column.getColValue().toString();
-                    idType = column.getColType().code();
-                    break;
-                }
-                case IgniteConstants.LABEL_COL_NAME: {
-                    label = column.getColValue().toString();
-                    break;
-                }
                 case IgniteConstants.CREATED_AT_COL_NAME: {
-                	if(column.getColValue() instanceof Long)
-                		createdAt = (Long) column.getColValue();
-                	else
-                		createdAt = Long.parseLong((String) column.getColValue());
+                    createdAt = ValueUtils.convertToLongValue(column.getColValue());
                     break;
                 }
                 case IgniteConstants.UPDATED_AT_COL_NAME: {
-                	if(column.getColValue() instanceof Long)
-                		updatedAt = (Long) column.getColValue();
-                	else
-                		updatedAt = Long.parseLong((String) column.getColValue());
+                    updatedAt = ValueUtils.convertToLongValue(column.getColValue());
                     break;
                 }
                 default: {
@@ -660,8 +630,8 @@ public class IgniteBaseTable {
         if (entries.isEmpty()) return null;
         IgniteVertexEntry entry = entries.get(0);
 
-        long oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).longValue() : Long.parseLong(entry.propValue.toString());
-        Long newValue = oldValue + colValue.longValue();
+        double oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).doubleValue(): Double.parseDouble(entry.propValue.toString());
+        double newValue = oldValue + colValue.doubleValue();
 
         IgniteVertexEntry newEntry = new IgniteVertexEntry(               
                 entry.id,

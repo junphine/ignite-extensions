@@ -60,8 +60,8 @@ public class DocumentReader extends VertexReader {
         if (result==null || result.isEmpty()) {
             throw new IgniteGraphNotFoundException(vertex, "Vertex does not exist: " + vertex.id());
         }       
-        Long createdAt = null;
-        Long updatedAt = null;
+        Long createdAt = result.getCreatedAt();
+        Long updatedAt = result.getUpdatedAt();
 
         Map<String, Object> props = new HashMap<>();
         for (IgniteColumn column : result.getColumns()) {

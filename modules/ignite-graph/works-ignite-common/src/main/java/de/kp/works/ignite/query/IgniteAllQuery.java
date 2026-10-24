@@ -34,17 +34,19 @@ public class IgniteAllQuery extends IgniteQuery {
          * This query does not take fields
          */
         Map<String, Object> fields = new HashMap<>();
-        createSql(fields);
+        
     }
 
     @Override
-    protected void createSql(Map<String,Object> fields) {
+    protected void createSql() {
         try {
             /*
              * This query does not have a `where` clause
              * and just contains the `select` part
              */
             buildSelectPart();
+
+            orderById();
 
         } catch (Exception e) {
             sqlStatement = null;

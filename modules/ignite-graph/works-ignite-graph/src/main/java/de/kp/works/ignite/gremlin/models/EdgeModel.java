@@ -19,6 +19,7 @@ package de.kp.works.ignite.gremlin.models;
  */
 
 
+import de.kp.works.ignite.query.IgniteEdgesQuery;
 import de.kp.works.ignite.query.IgniteQuery;
 import de.kp.works.ignite.IgniteResultTransform;
 import de.kp.works.ignite.IgniteTable;
@@ -72,7 +73,7 @@ public class EdgeModel extends ElementModel {
          * The query is responsible for retrieving the
          * requested vertices from the Ignite cache.
          */
-        IgniteQuery igniteQuery = table.getLabelQuery(label);
+        IgniteQuery igniteQuery = table.getEdgesQuery(label);
         
         if(limit>0) {
         	igniteQuery.withRange(offset,limit);
@@ -83,20 +84,15 @@ public class EdgeModel extends ElementModel {
     }
     
     /** READ **/
-    public Iterator<Edge> edgesByLabel(String label, String key, Object value) {
+    public Iterator<Edge> edgesQuery(IgniteEdgesQuery igniteEdgesQuery) {
         /*
          * The parser converts results from Ignite
          * queries to vertices.
          */
         final EdgeReader parser = new EdgeReader(graph);
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getPropertyQuery(label, key, value);       
 
         return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
+                .map(igniteEdgesQuery.getResult(),parser::parse);
     }
 
     public Iterator<Edge> edges(int offset,int limit) {
@@ -150,7 +146,7 @@ public class EdgeModel extends ElementModel {
          * The query is responsible for retrieving the
          * requested vertices from the Ignite cache.
          */
-        IgniteQuery igniteQuery = table.getEdgesQuery(vertex.id(), direction, labels);
+        IgniteQuery igniteQuery = table.getEdgesQuery(List.of(labels)).addVertex(vertex.id(), direction);
 
         return IgniteResultTransform
                 .map(igniteQuery.getResult(),parser::parse);
