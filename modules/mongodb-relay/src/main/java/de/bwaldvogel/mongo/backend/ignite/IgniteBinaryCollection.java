@@ -66,6 +66,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 	private String tableName;
 	private String typeName;
 	private boolean readOnly = false;
+	IgniteTextIndex textIndex; // 一个collection只有一个textIndex
     
     public IgniteBinaryCollection(IgniteDatabase database, String collectionName, CollectionOptions options,
             CursorRegistry cursorRegistry, IgniteCache<Object, BinaryObject> dataMap) {
@@ -245,37 +246,38 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 		// 索引按序返回主键后，置空 orderBy 让 matchDocumentsFromStream 跳过内存全量排序，
 		// filter→skip→limit→project 变为惰性流水线，内存占用从 O(命中文档) 降为 O(skip+limit)。
 		IgniteSortedIndex sortIndex = null;
-		if (orderBy != null && enabledIndexes.size() == 1) {
-			Index<Object> candidate = enabledIndexes.get(0);
-			if (candidate instanceof IgniteSortedIndex
-					&& ((IgniteSortedIndex) candidate).canProvideSortOrder(orderBy)) {
-				sortIndex = (IgniteSortedIndex) candidate;
-			}
-		}
-
+		int c = 0;
 		for (Index<Object> index : enabledIndexes) {
-			if (!index.canHandle(query)) {
+			if (c>0 && !index.canHandle(query)) {
 				continue;
 			}
 			Iterable<Object> positions;
-			if (index == sortIndex) {
-				T2<List<Object>, Boolean> sortedPositions =
-						((IgniteSortedIndex) index).getPositions(query, orderBy);
+			if (orderBy!=null && index instanceof IgniteSortedIndex	&& ((IgniteSortedIndex) index).canProvideSortOrder(orderBy)) {
+				sortIndex = (IgniteSortedIndex) index;
+				// 有序化失败（SQL兜底全量扫描）时保留 orderBy，退回内存排序，结果仍正确
+				T2<List<Object>, Boolean> sortedPositions = sortIndex.getPositions(query, orderBy);
 				positions = sortedPositions.get1();
 				if (sortedPositions.get2()) {
 					// 索引已按 orderBy 有序，跳过内存排序
 					orderBy = null;
+					indexResult.add(0,positions);
 				}
-				// 有序化失败（SQL兜底全量扫描）时保留 orderBy，退回内存排序，结果仍正确
-			} else {
-				positions = index.getPositions(query);
+				else{
+					indexResult.add(positions);
+				}
 			}
-			indexResult.add(positions);
+			else {
+				positions = index.getPositions(query);
+				indexResult.add(positions);
+			}
+
 			// empty results
 			if((positions instanceof List && ((List)positions).isEmpty())) {
 				return matchDocuments(query, positions, orderBy, numberToSkip, limit, batchSize, fieldSelector);
 			}
+			c++;
 		}
+
 		if(indexResult.size()==1) {
 			return matchDocuments(query, indexResult.get(0), orderBy, numberToSkip, limit, batchSize, fieldSelector);
 		}

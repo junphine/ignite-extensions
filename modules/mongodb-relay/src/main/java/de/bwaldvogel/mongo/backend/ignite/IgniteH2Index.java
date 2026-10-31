@@ -203,11 +203,11 @@ public abstract class IgniteH2Index extends Index<Object> {
 	}
 
 	/** 本索引字段 + 集合中已知的其它索引的字段（用于首次注册时一次性声明列）。 */
-	protected Collection<String> allKnownFields() {
+	protected Set<String> allKnownFields() {
 		Set<String> fields = new LinkedHashSet<>(keySet());
 		for (Index<Object> idx : collection.getIndexes()) {
 			if (idx instanceof IgniteH2Index && idx != this) {
-				fields.addAll(((IgniteH2Index) idx).keySet());
+				fields.addAll(idx.keySet());
 			}
 		}
 		return fields;

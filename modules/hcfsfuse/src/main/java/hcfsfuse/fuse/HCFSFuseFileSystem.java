@@ -2,10 +2,8 @@ package hcfsfuse.fuse;
 
 import static hcfsfuse.fuse.Constants.JNR_OPEN_FILE_CONCURRENT;
 
-import alluxio.collections.IndexDefinition;
-import alluxio.collections.IndexedSet;
-import alluxio.fuse.AlluxioFuseUtils;
-import alluxio.fuse.OpenFileEntry;
+import hcfsfuse.collections.IndexDefinition;
+import hcfsfuse.collections.IndexedSet;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
@@ -60,8 +58,8 @@ public class HCFSFuseFileSystem extends FuseStubFS {
   @VisibleForTesting
   public static final long ID_NOT_SET_VALUE_UNSIGNED = 4294967295L;
 
-  private static final long UID = AlluxioFuseUtils.getUid(System.getProperty("user.name")).orElse(ID_NOT_SET_VALUE);
-  private static final long GID = AlluxioFuseUtils.getGidFromUserName(System.getProperty("user.name")).orElse(ID_NOT_SET_VALUE);
+  private static final long UID = FuseUtils.getUid(System.getProperty("user.name")).orElse(ID_NOT_SET_VALUE);
+  private static final long GID = FuseUtils.getGidFromUserName(System.getProperty("user.name")).orElse(ID_NOT_SET_VALUE);
   private final Path mRootPath;
   private final FileSystem mFileSystem;
   // Table of open files with corresponding InputStreams and OutputStreams
@@ -117,7 +115,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
 
       String userName = "";
       if (uid != ID_NOT_SET_VALUE && uid != ID_NOT_SET_VALUE_UNSIGNED) {
-        userName = AlluxioFuseUtils.getUserName(uid).orElse("");
+        userName = FuseUtils.getUserName(uid).orElse("");
         if (userName.isEmpty()) {
           // This should never be reached
           LOG.error("Failed to get user name from uid {}", uid);
@@ -127,14 +125,14 @@ public class HCFSFuseFileSystem extends FuseStubFS {
 
       String groupName = "";
       if (gid != ID_NOT_SET_VALUE && gid != ID_NOT_SET_VALUE_UNSIGNED) {
-        groupName = AlluxioFuseUtils.getGroupName(gid).orElse("");
+        groupName = FuseUtils.getGroupName(gid).orElse("");
         if (groupName.isEmpty()) {
           // This should never be reached
           LOG.error("Failed to get group name from gid {}", gid);
           return -ErrorCodes.EINVAL();
         }
       } else if (!userName.isEmpty()) {
-        groupName = AlluxioFuseUtils.getGroupName(userName).orElse("");
+        groupName = FuseUtils.getGroupName(userName).orElse("");
       }
 
       if (userName.isEmpty() && groupName.isEmpty()) {
@@ -153,7 +151,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       }
     } catch (Throwable t) {
       LOG.error("Failed to chown {} to uid {} and gid {}", path, uid, gid, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
     return 0;
   }
@@ -180,8 +178,8 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       stat.st_ctim.tv_nsec.set(ctime_nsec);
       stat.st_mtim.tv_sec.set(ctime_sec);
       stat.st_mtim.tv_nsec.set(ctime_nsec);
-      Long stUid = AlluxioFuseUtils.getUid(status.getOwner()).orElse(ID_NOT_SET_VALUE);
-      Long stGid = AlluxioFuseUtils.getGidFromGroupName(status.getGroup()).orElse(ID_NOT_SET_VALUE);
+      Long stUid = FuseUtils.getUid(status.getOwner()).orElse(ID_NOT_SET_VALUE);
+      Long stGid = FuseUtils.getGidFromGroupName(status.getGroup()).orElse(ID_NOT_SET_VALUE);
       if (stUid == -1) {
         stat.st_uid.set(UID);
       } else {
@@ -257,13 +255,13 @@ public class HCFSFuseFileSystem extends FuseStubFS {
     long uid = fc.uid.get();
     long gid = fc.gid.get();
     try {
-      String groupName = AlluxioFuseUtils.getGroupName(gid).orElse("");
+      String groupName = FuseUtils.getGroupName(gid).orElse("");
       if (groupName.isEmpty()) {
         // This should never be reached since input gid is always valid
         LOG.error("Failed to get group name from gid {}.", gid);
         return -ErrorCodes.EFAULT();
       }
-      String userName = AlluxioFuseUtils.getUserName(uid).orElse("");
+      String userName = FuseUtils.getUserName(uid).orElse("");
       if (userName.isEmpty()) {
         // This should never be reached since input uid is always valid
         LOG.error("Failed to get user name from uid {}", uid);
@@ -287,7 +285,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       return -ErrorCodes.ENOENT();
     } catch (Throwable t) {
       LOG.error("Failed to create directory {}", path, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
 
     return 0;
@@ -398,7 +396,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       }
     } catch (Throwable t) {
       LOG.error("Failed to read file {}", path, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
 
     return nread;
@@ -436,7 +434,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       String gname = "";
       String uname = "";
       if (gid != GID) {
-        String groupName = AlluxioFuseUtils.getGroupName(gid).orElse("");
+        String groupName = FuseUtils.getGroupName(gid).orElse("");
         if (groupName.isEmpty()) {
           // This should never be reached since input gid is always valid
           LOG.error("Failed to get group name from gid {}.", gid);
@@ -445,7 +443,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
         gname = groupName;
       }
       if (uid != UID) {
-        String userName = AlluxioFuseUtils.getUserName(uid).orElse("");
+        String userName = FuseUtils.getUserName(uid).orElse("");
         if (userName.isEmpty()) {
           // This should never be reached since input uid is always valid
           LOG.error("Failed to get user name from uid {}", uid);
@@ -470,7 +468,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       return -ErrorCodes.ENOENT();
     } catch (Throwable t) {
       LOG.error("Failed to create {}", path, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
 
     return 0;
@@ -568,7 +566,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       return -ErrorCodes.EEXIST();
     } catch (Throwable t) {
       LOG.error("Failed to rename {} to {}", oldPath, newPath, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
 
     return 0;
@@ -671,7 +669,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       mFileSystem.setPermission(turi, new FsPermission((int) mode));
     } catch (IOException e) {
       LOG.error("Failed to chmod {}", path, e);
-      return AlluxioFuseUtils.getErrorCode(e);
+      return FuseUtils.getErrorCode(e);
     }
     return 0;
   }
@@ -692,7 +690,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
       return -ErrorCodes.ENOENT();
     } catch (Throwable t) {
       LOG.error("Failed to remove {}", path, t);
-      return AlluxioFuseUtils.getErrorCode(t);
+      return FuseUtils.getErrorCode(t);
     }
 
     return 0;

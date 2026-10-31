@@ -1,6 +1,6 @@
 package hcfsfuse.fuse.auth;
 
-import alluxio.fuse.AlluxioFuseUtils;
+import hcfsfuse.fuse.FuseUtils;
 import alluxio.jnifuse.FuseFileSystem;
 import alluxio.jnifuse.struct.FuseContext;
 
@@ -19,8 +19,8 @@ public class DefaultAuthPolicy implements AuthPolicy {
   private static final Logger LOG = LoggerFactory.getLogger(DefaultAuthPolicy.class);
   private static final String USER_NAME = System.getProperty("user.name");
   private static final String GROUP_NAME = System.getProperty("user.name");
-  private static final long DEFAULT_UID = AlluxioFuseUtils.getUid(USER_NAME).orElse(-1L);
-  private static final long DEFAULT_GID = AlluxioFuseUtils.getGidFromUserName(GROUP_NAME).orElse(-1L);
+  private static final long DEFAULT_UID = FuseUtils.getUid(USER_NAME).orElse(-1L);
+  private static final long DEFAULT_GID = FuseUtils.getGidFromUserName(GROUP_NAME).orElse(-1L);
 
   private final FileSystem mFileSystem;
   private final FuseFileSystem mFuseFileSystem;
@@ -45,7 +45,7 @@ public class DefaultAuthPolicy implements AuthPolicy {
     String gname = "";
     String uname = "";
     if (gid != DEFAULT_GID) {
-      String groupName = AlluxioFuseUtils.getGroupName(gid).orElse("");
+      String groupName = FuseUtils.getGroupName(gid).orElse("");
       if (groupName.isEmpty()) {
         // This should never be reached since input gid is always valid
         LOG.error("Failed to get group name from gid {}, fallback to {}.", gid, GROUP_NAME);
@@ -54,7 +54,7 @@ public class DefaultAuthPolicy implements AuthPolicy {
       gname = groupName;
     }
     if (uid != DEFAULT_UID) {
-      String userName = AlluxioFuseUtils.getUserName(uid).orElse("");
+      String userName = FuseUtils.getUserName(uid).orElse("");
       if (userName.isEmpty()) {
         // This should never be reached since input uid is always valid
         LOG.error("Failed to get user name from uid {}, fallback to {}", uid, USER_NAME);

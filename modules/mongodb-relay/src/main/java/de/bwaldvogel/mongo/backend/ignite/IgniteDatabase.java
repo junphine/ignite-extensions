@@ -129,10 +129,23 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     		}
     		else if("text".equalsIgnoreCase(indexType)) { // text
                 // 文本索引注册进Ignite的FullTextQueryIndex（GridLuceneIndex）
-                return new IgniteTextIndex(ignite.context(),collection,indexName,keys,sparse);
+                if(collection.textIndex==null) {
+                    collection.textIndex = new IgniteTextIndex(ignite.context(), collection, indexName, keys, sparse);
+                    return collection.textIndex;
+                }else{
+                    collection.textIndex.addTextFields(keys);
+                    return null;
+                }
     		}
             else if("hashed".equalsIgnoreCase(indexType)) { // hashed
-                return new IgniteHashIndex(ignite.context(),collection,indexName,keys,sparse);
+                if(collection.textIndex==null) {
+                    collection.textIndex = new IgniteTextIndex(ignite.context(), collection, indexName, keys, sparse);
+                    collection.textIndex.addHashedFields(keys);
+                    return collection.textIndex;
+                }else{
+                    collection.textIndex.addHashedFields(keys);
+                    return null;
+                }
             }
     	}
     	if(keys.size()>0) {

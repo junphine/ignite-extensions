@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import de.bwaldvogel.mongo.backend.CollectionUtils;
+import de.bwaldvogel.mongo.backend.Index;
 import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.backend.Utils;
 import de.bwaldvogel.mongo.bson.Document;
@@ -62,6 +63,18 @@ public class IgniteSortedIndex extends IgniteH2Index {
 			List<IndexKey> keys, boolean sparse) {
 		super(ctx, collection, name, keys, sparse);
 	}
+
+	/** 本索引字段 + 集合中已知的其它索引的字段。 */
+	protected Set<String> allKnownSortedFields() {
+		Set<String> fields = new LinkedHashSet<>(keySet());
+		for (Index<Object> idx : collection.getIndexes()) {
+			if (idx instanceof IgniteSortedIndex && idx != this) {
+				fields.addAll(idx.keySet());
+			}
+		}
+		return fields;
+	}
+
 
 	/**
 	 * 判断本索引能否直接产出 {@code orderBy} 指定的顺序（B+Tree 前缀规则）。
@@ -243,8 +256,10 @@ public class IgniteSortedIndex extends IgniteH2Index {
 	public T2<List<Object>, Boolean> getPositions(Document query, Document orderBy) {
 		List<String> clauses = new ArrayList<>();
 		List<Object> args = new ArrayList<>();
+		// 构造所有sorted索引的查询条件
+		Set<String> queryableKeys = allKnownSortedFields();
 
-		for (String field : queryableKeys()) {
+		for (String field : queryableKeys) {
 			Object value = query.get(field);
 			if (value == null) {
 				continue;

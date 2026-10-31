@@ -1,12 +1,10 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 import de.bwaldvogel.mongo.backend.CollectionUtils;
+import de.bwaldvogel.mongo.backend.Index;
 import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
@@ -19,6 +17,8 @@ import org.apache.ignite.internal.processors.cache.query.ScoredCacheEntry;
 import org.apache.ignite.internal.processors.query.GridQueryIndexDescriptor;
 import org.apache.ignite.internal.processors.query.QueryIndexDescriptorImpl;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
+import org.apache.lucene.document.FieldType;
+import org.apache.lucene.document.StringField;
 
 /**
  * 文本索引：mongo的 {@code {"field": "text"}} 索引。
@@ -61,6 +61,8 @@ public class IgniteTextIndex extends IgniteH2Index {
 
 	protected Boolean dynamic;
 
+	protected Set<String> hashedFields = new HashSet<>();
+
 	public IgniteTextIndex(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,
 			boolean sparse) {
 		super(ctx, collection, name, keys, sparse);
@@ -70,6 +72,27 @@ public class IgniteTextIndex extends IgniteH2Index {
 	@Override
 	protected int priorityBase() {
 		return 100;
+	}
+
+	public IgniteTextIndex addHashedFields(List<IndexKey> keys) {
+		Set<String> exists = this.keySet();
+		for(IndexKey key: keys) {
+			if(!exists.contains(key.getKey())) {
+				this.getKeys().add(key);
+				hashedFields.add(key.getKey());
+			}
+		}
+		return this;
+	}
+
+	public IgniteTextIndex addTextFields(List<IndexKey> keys) {
+		Set<String> exists = this.keySet();
+		for(IndexKey key: keys) {
+			if(!exists.contains(key.getKey())) {
+				this.getKeys().add(key);
+			}
+		}
+		return this;
 	}
 
 	@Override
@@ -105,6 +128,15 @@ public class IgniteTextIndex extends IgniteH2Index {
 		try{
 			LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
 			access.config.setStoreTextFieldValue(storedSource);
+			for(String hashedField: this.hashedFields){
+				Map<String, FieldType> fields = access.fields(this.collection.getTypeName());
+				if (storedSource) {
+					fields.put(hashedField, StringField.TYPE_STORED);
+				}
+				else{
+					fields.put(hashedField, StringField.TYPE_NOT_STORED);
+				}
+			}
 			access.init(tbl.type());
 		} catch (IOException e) {
 			log.error("Get LuceneIndexAccess of cache failed",e);
