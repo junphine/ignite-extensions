@@ -123,19 +123,6 @@ public final class ValueUtils {
         }
     }
 
-	public static boolean hasNumberValue(Object propValue){
-		if(propValue instanceof Number){
-			return true;
-		}
-		else if(propValue instanceof Instant){
-			return true;
-		}
-		else if(propValue instanceof Date){
-			return true;
-		}
-		return false;
-	}
-
 	public static String objectToString(Object propValue,ValueType propType){
 		String value;
 		if (propType.equals(JSON_ARRAY) || propType.equals(JSON_OBJECT)) {

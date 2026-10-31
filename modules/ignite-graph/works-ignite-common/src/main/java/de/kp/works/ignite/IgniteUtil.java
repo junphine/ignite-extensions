@@ -93,15 +93,16 @@ public final class IgniteUtil{
             qe.setIndexes(this.buildVertexIndexs());
             return qe;
         } 
-        if (elementType == null || !elementType.equals(ElementType.DOCUMENT)) {
-            throw new RuntimeException(new StringBuilder().append("Table '").append(table).append("' is not supported.").toString());
+        else if (elementType.equals(ElementType.DOCUMENT)) {
+            qe.setFields(this.buildDocumentFields(qe));
+
+            if(!table.endsWith("_index")) {
+                qe.setIndexes(this.buildDocumentIndexs());
+            }
+            return qe;
         }
-        qe.setFields(this.buildDocumentFields(qe));
-        
-        if(!table.endsWith("_index")) {
-        	qe.setIndexes(this.buildDocumentIndexs());
-        }
-        return qe;
+        throw new RuntimeException("Table '" + table + "' is not supported.");
+
     }
     
     public LinkedHashMap<String, String> buildEdgeFields() {
@@ -157,11 +158,11 @@ public final class IgniteUtil{
     public LinkedHashMap<String, String> buildDocumentFields(QueryEntity qe) {
         final LinkedHashMap<String, String> fields = new LinkedHashMap<>();
         fields.put("id", "java.lang.String");
+        fields.put("name", "java.lang.String");
+        fields.put("title", "java.lang.String");
         fields.put("type", "java.lang.String");        
         fields.put("created_at", "java.lang.Long");
         fields.put("updated_at", "java.lang.Long");
-        fields.put("name", "java.lang.String");
-        fields.put("title", "java.lang.String");
         fields.put("author", "java.lang.String");
         
         qe.setKeyFieldName("id");
@@ -172,6 +173,7 @@ public final class IgniteUtil{
         final List<QueryIndex> indexes = new ArrayList<>();
         indexes.add(new QueryIndex("name",QueryIndexType.SORTED));
         indexes.add(new QueryIndex("updated_at",QueryIndexType.SORTED,false));
+        indexes.add(new QueryIndex("author",QueryIndexType.SORTED));
         return indexes;
     }
 }

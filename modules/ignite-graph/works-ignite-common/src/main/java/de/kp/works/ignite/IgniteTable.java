@@ -242,15 +242,6 @@ public class IgniteTable extends IgniteBaseTable {
         return new IgniteVertexQuery(name, admin, labels);
     }
 
-    /**
-     * Returns an [IgniteQuery] to retrieve all elements
-     * that are referenced by a certain label and share
-     * a certain property key and value
-     */
-    public IgniteQuery getPropertyQuery(String label, String key, Object value) {
-        return new IgnitePropertyQuery(name, admin, label, key, value);
-    }
-
     /* EDGE READ SUPPORT */
 
     /**

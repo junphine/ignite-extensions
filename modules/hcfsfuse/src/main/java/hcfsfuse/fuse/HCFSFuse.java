@@ -36,7 +36,7 @@ public class HCFSFuse {
    *
    * @param args arguments to run the command line
    */
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) throws Exception {
     FuseOptions opts = parseOptions(args);
     if (opts == null) {
       System.exit(1);
@@ -48,6 +48,8 @@ public class HCFSFuse {
     String libfuseVersion = conf.get("libfuse.version");
     final FileSystem tfs = new Path(opts.getRoot()).getFileSystem(conf);
     final List<String> fuseOpts = opts.getFuseOpts();
+
+
     if (opts.isJniFuseEnable()) {
       if("2".equals(libfuseVersion)){
         LibFuse.loadLibrary(LibfuseVersion.VERSION_2);

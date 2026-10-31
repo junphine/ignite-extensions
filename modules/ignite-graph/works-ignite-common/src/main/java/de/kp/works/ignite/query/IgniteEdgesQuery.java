@@ -22,7 +22,9 @@ import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
 import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -38,6 +40,11 @@ import java.util.List;
  * Note: an empty label list means "all labels" - not "no result".
  */
 public class IgniteEdgesQuery extends IgniteQuery {
+
+    /*
+     * Transform the provided properties into fields 字段名
+     */
+    protected HashMap<String, Object> fields = new HashMap<>();
 
     private Direction direction;
 
@@ -56,6 +63,50 @@ public class IgniteEdgesQuery extends IgniteQuery {
             vertexToFields(vertex, direction, fields);
         }
         return this;
+    }
+
+    protected void vertexToFields(Object vertex, Direction direction, HashMap<String, Object> fields) {
+        /*
+         * An Edge links two Vertex objects. The Direction determines
+         * which Vertex is the tail Vertex (out Vertex) and which Vertex
+         * is the head Vertex (in Vertex).
+         *
+         * [HEAD VERTEX | OUT] -- <EDGE> --> [TAIL VERTEX | IN]
+         *
+         * The illustration is taken from the Apache TinkerPop [Edge]
+         * documentation.
+         *
+         * This implies: FROM = OUT & TO = IN
+         */
+
+        if (vertex instanceof ReferenceVertexProperty) {
+            ReferenceVertexProperty<?> key = (ReferenceVertexProperty) vertex;
+            if (direction.equals(Direction.BOTH)) {
+                fields.put(IgniteConstants.TO_COL_NAME, key.id());
+                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
+                fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
+                fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
+            }
+            else if (direction.equals(Direction.IN)) {
+                fields.put(IgniteConstants.TO_COL_NAME, key.id());
+                fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
+            }
+            else {
+                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
+                fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
+            }
+        }
+        else {
+            if (direction.equals(Direction.BOTH)) {
+                fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
+                fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
+            }
+            else if (direction.equals(Direction.IN))
+                fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
+            else
+                fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
+        }
+
     }
 
     /**

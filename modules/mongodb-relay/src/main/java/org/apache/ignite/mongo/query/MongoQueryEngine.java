@@ -12,10 +12,7 @@ import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.GridProcessorAdapter;
 import org.apache.ignite.internal.processors.cache.QueryCursorImpl;
 
-import org.apache.ignite.internal.processors.query.GridQueryFieldMetadata;
-import org.apache.ignite.internal.processors.query.IgniteSQLException;
-import org.apache.ignite.internal.processors.query.QueryContext;
-import org.apache.ignite.internal.processors.query.QueryEngine;
+import org.apache.ignite.internal.processors.query.*;
 import org.jetbrains.annotations.Nullable;
 
 import de.bwaldvogel.mongo.backend.QueryResult;
@@ -40,6 +37,8 @@ public class MongoQueryEngine extends GridProcessorAdapter implements QueryEngin
     	stringTypeToWrapperClass.put(Types.LONGVARBINARY, byte[].class);
         // Add more types if needed
     }
+
+	private MongoQueryEngineConfiguration config = new MongoQueryEngineConfiguration();
  
 	private String database;
     /**
@@ -130,8 +129,13 @@ public class MongoQueryEngine extends GridProcessorAdapter implements QueryEngin
     	}
     	return cursors;
     }
-    
-    public static List<?> mapDoc(Document doc,List<GridQueryFieldMetadata> fieldsMeta){
+
+	@Override
+	public @Nullable QueryEngineConfigurationEx config() {
+		return config;
+	}
+
+	public static List<?> mapDoc(Document doc,List<GridQueryFieldMetadata> fieldsMeta){
     	int i = 0;
     	MongoFieldMetadata meta = null;
     	List<Object> row = new ArrayList<>(doc.size());

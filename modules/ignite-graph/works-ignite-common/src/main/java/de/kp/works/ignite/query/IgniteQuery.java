@@ -14,11 +14,8 @@ package de.kp.works.ignite.query;
  * License for the specific language governing permissions and limitations under
  * the License.
  *
- * @author Stefan Krusche, Dr. Krusche & Partner PartG
  *
  */
-
-
 import de.kp.works.ignite.IgniteAdmin;
 import de.kp.works.ignite.IgniteConstants;
 import de.kp.works.ignite.IgniteResultTransform;
@@ -55,11 +52,6 @@ public abstract class IgniteQuery {
     protected String sqlStatement;
 
     protected ElementType elementType;
-
-    /*
-     * Transform the provided properties into fields 字段名
-     */
-    protected HashMap<String, Object> fields = new HashMap<>();
 
     /**
      * Labels this query is restricted to; an empty list
@@ -123,7 +115,7 @@ public abstract class IgniteQuery {
             else if (name.startsWith(admin.namespace() + "_")) {
                 elementType = ElementType.DOCUMENT;
             }
-            else if (name.startsWith(admin.namespace() + ".")) {
+            else if (name.startsWith(admin.namespace())) {
                 elementType = ElementType.DOCUMENT;
             }
             else
@@ -162,53 +154,6 @@ public abstract class IgniteQuery {
         if (v == null) return "null";
         return v.toString().replace("'", "''");
     }
-
-    protected void vertexToFields(Object vertex, Direction direction, HashMap<String, Object> fields) {
-        /*
-         * An Edge links two Vertex objects. The Direction determines
-         * which Vertex is the tail Vertex (out Vertex) and which Vertex
-         * is the head Vertex (in Vertex).
-         *
-         * [HEAD VERTEX | OUT] -- <EDGE> --> [TAIL VERTEX | IN]
-         *
-         * The illustration is taken from the Apache TinkerPop [Edge]
-         * documentation.
-         *
-         * This implies: FROM = OUT & TO = IN
-         */
-        
-        
-    	if (vertex instanceof ReferenceVertexProperty) {
-			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) vertex;        	
-        	if (direction.equals(Direction.BOTH)) {
-                fields.put(IgniteConstants.TO_COL_NAME, key.id());
-                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
-                fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
-                fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
-            }
-            if (direction.equals(Direction.IN)) {
-                fields.put(IgniteConstants.TO_COL_NAME, key.id());
-                fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
-            }
-            else {
-                fields.put(IgniteConstants.FROM_COL_NAME, key.id());
-                fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
-            }
-        }
-        else {
-        	if (direction.equals(Direction.BOTH)) {
-                fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
-                fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
-            }
-            if (direction.equals(Direction.IN))
-                fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
-            else
-                fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
-        }
-
-    }
-
-
     /**
      * Determines whether a `has(...)` predicate can safely be pushed
      * down into SQL. Only predicates whose SQL representation is a
@@ -220,7 +165,7 @@ public abstract class IgniteQuery {
      */
     public static boolean canPushPropertyFilter(Compare op, Object value) {
         if (value == null) return false;
-        if (op == Compare.eq) {
+        if (op == Compare.eq || op == Compare.neq) {
             /*
              * Only values whose string representation is what has been
              * stored in `property_value` (String, Boolean) or that can be
@@ -348,58 +293,36 @@ public abstract class IgniteQuery {
         for (PropertyFilter filter : propertyFilters) {
             byKey.computeIfAbsent(filter.key, key -> new ArrayList<>()).add(filter);
         }
-
-        /*
-         * All rows of an element share the same label, therefore the label
-         * restriction can safely be added to the subquery - which makes the
-         * composite (label, property_key) index usable.
-         */
-        String labelPart = (labels.isEmpty() || elementType == ElementType.DOCUMENT)
-                ? "" : " AND " + labelClauseText();
-
         for (Map.Entry<String, List<PropertyFilter>> entry : byKey.entrySet()) {
             StringBuilder condition = new StringBuilder();
             condition.append(IgniteConstants.PROPERTY_KEY_COL_NAME);
             condition.append(" = '").append(escapeValue(entry.getKey())).append("'");
             for (PropertyFilter filter : entry.getValue()) {
-                condition.append(" AND ").append(buildPropertyCondition(filter));
+                condition.append(" and ").append(buildPropertyCondition(filter));
             }
-            clauses.add(idColumn + " in (select distinct " + idColumn
-                    + " from " + cache.getName() + labelPart
-                    + " and " + condition + ")");
+            clauses.add(condition.toString());
         }
         return clauses;
     }
 
-    private String labelClauseText() {
-        if (labels.size() == 1)
-            return IgniteConstants.LABEL_COL_NAME + " = '" + escapeValue(labels.get(0)) + "'";
-
-        StringBuilder builder = new StringBuilder(IgniteConstants.LABEL_COL_NAME).append(" IN (");
-        for (int i = 0; i < labels.size(); i++) {
-            if (i > 0) builder.append(",");
-            builder.append("'").append(escapeValue(labels.get(i))).append("'");
-        }
-        return builder.append(")").toString();
-    }
-
     private String buildPropertyCondition(PropertyFilter filter) {
         String op = sqlOperator(filter.op);
-        if (filter.op == Compare.eq && filter.value instanceof Number) {
-            // numeric equality uses the indexed `property_number` column
-            return IgniteConstants.PROPERTY_NUMBER_COL_NAME + " = " + filter.value;
-        }
         if (filter.value instanceof Number) {
-            return IgniteConstants.PROPERTY_NUMBER_COL_NAME + " " + op + " " + filter.value;
+            if (filter.op == Compare.eq || filter.op == Compare.neq) {
+                // numeric equality uses the non indexed `property_value` column
+                return IgniteConstants.PROPERTY_VALUE_COL_NAME + filter.op + filter.value;
+            }
+            return IgniteConstants.PROPERTY_NUMBER_COL_NAME + op + filter.value;
         }
         return IgniteConstants.PROPERTY_VALUE_COL_NAME + " " + op + " '" + escapeValue(filter.value) + "'";
     }
 
-    private static String sqlOperator(Compare op) {
+    protected static String sqlOperator(Compare op) {
         if (op == Compare.gt) return ">";
         if (op == Compare.gte) return ">=";
         if (op == Compare.lt) return "<";
         if (op == Compare.lte) return "<=";
+        if (op == Compare.neq) return "!=";
         return "=";
     }
 
@@ -428,31 +351,21 @@ public abstract class IgniteQuery {
 
         boolean hasWhere = !clauses.isEmpty();
         if (hasWhere) {
-            sqlStatement += " where " + String.join(" and ", clauses);
+            sqlStatement += " WHERE " + String.join(" AND ", clauses);
         }
+
+        orderById();
 
         if (hasRange()) {
             StringBuilder window = new StringBuilder();
-            window.append("select distinct ").append(idColumn).append(" from ").append(cache.getName());
-            if (hasWhere) window.append(" where ").append(String.join(" and ", clauses));
-            window.append(" order by ").append(idColumn);
             if (offset > 0) window.append(" limit ").append(offset).append(",").append(limit);
             else window.append(" limit ").append(limit);
-
-            sqlStatement += hasWhere ? " and " : " where ";
-            sqlStatement += idColumn + " in (" + window + ")";
+            sqlStatement += window;
         }
-
-        sqlStatement += " order by " + idColumn;
     }
 
     protected IgniteQuery orderById() {
-        if(elementType == ElementType.VERTEX) {
-            orderBy(IgniteConstants.VERTEX_ID_COL_NAME,false);
-        }
-        else if(elementType == ElementType.EDGE){
-            orderBy(IgniteConstants.EDGE_ID_COL_NAME,false);
-        }
+        orderBy("_key",false);
         return this;
     }
 
@@ -597,7 +510,7 @@ public abstract class IgniteQuery {
 
     protected abstract void createSql();
 
-    protected List<List<?>> getSqlResultList() {
+    public List<List<?>> getSqlResultList() {
         /*
          * An empty result is returned, if the SQL statement
          * is not defined yet.
@@ -680,9 +593,9 @@ public abstract class IgniteQuery {
 
         List<String> columns = getColumns();
 
-        sqlStatement = "select";
+        sqlStatement = "SELECT";
         sqlStatement += " " + String.join(",", columns);
-        sqlStatement += " from " + cache.getName();
+        sqlStatement += " FROM " + cache.getName();
 
     }
     /**

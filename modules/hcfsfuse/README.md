@@ -16,13 +16,16 @@ $ mvn clean package
 If you want to specify the version of alluxio, hadoop or ozone, reference the following example.
 
 ```bash
- mvn clean package -Dhadoop.version=3.2.1 -Dozone.version=1.0.0
+ mvn clean package -Dhadoop.version=3.4.1 -Dozone.version=1.0.0
 ```
 
 # how to run
 
 ```bash
 $ java -Dlog4j.configuration=file:<LOG4j_FILE_PATH> -jar target/hcfsfuse-1.0.0-SNAPSHOT-jar-with-dependencies.jar -c core-site.xml -c another-site.xml -m /Users/mbl/fusefs -r file:///tmp/
+```
+```bash
+$ java -cp hadoop/* hcfsfuse.fuse.HCFSFuse -m /home/zhangjunfeng/igfs -r file:///mnt/d/Data//uploads/  -debug -o allow_other
 ```
 
 Then, you can ls, touch, cp, rm, cat file or directory under `/Users/mbl/fusefs`.

@@ -13,34 +13,7 @@
     <artifactId>works-ignite-common</artifactId>
 
     <build>
-        
         <plugins>
-             <!-- 
-             <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>               
-                <configuration>
-                    <scalaVersion>2.11.12</scalaVersion>
-                    <args>
-                        <arg>-unchecked</arg>
-                        <arg>-deprecation</arg>
-                    </args>
-                    <addJavacArgs>-deprecation</addJavacArgs>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>scala-compile</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin> 
-            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

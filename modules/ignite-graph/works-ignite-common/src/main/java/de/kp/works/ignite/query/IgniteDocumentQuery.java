@@ -19,6 +19,13 @@ package de.kp.works.ignite.query;
  */
 
 import de.kp.works.ignite.IgniteAdmin;
+import de.kp.works.ignite.IgniteConstants;
+import org.apache.tinkerpop.gremlin.process.traversal.Compare;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Retrieves all documents of a per-label document cache.
@@ -61,5 +68,40 @@ public class IgniteDocumentQuery extends IgniteVertexQuery {
         } catch (Exception e) {
             sqlStatement = null;
         }
+    }
+
+    @Override
+    protected List<String> buildPropertyFilterClauses(String idColumn) {
+        List<String> clauses = new ArrayList<>();
+        if (propertyFilters.isEmpty() || !isPropertyPushdownSupported()) return clauses;
+
+        // group predicates by property key, preserving registration order
+        Map<String, List<PropertyFilter>> byKey = new LinkedHashMap<>();
+        for (PropertyFilter filter : propertyFilters) {
+            byKey.computeIfAbsent(filter.key, key -> new ArrayList<>()).add(filter);
+        }
+        for (Map.Entry<String, List<PropertyFilter>> entry : byKey.entrySet()) {
+            StringBuilder condition = new StringBuilder();
+            for (PropertyFilter filter : entry.getValue()) {
+                if(!condition.isEmpty()){
+                    condition.append(" and ");
+                }
+                condition.append(buildPropertyCondition(entry.getKey(),filter));
+            }
+            clauses.add(condition.toString());
+        }
+        return clauses;
+    }
+
+    private String buildPropertyCondition(String key,PropertyFilter filter) {
+        String op = sqlOperator(filter.op);
+        if (filter.value instanceof Number) {
+            if (filter.op == Compare.eq || filter.op == Compare.neq) {
+                // numeric equality uses the non indexed `property_value` column
+                return key + filter.op + filter.value;
+            }
+            return key + op + filter.value;
+        }
+        return key + " " + op + " '" + escapeValue(filter.value) + "'";
     }
 }

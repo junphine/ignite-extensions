@@ -162,25 +162,4 @@ public class VertexModel extends ElementModel {
                 .map(igniteQuery.getResult(),parser::parse);
     }
 
-    /**
-     * This method retrieves all vertices that refer
-     * to a certain label, property key and value
-     */
-    public Iterator<Vertex> vertices(String label, String key, Object value) {
-        ElementHelper.validateProperty(key, value);
-        /*
-         * The parser converts results from Ignite
-         * queries to vertices.
-         */
-        VertexReader parser = getReader();
-        /*
-         * The query is responsible for retrieving the
-         * requested vertices from the Ignite cache.
-         */
-        IgniteQuery igniteQuery = table.getPropertyQuery(label, key, value);
-
-        return IgniteResultTransform
-                .map(igniteQuery.getResult(),parser::parse);
-    }
-
 }

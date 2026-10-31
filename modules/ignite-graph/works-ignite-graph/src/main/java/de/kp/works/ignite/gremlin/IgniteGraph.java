@@ -239,7 +239,8 @@ public class IgniteGraph implements Graph {
          */
         idValue = IgniteGraphUtils.generateIdIfNeeded(idValue);
         long now = System.currentTimeMillis();        
-        IgniteDocument newVertex = new IgniteDocument(this, idValue, label, now, now, IgniteGraphUtils.propertiesToMap(keyValues));
+        IgniteDocument newVertex = new IgniteDocument(this, idValue, label, now, now,
+                IgniteGraphUtils.propertiesToMap(true,keyValues));
         newVertex.validate();
         newVertex.writeToModel();
         
@@ -301,7 +302,8 @@ public class IgniteGraph implements Graph {
          */
         idValue = IgniteGraphUtils.generateIdIfNeeded(idValue);
         long now = System.currentTimeMillis();
-        IgniteVertex newVertex = new IgniteVertex(this, idValue, label, now, now, IgniteGraphUtils.propertiesToMap(keyValues));
+        IgniteVertex newVertex = new IgniteVertex(this, idValue, label, now, now,
+                IgniteGraphUtils.propertiesToMap(false,keyValues));
         newVertex.validate();
         newVertex.writeToModel();
 
@@ -405,13 +407,6 @@ public class IgniteGraph implements Graph {
     		return this.getDocumentModel(label).vertices(label,offset,limit);
     	}
         return getVertexModel().vertices(label,offset,limit);
-    }
-
-    public Iterator<Vertex> verticesByLabel(String label, String key, Object value) {
-    	if(this.isDocumentModel(label)) {
-    		return this.getDocumentModel(label).vertices(label,key,value);
-    	}
-        return getVertexModel().vertices(label, key, value);
     }
 
     /** EDGE RELATED **/

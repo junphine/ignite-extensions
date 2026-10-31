@@ -18,6 +18,8 @@ package de.kp.works.ignite.graph;
  *
  */
 
+import de.kp.works.ignite.ValueUtils;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Date;
@@ -29,12 +31,12 @@ public class IgniteVertexEntry {
     public String id; // vertex id VERTEX_ID_COL_NAME
 
     public String label;
-
     public String propKey;
     public Object propValue;
 
     public short idType;
     public short propType;
+    public short propIndex=-1;
 
     public long createdAt;
     public long updatedAt;
@@ -64,6 +66,9 @@ public class IgniteVertexEntry {
     
     public final String getCacheKey() {
     	// String cacheKey = UUID.randomUUID().toString();
+        if(propIndex>=0){
+            return id + ':' + propKey + ':' + String.format("%05d", propIndex);
+        }
     	return id + ':' + propKey;
     }
 

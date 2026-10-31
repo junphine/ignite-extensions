@@ -16,7 +16,7 @@
   <properties>
     <rootPOM>${basedir}/</rootPOM>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <alluxio.version>295</alluxio.version>
+    <alluxio.version>2.9.6</alluxio.version>
     <findbugs.version>3.0.5</findbugs.version>
   </properties>
 
@@ -41,18 +41,12 @@
       <dependency>
         <groupId>commons-logging</groupId>
         <artifactId>commons-logging</artifactId>
-        <version>1.2</version>
+        <version>${commons.logging.version}</version>
       </dependency>
       <dependency>
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
         <version>${guava.version}</version>
-        <exclusions>
-          <exclusion>
-            <artifactId>jsr305</artifactId>
-            <groupId>com.google.code.findbugs</groupId>
-          </exclusion>
-        </exclusions>
       </dependency>
       <dependency>
         <groupId>commons-cli</groupId>
@@ -73,19 +67,17 @@
         <groupId>org.alluxio</groupId>
         <artifactId>alluxio-core-common</artifactId>
         <version>${alluxio.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk-core</artifactId>
-          </exclusion>
-        </exclusions>
       </dependency>
       <dependency>
         <groupId>org.alluxio</groupId>
         <artifactId>alluxio-core-client-fs</artifactId>
         <version>${alluxio.version}</version>
       </dependency>
-
+      <dependency>
+        <groupId>org.alluxio</groupId>
+        <artifactId>alluxio-minicluster</artifactId>
+        <version>${alluxio.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.apache.zookeeper</groupId>
         <artifactId>zookeeper</artifactId>
@@ -113,6 +105,10 @@
       <artifactId>alluxio-core-common</artifactId>
       <exclusions>
         <exclusion>
+          <groupId>com.amazonaws</groupId>
+          <artifactId>aws-java-sdk-core</artifactId>
+        </exclusion>
+        <exclusion>
           <artifactId>zookeeper</artifactId>
           <groupId>org.apache.zookeeper</groupId>
         </exclusion>
@@ -137,21 +133,6 @@
           <artifactId>rocksdbjni</artifactId>
         </exclusion>
       </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.alluxio</groupId>
-      <artifactId>alluxio-core-client-fs</artifactId>
-      <exclusions>
-        <exclusion>
-          <artifactId>slf4j-api</artifactId>
-          <groupId>org.slf4j</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>log4j-slf4j-impl</artifactId>
-          <groupId>org.apache.logging.log4j</groupId>
-        </exclusion>
-      </exclusions>
-      <scope>optional</scope>
     </dependency>
 
     <dependency>

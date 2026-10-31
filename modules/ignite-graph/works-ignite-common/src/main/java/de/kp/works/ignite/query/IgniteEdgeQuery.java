@@ -23,7 +23,10 @@ import de.kp.works.ignite.IgniteConstants;
 
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
+import java.util.HashMap;
+
 public class IgniteEdgeQuery extends IgniteQuery {
+    protected HashMap<String, Object> fields = new HashMap<>();
     /**
      * Retrieve the edge that refers to the provided
      * `from` and `to `identifier. A use case for this

@@ -23,18 +23,17 @@ import de.kp.works.ignite.IgniteConstants;
 
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
 
+import java.util.HashMap;
+
 /**
  * Determines whether the provided vertex has any incident edges,
  * i.e. whether it is either the source or the target of an edge.
  */
 public class IgniteEdgesExistQuery extends IgniteQuery {
+    protected HashMap<String, Object> fields = new HashMap<>();
 
-    public IgniteEdgesExistQuery(String cacheName, IgniteAdmin admin,
-                            Object vertex) {
+    public IgniteEdgesExistQuery(String cacheName, IgniteAdmin admin, Object vertex) {
         super(cacheName, admin);
-
-        fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
-        fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
 
         if (vertex instanceof ReferenceVertexProperty) {
 			ReferenceVertexProperty<?> key = (ReferenceVertexProperty) vertex;
@@ -42,6 +41,10 @@ public class IgniteEdgesExistQuery extends IgniteQuery {
             fields.put(IgniteConstants.TO_COL_NAME, key.id().toString());
             fields.put(IgniteConstants.FROM_TYPE_COL_NAME, key.label());
             fields.put(IgniteConstants.TO_TYPE_COL_NAME, key.label());
+        }
+        else{
+            fields.put(IgniteConstants.TO_COL_NAME, vertex.toString());
+            fields.put(IgniteConstants.FROM_COL_NAME, vertex.toString());
         }
 
     }

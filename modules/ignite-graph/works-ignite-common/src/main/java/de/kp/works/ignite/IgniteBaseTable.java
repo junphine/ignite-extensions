@@ -28,6 +28,7 @@ import de.kp.works.ignite.mutate.IgniteIncrement;
 import de.kp.works.ignite.mutate.IgnitePut;
 import de.kp.works.ignite.query.IgniteEdgeQuery;
 import de.kp.works.ignite.query.IgniteGetQuery;
+import de.kp.works.ignite.query.IgnitePropertyUpdate;
 import de.kp.works.ignite.query.IgniteResult;
 
 import java.util.*;
@@ -248,6 +249,10 @@ public class IgniteBaseTable {
                     updatedAt = ValueUtils.convertToLongValue(column.getColValue());
                     break;
                 }
+                case IgniteConstants.PROPERTY_WEIGHT_COL_NAME: {
+                    weight = Float.valueOf(column.getColValue().toString());
+                    break;
+                }
                 default:
                     /*
                      * Build an entry for each property
@@ -391,6 +396,17 @@ public class IgniteBaseTable {
 
         writeEdge(newEntries);
     }
+
+    /**
+     * Returns an [IgniteQuery] to retrieve all elements
+     * that are referenced by a certain label and share
+     * a certain property key and value
+     */
+    public List<List<?>> updateProperty(String label, String id, String key, Object value) {
+        IgnitePropertyUpdate query = new IgnitePropertyUpdate(name, admin, label, id, key, value);
+        return query.getSqlResultList();
+    }
+
     /**
      * This method supports the deletion of an entire edge
      * or just specific properties of an existing edge.
@@ -404,23 +420,30 @@ public class IgniteBaseTable {
     protected Object incrementEdge(IgniteIncrement igniteIncrement, List<IgniteEdgeEntry> edge) {
         IgniteColumn column = igniteIncrement.getColumn();
         if (column == null) return null;
-        /*
-         * Check whether the column value is a [Long]
-         */
-        ValueType colType = column.getColType();
+
+        String colName = column.getColName();
 
         /*
          * Restrict to that edge entry that refer to the
          * provided column
          */
-        String colName = column.getColName();
         Number colValue = (Number)column.getColValue();
+
+        if(colName.equalsIgnoreCase(IgniteConstants.PROPERTY_WEIGHT_COL_NAME)){
+            IgniteEdgeEntry entry = edge.get(0);
+            double oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).doubleValue(): Double.parseDouble(entry.propValue.toString());
+            double newValue = oldValue + colValue.doubleValue();
+            updateProperty(igniteIncrement.label,igniteIncrement.getId().toString(),IgniteConstants.PROPERTY_WEIGHT_COL_NAME,newValue);
+            return newValue;
+        }
 
         List<IgniteEdgeEntry> entries = edge.stream()
                 .filter(entry -> entry.propKey.equals(colName))
                 .toList();
 
-        if (entries.isEmpty()) return null;
+        if (entries.isEmpty()) {
+            return null;
+        }
         IgniteEdgeEntry entry = entries.get(0);
 
         double oldValue = entry.propValue instanceof Number? ((Number)entry.propValue).doubleValue(): Double.parseDouble(entry.propValue.toString());
@@ -474,17 +497,35 @@ public class IgniteBaseTable {
                     String propKey   = column.getColName();
                     short propType  = column.getColType().code();
                     Object propValue = column.getColValue();
-
-                    entries.add(new IgniteVertexEntry(
-                            id,
-                            idType,
-                            label,
-                            createdAt,
-                            updatedAt,
-                            propKey,
-                            propType,
-                            propValue));
-
+                    if(propValue instanceof Collection<?>){
+                        Collection<?> list = (Collection)propValue;
+                        short i = 0;
+                        for(Object item: list){
+                            IgniteVertexEntry entry = new IgniteVertexEntry(
+                                    id,
+                                    idType,
+                                    label,
+                                    createdAt,
+                                    updatedAt,
+                                    propKey,
+                                    propType,
+                                    item);
+                            entry.propIndex = i++;
+                            entries.add(entry);
+                        }
+                    }
+                    else {
+                        IgniteVertexEntry entry = new IgniteVertexEntry(
+                                id,
+                                idType,
+                                label,
+                                createdAt,
+                                updatedAt,
+                                propKey,
+                                propType,
+                                propValue);
+                        entries.add(entry);
+                    }
                     break;
                 }
             }

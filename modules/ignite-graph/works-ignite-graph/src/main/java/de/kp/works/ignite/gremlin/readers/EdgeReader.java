@@ -71,7 +71,6 @@ public class EdgeReader extends LoadingElementReader<Edge> {
                     inVertexId = column.getColValue();
                     inType = column.getColTypeName();
                     break;
-
                 default:
                     props.put(colName, column.getColValue());
                     break;

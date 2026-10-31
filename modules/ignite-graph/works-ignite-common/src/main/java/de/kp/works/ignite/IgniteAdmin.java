@@ -149,7 +149,7 @@ public class IgniteAdmin {
         	// modify@byron c.getColValue()->c.getColValue()
             List<String> propKeys = igniteDelete.getProperties()
                     .map(c -> c.getColName())
-                    .collect(Collectors.toList());
+                    .toList();
 
             cacheKeys = edge.stream()
                     /*
@@ -250,7 +250,7 @@ public class IgniteAdmin {
              */
             List<String> propKeys = igniteDelete.getProperties()
                     .map(IgniteColumn::getColName)
-                    .collect(Collectors.toList());
+                    .toList();
 
             cacheKeys = vertex.stream()
                     /*

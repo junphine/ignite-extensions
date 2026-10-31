@@ -98,11 +98,12 @@ public final class IgniteGraphUtils {
         return id;
     }
 
-    public static Map<String, Object> propertiesToMap(Object... keyValues) {
+    public static Map<String, Object> propertiesToMap(boolean isDocument,Object... keyValues) {
         Map<String, Object> props = new HashMap<>();
         for (int i = 0; i < keyValues.length; i = i + 2) {
             Object key = keyValues[i];
             if (key.equals(T.id) || key.equals(T.label)) continue;
+            if (isDocument && (key.equals("id") || key.equals("_class") || key.equals("_key"))) continue;
             String keyStr = key.toString();
             Object value = keyValues[i + 1];
             if (value == null) continue;

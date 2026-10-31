@@ -75,7 +75,8 @@ public class IgniteVertex extends IgniteElement implements Vertex {
         }
         
         long now = System.currentTimeMillis();
-        IgniteEdge newEdge = new IgniteEdge(graph, idValue, label, now, now, IgniteGraphUtils.propertiesToMap(keyValues), inVertex, this);
+        IgniteEdge newEdge = new IgniteEdge(graph, idValue, label, now, now,
+                IgniteGraphUtils.propertiesToMap(false,keyValues), inVertex, this);
         newEdge.validate();
         newEdge.writeToModel();
 

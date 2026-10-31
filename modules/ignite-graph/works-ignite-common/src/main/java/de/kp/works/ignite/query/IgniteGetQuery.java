@@ -28,6 +28,8 @@ public class IgniteGetQuery extends IgniteQuery {
 
     private static final String ID_FIELD = "ID";
 
+    private String id;
+
     /**
      * Retrieve the element (edge or vertex) that refers
      * to the provided identifier
@@ -37,7 +39,7 @@ public class IgniteGetQuery extends IgniteQuery {
         /*
          * Transform the provided properties into fields
          */
-        this.fields.put(ID_FIELD, " = " + quoteSqlValue(id));
+        this.id = " = "+ quoteSqlValue(id);
     }
 
     /**
@@ -63,7 +65,7 @@ public class IgniteGetQuery extends IgniteQuery {
             sqlStatement.append(" IN (").append(inPart).append(")");
         }
 
-        this.fields.put(ID_FIELD, sqlStatement.toString());
+        this.id = sqlStatement.toString();
     }
 
     @Override
@@ -74,15 +76,9 @@ public class IgniteGetQuery extends IgniteQuery {
              * Build the `where` clause and thereby distinguish
              * between a single or multiple identifier values
              */
-            String keyField = IgniteConstants.VERTEX_ID_COL_NAME;
-            if(this.elementType == ElementType.DOCUMENT) {
-            	keyField = "_key";
-            }
-            else if(this.elementType == ElementType.EDGE) {
-                keyField = IgniteConstants.EDGE_ID_COL_NAME;
-            }
+            String keyField = this.idColumnName();
 
-            Object ids = fields.get(ID_FIELD);
+            Object ids = this.id;
             if (ids == null) {
                 /*
                  * No identifier(s) provided: select nothing
