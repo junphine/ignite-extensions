@@ -36,6 +36,47 @@ If there are something wrong strangely, check if forgot unmount the mount point 
 umount /Users/mbl/fusefs
 ```
 
+# how to mount S3 (or any S3-compatible store)
+
+The module ships a Hadoop `FileSystem` implementation for the `s3://` scheme built directly
+on AWS SDK v2 (`software.amazon.awssdk:s3`), registered via
+`META-INF/services/org.apache.hadoop.fs.FileSystem`, so no extra `fs.s3.impl` config is needed.
+Mount an S3 (or MinIO/其他兼容存储) prefix by passing its `s3://` URL as the `-r` target root:
+
+```bash
+$ java -jar target/hcfsfuse-<VERSION>-jar-with-dependencies.jar \
+    -c s3-site.xml -m /mnt/s3fuse -r s3://mybucket/myprefix/
+```
+
+with the following keys enabled in the given configuration files (hadoop `Configuration`):
+
+| key | description |
+| --- | --- |
+| `hcfs.s3.endpoint` | optional, endpoint of an S3-compatible store (e.g. `http://host:9000`). When set, path-style bucket addressing is enabled by default |
+| `hcfs.s3.region` | signature region, default `us-east-1` |
+| `hcfs.s3.access.key` / `hcfs.s3.secret.key` | optional static credentials; when unset the AWS SDK default credential chain applies (env vars, profile, IMDS, ...) |
+| `hcfs.s3.session.token` | optional session token for temporary credentials |
+| `hcfs.s3.path.style.access` | force path-style addressing, default `true` when an endpoint is set |
+| `hcfs.s3.multipart.part.size` | size in bytes of each multipart upload part, default 8MB |
+| `hcfs.s3.stream.buffer.size` | read-ahead buffer size in bytes, default 1MB |
+| `hcfs.s3.owner` / `hcfs.s3.group` | owner/group reported in file listings, defaults to the mounting user |
+
+For example, for MinIO:
+
+```xml
+<configuration>
+  <property><name>hcfs.s3.endpoint</name><value>http://127.0.0.1:9000</value></property>
+  <property><name>hcfs.s3.access.key</name><value>minioadmin</value></property>
+  <property><name>hcfs.s3.secret.key</name><value>minioadmin</value></property>
+</configuration>
+```
+
+Notes:
+- Files are downloaded with a read-ahead buffer, and uploaded through S3 multipart upload on
+  close (S3 has no append/flush semantics, so data becomes visible after release).
+- `rename`/`delete` on directories work on the whole prefix; `chmod`/`chown`/`setTimes` are
+  no-ops since object stores have no such metadata.
+
 # Notice
 
 **There are a lot of reference from Alluxio fuse.**

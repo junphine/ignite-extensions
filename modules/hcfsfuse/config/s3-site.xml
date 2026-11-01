@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property><name>hcfs.s3.endpoint</name><value>http://127.0.0.1:8787/s3</value></property>
+    <property><name>hcfs.s3.access.key</name><value>admin</value></property>
+    <property><name>hcfs.s3.secret.key</name><value>admin</value></property>
+</configuration>
