@@ -382,14 +382,18 @@ public class IgniteHadoopFileSystem extends FileSystem {
     /** {@inheritDoc} */
     @Override public void setOwner(Path p, String username, String grpName) throws IOException {
         A.notNull(p, "p");
-        A.notNull(username, "username");
-        A.notNull(grpName, "grpName");
+        Map<String,String> map = new HashMap<>();
+        if(username!=null && !username.isBlank()){
+            map.put(IgfsUtils.PROP_USER_NAME, username);
+        }
+        if(grpName!=null && !grpName.isBlank()){
+            map.put(IgfsUtils.PROP_GROUP_NAME, grpName);
+        }
 
         enterBusy();
 
         try {
-            if (rmtClient.update(convert(p), F.asMap(IgfsUtils.PROP_USER_NAME, username,
-                IgfsUtils.PROP_GROUP_NAME, grpName)) == null) {
+            if (rmtClient.update(convert(p), map) == null) {
                 throw new IOException("Failed to set file permission (file not found?)" +
                     " [path=" + p + ", userName=" + username + ", groupName=" + grpName + ']');
             }

@@ -161,8 +161,7 @@ public final class HCFSJniFuseFileSystem extends AbstractFuseFileSystem {
       return -ErrorCodes.ENAMETOOLONG();
     }
     try {
-      FSDataOutputStream os =
-          mFileSystem.create(mFileSystem, uri, new FsPermission((int) mode));
+      FSDataOutputStream os = mFileSystem.create(mFileSystem, uri, new FsPermission((int) mode));
       long fid = mNextOpenFileId.getAndIncrement();
       mCreateFileEntries.put(fid, os);
       fi.fh.set(fid);

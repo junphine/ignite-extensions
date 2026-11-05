@@ -57,6 +57,7 @@ with the following keys enabled in the given configuration files (hadoop `Config
 | `hcfs.s3.access.key` / `hcfs.s3.secret.key` | optional static credentials; when unset the AWS SDK default credential chain applies (env vars, profile, IMDS, ...) |
 | `hcfs.s3.session.token` | optional session token for temporary credentials |
 | `hcfs.s3.path.style.access` | force path-style addressing, default `true` when an endpoint is set |
+| `hcfs.s3.chunked.encoding` | SDK-side aws-chunked payload signing on `PutObject`/`UploadPart` (`x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD`). Default `false`: some S3-compatible servers do not decode this framing and would store the raw `n;chunk-signature=...` frames in the object. Set `true` only for servers that properly implement streaming signatures |
 | `hcfs.s3.multipart.part.size` | size in bytes of each multipart upload part, default 8MB |
 | `hcfs.s3.stream.buffer.size` | read-ahead buffer size in bytes, default 1MB |
 | `hcfs.s3.owner` / `hcfs.s3.group` | owner/group reported in file listings, defaults to the mounting user |

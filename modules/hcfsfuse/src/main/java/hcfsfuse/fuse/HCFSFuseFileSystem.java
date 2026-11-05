@@ -350,8 +350,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
    * @return the number of bytes read or 0 on EOF. A negative value on error
    */
   @Override
-  public int read(String path, Pointer buf, @size_t long size, @off_t long offset,
-      FuseFileInfo fi) {
+  public int read(String path, Pointer buf, @size_t long size, @off_t long offset, FuseFileInfo fi) {
 
     if (size > Integer.MAX_VALUE) {
       LOG.error("Cannot read more than Integer.MAX_VALUE");
@@ -361,8 +360,7 @@ public class HCFSFuseFileSystem extends FuseStubFS {
     LOG.trace("read({}, {}, {})", path, size, offset);
     final int sz = (int) size;
     final long fd = fi.fh.get();
-    OpenFileEntry<FSDataInputStream, FSDataOutputStream> oe =
-        mOpenFiles.getFirstByField(ID_INDEX, fd);
+    OpenFileEntry<FSDataInputStream, FSDataOutputStream> oe = mOpenFiles.getFirstByField(ID_INDEX, fd);
     if (oe == null) {
       LOG.error("Cannot find fd for {} in table", path);
       return -ErrorCodes.EBADFD();
@@ -609,8 +607,8 @@ public class HCFSFuseFileSystem extends FuseStubFS {
 
     if (offset < oe.getWriteOffset()) {
       // no op
-      // modify@byron
-      //- return sz;
+      // notice@byron
+      return sz;
     }
 
     try {

@@ -49,7 +49,6 @@ public class HCFSFuse {
     final FileSystem tfs = new Path(opts.getRoot()).getFileSystem(conf);
     final List<String> fuseOpts = opts.getFuseOpts();
 
-
     if (opts.isJniFuseEnable()) {
       if("2".equals(libfuseVersion)){
         LibFuse.loadLibrary(LibfuseVersion.VERSION_2);

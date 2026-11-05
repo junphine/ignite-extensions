@@ -16,19 +16,13 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.S3Configuration;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -74,6 +68,7 @@ public class S3FileSystem extends FileSystem {
   public static final String S3_SECRET_KEY = "hcfs.s3.secret.key";
   public static final String S3_SESSION_TOKEN = "hcfs.s3.session.token";
   public static final String S3_PATH_STYLE_ACCESS = "hcfs.s3.path.style.access";
+  public static final String S3_CHUNKED_ENCODING_KEY = "hcfs.s3.chunked.encoding";
   public static final String S3_MULTIPART_PART_SIZE_KEY = "hcfs.s3.multipart.part.size";
   public static final String S3_STREAM_BUFFER_SIZE_KEY = "hcfs.s3.stream.buffer.size";
   public static final String S3_OWNER_KEY = "hcfs.s3.owner";
@@ -84,7 +79,6 @@ public class S3FileSystem extends FileSystem {
   public static final int S3_DEFAULT_STREAM_BUFFER_SIZE = 1024 * 1024;
   public static final long S3_DEFAULT_BLOCK_SIZE = 128 * 1024 * 1024L;
   public static final int S3_MAX_BATCH_DELETE_OBJECTS = 1000;
-
   private S3Client mClient;
   private URI mUri;
   private Path mWorkingDir;
@@ -167,11 +161,17 @@ public class S3FileSystem extends FileSystem {
     }
     if (endpoint != null) {
       builder.endpointOverride(URI.create(endpoint));
-      builder.serviceConfiguration(S3Configuration.builder()
-          .pathStyleAccessEnabled(conf.getBoolean(S3_PATH_STYLE_ACCESS, true)).build());
-    } else if (conf.getBoolean(S3_PATH_STYLE_ACCESS, false)) {
-      builder.serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build());
     }
+    boolean pathStyle =
+        endpoint != null ? conf.getBoolean(S3_PATH_STYLE_ACCESS, true) : conf.getBoolean(S3_PATH_STYLE_ACCESS, false);
+    // Chunked encoding wraps every PutObject/UploadPart body as
+    // STREAMING-AWS4-HMAC-SHA256-PAYLOAD frames ("n;chunk-signature=...\r\n<data>\r\n");
+    // many S3-compatible servers do not decode this framing and persist it verbatim,
+    // so it is disabled by default (the SDK then signs the full payload instead).
+    builder.serviceConfiguration(S3Configuration.builder()
+        .pathStyleAccessEnabled(pathStyle)
+        .chunkedEncodingEnabled(conf.getBoolean(S3_CHUNKED_ENCODING_KEY, false))
+        .build());
     return builder.build();
   }
 
@@ -269,20 +269,17 @@ public class S3FileSystem extends FileSystem {
     if (key.endsWith("/")) {
       throw new IOException("Cannot create object with directory-like key: " + path);
     }
-    // If a directory marker exists at this exact key (the path was a directory before),
-    // remove it so the plain object replaces the directory.
+
     try {
-      mClient.headObject(r -> r.bucket(mBucket).key(key + "/"));
-      mClient.deleteObject(DeleteObjectRequest.builder().bucket(mBucket).key(key + "/").build());
-    } catch (NoSuchKeyException e) {
-      // no marker, nothing to remove
+      mClient.putObject(PutObjectRequest.builder().bucket(mBucket).key(key).build(),RequestBody.empty());
+    } catch (SdkClientException e) {
+      throw new IOException("Failed to create " + path, e);
     } catch (S3Exception e) {
       if (e.statusCode() != 404) {
         throw new IOException("Failed to create " + path, e);
       }
     }
-    final long partSize =
-        getConf().getLong(S3_MULTIPART_PART_SIZE_KEY, S3_DEFAULT_MULTIPART_PART_SIZE);
+    final long partSize = getConf().getLong(S3_MULTIPART_PART_SIZE_KEY, S3_DEFAULT_MULTIPART_PART_SIZE);
     S3OutputStream out = new S3OutputStream(mClient, mBucket, key, statistics, partSize);
     if (statistics != null) {
       statistics.incrementWriteOps(1);
@@ -326,12 +323,12 @@ public class S3FileSystem extends FileSystem {
     }
     boolean result;
     if (srcStatus.isFile()) {
-      result = copyFile(srcKey, pathToKey(renamedDst));
+      result = renameFile(srcKey, pathToKey(renamedDst));
       if (result) {
         deleteObjectIfExists(srcKey);
       }
     } else {
-      result = copyDirectory(src, renamedDst);
+      result = renameDirectory(src, renamedDst);
       if (result) {
         delete(new Path(src.toUri()), true);
       }
@@ -357,10 +354,27 @@ public class S3FileSystem extends FileSystem {
     }
   }
 
+  private boolean renameFile(String srcKey, String dstKey) throws IOException {
+    try {
+      // todo@byron add header x-amz-copy-option=ATOMIC_MOVE
+      mClient.copyObject(CopyObjectRequest.builder()
+              .sourceBucket(mBucket)
+              .sourceKey(srcKey)
+              .destinationBucket(mBucket)
+              .destinationKey(dstKey)
+              .overrideConfiguration(o -> o.putHeader("x-amz-copy-option","ATOMIC_MOVE"))
+              .build());
+      return true;
+    } catch (S3Exception e) {
+      throw new IOException(String.format(
+              "Failed to copy key %s to %s in bucket %s", srcKey, dstKey, mBucket), e);
+    }
+  }
+
   /**
    * Copies a directory and all of its recursively listed content.
    */
-  private boolean copyDirectory(Path src, Path dst) throws IOException {
+  private boolean renameDirectory(Path src, Path dst) throws IOException {
     String srcKey = pathToKey(src);
     String dstKey = pathToKey(dst);
     String srcPrefix = srcKey + "/";
@@ -380,7 +394,7 @@ public class S3FileSystem extends FileSystem {
           continue;
         }
         String suffix = oldKey.substring(srcPrefix.length());
-        copyFile(oldKey, dstPrefix + suffix);
+        renameFile(oldKey, dstPrefix + suffix);
       }
       if (response.isTruncated() != null && response.isTruncated()) {
         request = request.toBuilder().continuationToken(response.nextContinuationToken()).build();
@@ -478,6 +492,9 @@ public class S3FileSystem extends FileSystem {
         statuses.add(newFileStatus(size, isDir, modificationTime, objectPath));
       }
       for (var commonPrefix : response.commonPrefixes()) {
+        if (commonPrefix.prefix().equals(prefix)) {
+          continue;
+        }
         Path objectPath = keyToPath(commonPrefix.prefix());
         statuses.add(newFileStatus(0, true, 0, objectPath));
       }
@@ -609,6 +626,15 @@ public class S3FileSystem extends FileSystem {
   public void setOwner(final Path p, final String username, final String groupname)
       throws IOException {
     LOG.debug("setOwner on {} is a no-op (S3 has no ownership)", p);
+    final String key = pathToKey(p);
+    PutObjectAclRequest.Builder builder = PutObjectAclRequest.builder().bucket(mBucket).key(key);
+    if(username!=null){
+      builder.grantWrite(username);
+    }
+    if(groupname!=null){
+      builder.grantWriteACP(groupname);
+    }
+    mClient.putObjectAcl(builder.build());
   }
 
   @Override
