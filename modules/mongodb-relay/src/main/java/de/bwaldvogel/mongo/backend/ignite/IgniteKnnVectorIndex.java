@@ -9,24 +9,21 @@ import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.bson.Document;
 
 import org.apache.ignite.IgniteFileSystem;
+import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.*;
 import org.apache.ignite.cache.query.HybridTextQuery;
 import org.apache.ignite.cache.query.QueryCursor;
+import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.cache.query.ScoredCacheEntry;
-import org.apache.ignite.internal.processors.query.GridQueryIndexDescriptor;
 import org.apache.ignite.internal.processors.query.QueryIndexDescriptorImpl;
 import org.apache.ignite.internal.processors.query.QueryTypeDescriptorImpl;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
 import org.apache.ignite.igfs.IgfsPath;
-import org.apache.ignite.ml.math.primitives.vector.Vector;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 
-import de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil;
-
-import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeInt8ValueEmbedding;
 import static de.bwaldvogel.mongo.backend.ignite.util.EmbeddingUtil.computeValueEmbedding;
 
 /**
@@ -127,16 +124,10 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 
 	@Override
 	protected void doRegister() throws Exception {
+		this.doRegisterQueryEntity();
+
 		TableDescriptor tbl = findTable();
 		if (tbl == null) {
-			QueryEntity entity = new QueryEntity();
-			entity.setValueType(typeName());
-			entity.setTableName(tableName());
-			entity.setFields(buildFields(allKnownFields()));
-			List<QueryIndex> indexs = new ArrayList<>(entity.getIndexes());
-			indexs.add(buildVectorQueryIndex(keys()));
-			entity.setIndexes(indexs);
-			addQueryEntity(entity);
 			// 针对持久化缓存：registerCache0的重建走树索引分支，不经过Lucene store，这里统一回填
 			backfillLuceneIndex();
 			return;
@@ -146,10 +137,9 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 		log.warn("Ignite type '" + typeName() + "' is already registered. Appending vector fields " + keys()
 				+ " of mongo index '" + getName() + "' into its Lucene index.");
 
-
 		QueryTypeDescriptorImpl type = (QueryTypeDescriptorImpl) tbl.type();
 		QueryIndexDescriptorImpl desc = new QueryIndexDescriptorImpl(type,getName(), QueryIndexType.VECTOR, dimensions);
-		desc.setQueryIndex(buildVectorQueryIndex(keys()));
+		desc.setQueryIndex(buildQueryIndex());
 		type.addIndex(desc);
 
 		try{
@@ -163,11 +153,12 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 	}
 
 	/** 构建带向量属性（相似度/维度/编码）的VectorQueryIndex。 */
-	protected VectorQueryIndex buildVectorQueryIndex(List<String> fields) {
-		VectorQueryIndex idx = new VectorQueryIndex(fields.get(0), vectorSimilarityFunction, dimensions,
+	@Override
+	protected VectorQueryIndex buildQueryIndex() {
+		VectorQueryIndex idx = new VectorQueryIndex(keys().get(0), vectorSimilarityFunction, dimensions,
 				VectorEncoding.FLOAT32);
-		if (fields.size() > 1) {
-			idx.setFieldNames(fields, true); // 复合向量索引：每个字段各自独立索引
+		if (keys().size() > 1) {
+			idx.setFieldNames(keys(), true); // 复合向量索引：每个字段各自独立索引
 		}
 		idx.setName(this.getName());
 		return idx;
@@ -189,7 +180,7 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 		if (!(qidx instanceof VectorQueryIndex)) {
 			return false; // QueryIndex非VectorQueryIndex（文本索引或缺失）时向量字段未被Lucene注册
 		}
-		return ((VectorQueryIndex) qidx).getFieldNames().containsAll(keys());
+		return qidx.getFieldNames().containsAll(keys());
 	}
 
 	@Override
@@ -200,7 +191,7 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 
 		// { $text : { $knnVector: [0.1,...] } } || { $text : { $vectorSearch: [0.1,...] } }
 		Object text = query.get("$text");
-		if (text instanceof Document && IgniteVectorIndex.isVectorSearchExpression((Document) text)) {
+		if (text instanceof Document && IgniteVectorIndex.isVectorSearchExpression(text)) {
 			return true;
 		}
 
@@ -231,7 +222,7 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 		// { $text : { $knnVector: [0.1,...], $k: 10, $scoreThreshold: 0.5 } }
 		if (query.containsKey("$text")) {
 			Object text = query.get("$text");
-			if (text instanceof Document && IgniteVectorIndex.isVectorSearchExpression((Document) text)) {
+			if (text instanceof Document && IgniteVectorIndex.isVectorSearchExpression(text)) {
 				Document textDoc = (Document) text;
 				Object vector = textDoc.get("$knnVector");
 				if (vector == null) {
@@ -355,8 +346,7 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 			} catch (IOException e) {
 				log.error("Get LuceneIndexAccess of cache failed",e);
 			}
-			refreshLuceneIndex();
-			backfillLuceneIndex();
+			this.registered = false;
 		}
 	}
 }

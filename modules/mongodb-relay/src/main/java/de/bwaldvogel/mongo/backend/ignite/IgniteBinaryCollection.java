@@ -14,6 +14,7 @@ import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteException;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.binary.BinaryObjectException;
+import org.apache.ignite.cache.CacheMetrics;
 import org.apache.ignite.cache.QueryEntity;
 import org.apache.ignite.cache.query.FieldsQueryCursor;
 import org.apache.ignite.cache.query.QueryCursor;
@@ -76,7 +77,7 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
         if(collectionName.startsWith("igfs-internal-")) { // igfs
         	this.readOnly = true;
         }
-        if(collectionName.startsWith("wc_")) { // web-console
+        if(collectionName.startsWith(IgniteDatabase.INDEX_DB_PREFIX)) { // INDEX
         	this.readOnly = true;
         }
     }
@@ -109,6 +110,20 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 				if(op.equals("reIndex"))
 					hidx.init();
 			}
+			if (idx instanceof IgniteLuceneIndex) {
+				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;
+				if(op.equals("reIndex"))
+					igniteIndex.init();
+				if(op.equals("add")) {
+					igniteIndex.setFirstIndex(firstLuneceIndex);
+					firstLuneceIndex = false;
+				}
+			}
+			if (idx instanceof IgniteVectorIndex) {
+				IgniteVectorIndex igniteIndex = (IgniteVectorIndex) idx;
+				if(op.equals("reIndex"))
+					igniteIndex.init();
+			}
     	}
     }
 
@@ -123,8 +138,9 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
     @Override
     protected int getDataSize() {
-    	int size = (int)dataMap.metrics().getCacheSize();
-        return size;
+		CacheMetrics metrics = dataMap.metrics();
+		int offHeap = (int)metrics.getOffHeapAllocatedSize();
+		return offHeap >= 0 ? offHeap : 0;
     }
 
 
@@ -480,6 +496,32 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 						 )
 		 );
     }
+
+	QueryEntity getQueryEntity(){
+		QueryEntity foundEntity = null;
+		CacheConfiguration<Object,BinaryObject> cfg = dataMap.getConfiguration(CacheConfiguration.class);
+		String cacheName = cfg.getName().toUpperCase();
+		String shortName = cacheName;
+		int pos = shortName.lastIndexOf('.');
+		shortName = pos>0? shortName.substring(pos+1): shortName;
+		String typeName = this.typeName==null?shortName:this.typeName;
+		if(!cfg.getQueryEntities().isEmpty()) {
+			Iterator<QueryEntity> qeit = cfg.getQueryEntities().iterator();
+			while(qeit.hasNext()) {
+				QueryEntity entity = qeit.next();
+				if(foundEntity==null) {
+					foundEntity = entity;
+				}
+				else if(entity.getValueType().toUpperCase().startsWith(cacheName)
+						|| typeName.equalsIgnoreCase(entity.getValueType())
+						|| shortName.equalsIgnoreCase(entity.getTableName())){
+					foundEntity = entity;
+					break;
+				}
+			}
+		}
+		return foundEntity;
+	}
    
     public String getTableName() {
     	if(tableName!=null) {
@@ -493,25 +535,15 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
     	}
 		schema = QueryUtils.normalizeSchemaName(cfg.getName(), schema);
 
-		String cacheName = cfg.getName();
+		String cacheName = cfg.getName().toUpperCase();
 		String shortName = cacheName;
 		int pos = shortName.lastIndexOf('.');
 		shortName = pos>0? shortName.substring(pos+1): shortName;
 
-		if(!cfg.getQueryEntities().isEmpty()) {
-			Iterator<QueryEntity> qeit = cfg.getQueryEntities().iterator();
-			while(qeit.hasNext()) {
-				QueryEntity entity = qeit.next();
-				if(StringUtils.isEmpty(typeName)) {
-					typeName = entity.getValueType();
-					tableName = entity.getTableName();
-				}
-				else if(cacheName.equalsIgnoreCase(entity.getValueType()) || shortName.equalsIgnoreCase(entity.getTableName())){
-					typeName = entity.getValueType();
-					tableName = entity.getTableName();
-					break;
-				}
-			}
+		QueryEntity entity = getQueryEntity();
+		if(entity!=null) {
+			typeName = entity.getValueType();
+			tableName = entity.getTableName();
 		}
 
 		if(tableName==null) {
@@ -535,19 +567,14 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 				}
 			}
 		}
-    	// SQL_{SCHEMA_NAME}_{TABLE_NAME}	
-		if(tableName==null && cacheName.startsWith("SQL_")) {
-			String patten = "SQL_"+schema+"_";
-			if(cacheName.startsWith(patten)) {
-				tableName = cacheName.substring(patten.length());
-			}
-			else {
-				pos = cacheName.lastIndexOf('_',5);
-				if(pos>5) {
-					tableName = cacheName.substring(pos + 1);
-					schema = cacheName.substring(4,pos-1);
-				}
-			}
+    	// SQL_{SCHEMA_NAME}_{TABLE_NAME}
+		String patten = "SQL_"+schema+"_";
+		if(tableName==null && cacheName.startsWith(patten)) {
+			tableName = cacheName.substring(patten.length());
+		}
+
+		if(tableName==null){
+			tableName = shortName;
 		}
 		return tableName;
 	}
@@ -556,11 +583,10 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
      * @return schema,typeName,keyField
      */
     public String getTypeName() {
-    	String shortName = getTableName();
+		String tableName = getTableName();
     	if(typeName!=null) {
     		return typeName;
     	}
-
     	if(StringUtils.isEmpty(typeName)) {
     		// read type name from existed records
     		ScanQuery<Object, Object> scan = new ScanQuery<>(null);
@@ -572,19 +598,22 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 					typeName = ((BinaryObject)row.getValue()).type().typeName();
 				}
 				else {
-					typeName = row.getValue().getClass().getName();
+					typeName = QueryUtils.typeName(row.getValue().getClass());
 				}
 				break;
 			}
 			cursor.close();
-    	}   
-    	
-    	return typeName==null ? this.getCollectionName() : typeName;
+    	}
+		if(typeName==null) {
+			// CacheName + UUID
+			typeName = this.getCollectionName().toUpperCase() + "_" + UUID.randomUUID().toString().replace("-", "_");
+		}
+    	return typeName;
     }
 
 	public String getSchema() {
 		if(schema==null) {
-			String shortName = getTableName();
+			getTableName();
 		}
 		return schema;
 	}

@@ -133,16 +133,9 @@ public class IgniteSortedIndex extends IgniteH2Index {
 
 	@Override
 	protected void doRegister() throws Exception {
+		this.doRegisterQueryEntity();
 		TableDescriptor tbl = findTable();
-		if (tbl == null) {
-			QueryEntity entity = new QueryEntity();
-			entity.setValueType(typeName());
-			entity.setTableName(tableName());
-			entity.setFields(buildFields(allKnownFields()));
-			// QueryEntity.getIndexes() 在未初始化时返回不可变的空集合，必须通过 setIndexes 设置
-			entity.setIndexes(new LinkedHashSet<>(Collections.singletonList(buildQueryIndex())));
-			addQueryEntity(entity);
-		} else {
+		if (tbl != null) {
 			addColumns(keySet());
 			createSqlIndex(buildQueryIndex());
 		}
@@ -165,6 +158,7 @@ public class IgniteSortedIndex extends IgniteH2Index {
 		return true;
 	}
 
+	@Override
 	protected QueryIndex buildQueryIndex() {
 		LinkedHashMap<String, Boolean> fields = new LinkedHashMap<>();
 		for (IndexKey key : getKeys()) {

@@ -10,15 +10,18 @@ import de.bwaldvogel.mongo.backend.IndexKey;
 import de.bwaldvogel.mongo.bson.BsonRegularExpression;
 import de.bwaldvogel.mongo.bson.Document;
 
+import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.cache.*;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.TextQuery;
+import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.GridKernalContext;
 import org.apache.ignite.internal.processors.cache.query.ScoredCacheEntry;
 import org.apache.ignite.internal.processors.query.GridQueryIndexDescriptor;
 import org.apache.ignite.internal.processors.query.QueryIndexDescriptorImpl;
 import org.apache.ignite.internal.processors.query.schema.management.TableDescriptor;
 import org.apache.lucene.document.FieldType;
+import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 
 /**
@@ -104,16 +107,9 @@ public class IgniteTextIndex extends IgniteH2Index {
 
 	@Override
 	protected void doRegister() throws Exception {
+		this.doRegisterQueryEntity();
 		TableDescriptor tbl = findTable();
 		if (tbl == null) {
-			QueryEntity entity = new QueryEntity();
-			entity.setValueType(typeName());
-			entity.setTableName(tableName());
-			entity.setFields(buildFields(allKnownFields()));
-			List<QueryIndex> indexs = new ArrayList<>(entity.getIndexes());
-			indexs.add(buildFullTextQueryIndex());
-			entity.setIndexes(indexs);
-			addQueryEntity(entity);
 			// 针对持久化缓存：registerCache0的重建走树索引分支，不经过Lucene store，这里统一回填
 			backfillLuceneIndex();
 			return;
@@ -121,12 +117,11 @@ public class IgniteTextIndex extends IgniteH2Index {
 		// 类型已注册：WARN后把文本字段动态追加进类型已有的Lucene文本索引
 		log.warn("Ignite type '" + typeName() + "' is already registered. Appending text fields " + keys()
 				+ " of mongo index '" + getName() + "' into its Lucene text index.");
-		if(tbl!=null) {
-			QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
-			desc.setQueryIndex(buildFullTextQueryIndex());
-		}
-
 		try{
+			addColumns(keys());
+			QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
+			desc.setQueryIndex(buildQueryIndex());
+
 			LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
 			access.config.setStoreTextFieldValue(storedSource);
 			for(String hashedField: this.hashedFields){
@@ -139,8 +134,11 @@ public class IgniteTextIndex extends IgniteH2Index {
 				}
 			}
 			access.init(tbl.type());
+
 		} catch (IOException e) {
 			log.error("Get LuceneIndexAccess of cache failed",e);
+		} catch (Exception e) {
+			log.error("Do register QueryEntity of cache failed",e);
 		}
 		refreshLuceneIndex();
 		backfillLuceneIndex();
@@ -188,7 +186,8 @@ public class IgniteTextIndex extends IgniteH2Index {
 	}
 
 	/** 构建带分析器配置的FullTextQueryIndex（分析器命名对齐MongoDB Search）。 */
-	protected FullTextQueryIndex buildFullTextQueryIndex() {
+	@Override
+	protected FullTextQueryIndex buildQueryIndex() {
 		FullTextQueryIndex idx = new FullTextQueryIndex(keys());
 		if (analyzer != null) {
 			idx.setAnalyzer(analyzer);
@@ -377,24 +376,27 @@ public class IgniteTextIndex extends IgniteH2Index {
 
 		if(!fields.isEmpty()){
 			TableDescriptor tbl = findTable();
-			if(tbl!=null) {
-				QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
-				desc.setQueryIndex(buildFullTextQueryIndex());
-			}
 
 			try{
+				if(tbl!=null) {
+					QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
+					desc.setQueryIndex(buildQueryIndex());
+				}
 				LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
 				Map<String, FieldType> textFields = access.fields(this.collection.getTypeName());
 				for(String field: fields){
-					textFields.remove(field);
+					textFields.put(field, StoredField.TYPE);
 				}
 			} catch (IOException e) {
 				log.error("Get LuceneIndexAccess of cache failed",e);
+			} catch (Exception e) {
+				log.error("Drop Text Index failed",e);
 			}
-			refreshLuceneIndex();
-			backfillLuceneIndex();
+			this.registered = false;
 		}
 	}
 	@Override
-	public void drop() {}
+	public void drop() {
+		this.registered = false;
+	}
 }

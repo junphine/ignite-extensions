@@ -1,17 +1,8 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
+import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import javax.cache.Cache;
@@ -23,9 +14,8 @@ import de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil;
 import de.bwaldvogel.mongo.bson.Document;
 
 import org.apache.ignite.IgniteCheckedException;
-import org.apache.ignite.cache.CacheMetrics;
-import org.apache.ignite.cache.CachePeekMode;
-import org.apache.ignite.cache.LuceneIndexAccess;
+import org.apache.ignite.binary.BinaryObject;
+import org.apache.ignite.cache.*;
 import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
@@ -144,20 +134,21 @@ public abstract class IgniteH2Index extends Index<Object> {
 	 */
 	protected abstract boolean verifyRegistration();
 
+	protected abstract QueryIndex buildQueryIndex();
+
 	/** Ignite计算出的schema名（与SchemaManager.schemaName一致）。 */
 	protected String schemaName() {
 		return collection.getSchema();
 	}
 
-	public final String typeName() {
+	protected final String typeName() {
 		return collection.getTypeName();
 	}
 
-	/** 表名；类型未注册时按Ignite默认规则推导。 */
-	protected String tableName() {
-		String tbl = collection.getTableName();
-		return tbl != null ? tbl : QueryUtils.typeName(typeName());
+	protected final String tableName() {
+		return collection.getTableName();
 	}
+
 
 	protected TableDescriptor findTable() {
 		Collection<TableDescriptor> tables = igniteH2Indexing.schemaManager().tablesForCache(collection.getCollectionName());
@@ -166,9 +157,37 @@ public abstract class IgniteH2Index extends Index<Object> {
 				if (typeName().equalsIgnoreCase(table.type().name())) {
 					return table;
 				}
+				if (tableName().equalsIgnoreCase(table.type().tableName())) {
+					return table;
+				}
+				if (table.type().name().startsWith(collection.getCollectionName())){
+					return table;
+				}
 			}
 		}
 		return null;
+	}
+
+	protected QueryEntity doRegisterQueryEntity() throws Exception {
+		QueryEntity entity = this.collection.getQueryEntity();
+		if (entity == null) {
+			entity = new QueryEntity();
+		}
+		entity.setValueType(typeName());
+		entity.setTableName(tableName());
+		entity.setFields(buildFields(allKnownFields()));
+		Set<QueryIndex> indexs = new HashSet<>(entity.getIndexes());
+		indexs.add(buildQueryIndex());
+		entity.setIndexes(indexs);
+
+		TableDescriptor tbl = findTable();
+		if (tbl == null) {
+			CacheConfiguration<Object, BinaryObject> cfg = this.collection.dataMap.getConfiguration(CacheConfiguration.class);
+
+			cfg.setQueryEntity(entity);
+			addQueryEntity(entity);
+		}
+		return entity;
 	}
 
 	/** 本mongo索引中可以注册进Ignite的字段（仅支持顶层和二层字段；{@code _id} 是cache key本身，不声明列）。 */
@@ -517,8 +536,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 	}
 
 	@Override
-	public void updateInPlace(Document oldDocument, Document newDocument, Object position,
-			MongoCollection<Object> collection) {
+	public void updateInPlace(Document oldDocument, Document newDocument, Object position, MongoCollection<Object> collection) {
 		// 索引维护由Ignite的store钩子完成（update通过dataMap.put覆盖）
 	}
 
@@ -529,8 +547,8 @@ public abstract class IgniteH2Index extends Index<Object> {
 
 	@Override
 	public long getDataSize() {
-		CacheMetrics metrics = collection.dataMap.metrics();
-		long offHeap = metrics.getOffHeapAllocatedSize();
+		CacheMetrics metrics = collection.dataMap.localMetrics();
+		long offHeap = metrics.getOffHeapPuts();
 		return offHeap >= 0 ? offHeap : 0;
 	}
 

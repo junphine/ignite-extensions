@@ -53,7 +53,7 @@ public class PrimaryKeyIndex<P> extends AbstractUniqueIndex<P> {
 
     @Override
     public long getDataSize() {
-        return collection.metrics().getCachePuts();
+        return collection.metrics().getKeysToRebalanceLeft();
     }
 
     @Override
@@ -65,7 +65,6 @@ public class PrimaryKeyIndex<P> extends AbstractUniqueIndex<P> {
     protected boolean putKeyPosition(KeyValue keyValue, P position) {
         return true;
     }
-
 
     @Override
     protected P getPosition(KeyValue keyValue) {

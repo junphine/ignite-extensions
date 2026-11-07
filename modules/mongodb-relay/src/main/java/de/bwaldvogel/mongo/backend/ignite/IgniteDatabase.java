@@ -25,6 +25,7 @@ import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
 import org.apache.ignite.configuration.CacheConfiguration;
 import org.apache.ignite.internal.IgniteEx;
+import org.apache.ignite.ml.math.distances.EuclideanDistance;
 import org.apache.ignite.transactions.Transaction;
 
 import de.bwaldvogel.mongo.MongoCollection;
@@ -121,12 +122,21 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
     	IgniteBinaryCollection collection = (IgniteBinaryCollection)resolveCollection(collectionName,true);
         IgniteEx ignite = (IgniteEx)mvStore;
     	if(keys.size()>0 && keys.get(0).isText() ) {
-    		String indexType = (String)keys.get(0).textOptions().get("type");
+            Document options = keys.get(0).textOptions();
+    		String indexType = options.getString("type");
 
-    		if("knnVector".equalsIgnoreCase(indexType) || "vector".equalsIgnoreCase(indexType)) { // knnVector
+    		if("knnVector".equalsIgnoreCase(indexType) || "HNSW".equalsIgnoreCase(indexType) || "annVector".equalsIgnoreCase(indexType)) { // knnVector
                 // 向量索引注册进Ignite的VectorQueryIndex，与MongoDB共用同一份索引数据
+                String similarity = options.getOrDefault("similarity", "cosine").toString();
+                if(similarity.equals("euclidean ")) {
+                    return new IgniteVectorIndex(ignite.context(),collection,indexName,keys,sparse);
+                }
                 return new IgniteKnnVectorIndex(ignite.context(),collection,indexName,keys,sparse);
     		}
+            else if("vector".equalsIgnoreCase(indexType)) { // knnVector
+                // 使用KB_TREE or BALL_TREE
+                return new IgniteVectorIndex(ignite.context(),collection,indexName,keys,sparse);
+            }
     		else if("text".equalsIgnoreCase(indexType)) { // text
                 // 文本索引注册进Ignite的FullTextQueryIndex（GridLuceneIndex）
                 if(collection.textIndex==null) {
