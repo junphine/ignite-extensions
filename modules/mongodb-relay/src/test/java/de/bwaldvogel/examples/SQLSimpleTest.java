@@ -43,7 +43,7 @@ public class SQLSimpleTest {
     	if(server!=null) {
     		return ;
     	}
-        server = new MongoServer(IgniteBackend.inMemory());
+        server = new MongoServer(IgniteBackend.inMemory(0));
 
         // bind on a random local port
         String serverAddress = server.bindAndGetConnectionString();

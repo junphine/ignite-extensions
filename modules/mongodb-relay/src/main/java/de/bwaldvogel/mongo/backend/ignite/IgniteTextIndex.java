@@ -2,6 +2,7 @@ package de.bwaldvogel.mongo.backend.ignite;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import de.bwaldvogel.mongo.backend.CollectionUtils;
 import de.bwaldvogel.mongo.backend.Index;
@@ -74,22 +75,28 @@ public class IgniteTextIndex extends IgniteH2Index {
 		return 100;
 	}
 
-	public IgniteTextIndex addHashedFields(List<IndexKey> keys) {
+	public synchronized IgniteTextIndex addHashedFields(String indexName,List<IndexKey> keys) {
 		Set<String> exists = this.keySet();
 		for(IndexKey key: keys) {
 			if(!exists.contains(key.getKey())) {
 				this.getKeys().add(key);
+				this.keys().add(key.getKey());
+				this.keySet().add(key.getKey());
 				hashedFields.add(key.getKey());
+				key.textOptions().append("index",indexName);
 			}
 		}
 		return this;
 	}
 
-	public IgniteTextIndex addTextFields(List<IndexKey> keys) {
+	public synchronized IgniteTextIndex addTextFields(String indexName,List<IndexKey> keys) {
 		Set<String> exists = this.keySet();
 		for(IndexKey key: keys) {
 			if(!exists.contains(key.getKey())) {
 				this.getKeys().add(key);
+				this.keys().add(key.getKey());
+				this.keySet().add(key.getKey());
+				key.textOptions().append("index",indexName);
 			}
 		}
 		return this;
@@ -114,15 +121,9 @@ public class IgniteTextIndex extends IgniteH2Index {
 		// 类型已注册：WARN后把文本字段动态追加进类型已有的Lucene文本索引
 		log.warn("Ignite type '" + typeName() + "' is already registered. Appending text fields " + keys()
 				+ " of mongo index '" + getName() + "' into its Lucene text index.");
-		addColumns(keys());
-		QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
-		if (desc.getQueryIndex() == null) {
+		if(tbl!=null) {
+			QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
 			desc.setQueryIndex(buildFullTextQueryIndex());
-		} else {
-			log.info("Ignite type '" + typeName() + "' already has FULLTEXT configuration "
-					+ desc.getQueryIndex().getClass().getSimpleName() + "; analyzer options of mongo index '"
-					+ getName() + "' (analyzer=" + analyzer + ", searchAnalyzer=" + queryAnalyzer
-					+ ") are not applied, the existing configuration is shared.");
 		}
 
 		try{
@@ -361,4 +362,39 @@ public class IgniteTextIndex extends IgniteH2Index {
 		}
 		return result;
 	}
+	public synchronized void drop(String indexName){
+		List<String> fields = new ArrayList<>();
+		Iterator<IndexKey> it = getKeys().iterator();
+		while (it.hasNext()) {
+			IndexKey key = it.next();
+			if(indexName.equals(key.textOptions().get("index"))){
+				fields.add(key.getKey());
+				this.keys().remove(key.getKey());
+				this.keySet().remove(key.getKey());
+				it.remove();
+			}
+		}
+
+		if(!fields.isEmpty()){
+			TableDescriptor tbl = findTable();
+			if(tbl!=null) {
+				QueryIndexDescriptorImpl desc = appendTextIndexFields(tbl);
+				desc.setQueryIndex(buildFullTextQueryIndex());
+			}
+
+			try{
+				LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
+				Map<String, FieldType> textFields = access.fields(this.collection.getTypeName());
+				for(String field: fields){
+					textFields.remove(field);
+				}
+			} catch (IOException e) {
+				log.error("Get LuceneIndexAccess of cache failed",e);
+			}
+			refreshLuceneIndex();
+			backfillLuceneIndex();
+		}
+	}
+	@Override
+	public void drop() {}
 }

@@ -92,7 +92,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 
 
 	/** 索引定义是否已成功注册进Ignite。 */
-	private volatile boolean registered = false;
+	volatile boolean registered = false;
 
 	protected IgniteH2Index(GridKernalContext ctx, IgniteBinaryCollection collection, String name, List<IndexKey> keys,
 			boolean sparse) {
@@ -156,7 +156,7 @@ public abstract class IgniteH2Index extends Index<Object> {
 	/** 表名；类型未注册时按Ignite默认规则推导。 */
 	protected String tableName() {
 		String tbl = collection.getTableName();
-		return tbl != null ? tbl : QueryUtils.normalizeObjectName(typeName(), true);
+		return tbl != null ? tbl : QueryUtils.typeName(typeName());
 	}
 
 	protected TableDescriptor findTable() {
@@ -363,13 +363,17 @@ public abstract class IgniteH2Index extends Index<Object> {
 	 * @return 追加后的文本索引描述符
 	 * @throws IgniteCheckedException 若类型上不存在该字段
 	 */
-	protected QueryIndexDescriptorImpl appendTextIndexFields(TableDescriptor tbl) throws IgniteCheckedException {
+	protected QueryIndexDescriptorImpl appendTextIndexFields(TableDescriptor tbl)  {
 		QueryTypeDescriptorImpl type = (QueryTypeDescriptorImpl) tbl.type();
 		QueryIndexDescriptorImpl desc = textIndexDescriptor(tbl);
 		Collection<String> existing = desc != null ? desc.fields() : Collections.emptyList();
 		for (String field : keySet()) {
 			if (!existing.contains(field)) {
-				type.addFieldToTextIndex(field);
+				try {
+					type.addFieldToTextIndex(field);
+				} catch (IgniteCheckedException e) {
+					throw new RuntimeException(e);
+				}
 			}
 		}
 		return textIndexDescriptor(tbl);

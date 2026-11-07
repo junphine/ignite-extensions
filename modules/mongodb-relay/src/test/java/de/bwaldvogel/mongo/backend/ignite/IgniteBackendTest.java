@@ -8,7 +8,7 @@ class IgniteBackendTest extends AbstractBackendTest {
 
     @Override
     protected MongoBackend createBackend() throws Exception {
-    	return IgniteBackend.inMemory();
+    	return IgniteBackend.inMemory(0);
     }
     
     @Override

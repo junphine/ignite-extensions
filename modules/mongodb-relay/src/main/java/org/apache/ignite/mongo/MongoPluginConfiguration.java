@@ -26,9 +26,9 @@ public class MongoPluginConfiguration implements PluginConfiguration {
     private boolean isWithBinaryStorage  = true;
     
     /** Host. */
-    private String host = "0.0.0.0";
+    private String host = "127.0.0.1";
     
-    private int port = 27018;
+    private int port = 27017;
 
     /** Number of backups in mongodb storage cache. */
     private int mdlStorageBackups;

@@ -1,12 +1,7 @@
 package de.bwaldvogel.mongo.backend.ignite;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import de.bwaldvogel.mongo.MongoCollection;
 import de.bwaldvogel.mongo.backend.CollectionUtils;
@@ -346,5 +341,22 @@ public class IgniteKnnVectorIndex extends IgniteH2Index {
 			log.error("Failed to execute vector query on field '" + field + "' of type '" + typeName() + "'", e);
 		}
 		return result;
+	}
+
+	public synchronized void drop(){
+		List<String> fields = this.keys();
+		if(!fields.isEmpty()){
+			try{
+				LuceneIndexAccess access = LuceneIndexAccess.getIndexAccess(ctx, this.collection.getCollectionName());
+				Map<String, FieldType> textFields = access.fields(this.collection.getTypeName());
+				for(String field: fields){
+					textFields.remove(field);
+				}
+			} catch (IOException e) {
+				log.error("Get LuceneIndexAccess of cache failed",e);
+			}
+			refreshLuceneIndex();
+			backfillLuceneIndex();
+		}
 	}
 }

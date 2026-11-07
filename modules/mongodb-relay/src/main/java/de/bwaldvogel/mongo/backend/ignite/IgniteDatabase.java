@@ -131,24 +131,24 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
                 // 文本索引注册进Ignite的FullTextQueryIndex（GridLuceneIndex）
                 if(collection.textIndex==null) {
                     collection.textIndex = new IgniteTextIndex(ignite.context(), collection, indexName, keys, sparse);
-                    return collection.textIndex;
+
                 }else{
-                    collection.textIndex.addTextFields(keys);
-                    return null;
+                    collection.textIndex.addTextFields(indexName,keys);
                 }
+                return collection.textIndex;
     		}
             else if("hashed".equalsIgnoreCase(indexType)) { // hashed
                 if(collection.textIndex==null) {
                     collection.textIndex = new IgniteTextIndex(ignite.context(), collection, indexName, keys, sparse);
-                    collection.textIndex.addHashedFields(keys);
-                    return collection.textIndex;
+                    collection.textIndex.addHashedFields(indexName,keys);
+
                 }else{
-                    collection.textIndex.addHashedFields(keys);
-                    return null;
+                    collection.textIndex.addHashedFields(indexName,keys);
                 }
+                return collection.textIndex;
             }
     	}
-    	if(keys.size()>0) {
+    	if(!keys.isEmpty()) {
             // 普通索引注册进Ignite的SORTED索引（H2 B+Tree）
             return new IgniteSortedIndex(ignite.context(),collection,indexName,keys,sparse);
     	}

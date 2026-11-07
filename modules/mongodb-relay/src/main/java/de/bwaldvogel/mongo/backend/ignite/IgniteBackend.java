@@ -30,13 +30,15 @@ public class IgniteBackend extends AbstractMongoBackend {
     
     long oldVersion = System.currentTimeMillis();
 
-    public static IgniteBackend inMemory() {
+    public static IgniteBackend inMemory(int port) {
         IgniteConfiguration cfg = new IgniteConfiguration();
         cfg.setIgniteInstanceName("testdb");
         cfg.setLocalHost("127.0.0.1");
 
         MongoPluginConfiguration mongoCfg = new MongoPluginConfiguration();
+        mongoCfg.setPort(port);
         cfg.setPluginConfigurations(mongoCfg);
+
     	Ignite admin = Ignition.getOrStart(cfg);
         return new IgniteBackend(admin,mongoCfg);
     }

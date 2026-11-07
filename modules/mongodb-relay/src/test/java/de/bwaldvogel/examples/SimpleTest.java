@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Map;
 
+import org.apache.ignite.mongo.MongoServerPluginProvider;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
@@ -40,10 +41,13 @@ public class SimpleTest {
     	if(server!=null) {
     		return ;
     	}
-        server = new MongoServer(IgniteBackend.inMemory());
 
+        IgniteBackend memery = IgniteBackend.inMemory(50002);
+        server = MongoServerPluginProvider.mongoServer;
+
+        //server.bind("0.0.0.1",memery.getCfg().getPort());
         // bind on a random local port
-        String serverAddress = server.bindAndGetConnectionString();
+        String serverAddress = server.getConnectionString();
 
         client = MongoClients.create(serverAddress);
         
@@ -82,9 +86,12 @@ public class SimpleTest {
         collection.createIndex(json("title: 'text', tag: 'text'"), new IndexOptions().unique(false).sparse(true));
 
         collection.insertOne(json("_id: 1, text: 'abc'"));
+
+        collection.createIndex(json("description: 'text'"), new IndexOptions().unique(false).sparse(true));
+
         collection.insertOne(json("_id: 2, text: 'def'"));
         collection.insertOne(json("_id: 3, title: '标题'"));
-        collection.insertOne(json("_id: 4"));
+        collection.insertOne(json("_id: 4, description: 'def'"));
         collection.insertOne(json("_id: 5, text: 'def'"));
 
         assertMongoWriteException(() -> collection.insertOne(json("_id: 6, text: null")),
@@ -107,6 +114,8 @@ public class SimpleTest {
         	Document doc = it.next();
         	System.out.println(doc);
         }
+
+        collection.dropIndex(json("name: 'description_text'"));
         
         collection.updateOne(json("_id: 2"), new Document("$set", json("text: 'def', title:'这个 是 标题'")));
         ret = collection.find(json("title: {$text: '标题'}"));

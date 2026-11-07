@@ -87,32 +87,27 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
     @Override
     public void addIndex(Index<Object> index) {
-    	if(index==null) return; //add@byron
-    	super.addIndex(index);
+    	if(index==null) return;
+		super.addIndex(index);
     	indexChanged(index,"add");
-    }    
+    }
+
+	@Override
+	public void dropIndex(String indexName){
+		if(textIndex!=null) {
+			textIndex.drop(indexName);
+		}
+		super.dropIndex(indexName);
+	}
    
     protected void indexChanged(Index<Object> index,String op) {
     	boolean firstLuneceIndex = true;
     	for (Index<Object> idx : this.getIndexes()) {
-			if (idx instanceof IgniteH2Index) {
+			if (idx instanceof IgniteH2Index hidx) {
 				// 索引定义已在构造时注册进Ignite；"reIndex" 时幂等地重试注册
+				hidx.registered = false;
 				if(op.equals("reIndex"))
-					((IgniteH2Index) idx).init();
-			}
-			if (idx instanceof IgniteLuceneIndex) {
-				IgniteLuceneIndex igniteIndex = (IgniteLuceneIndex) idx;
-				if(op.equals("reIndex"))
-					igniteIndex.init();
-				if(op.equals("add")) {
-					igniteIndex.setFirstIndex(firstLuneceIndex);
-					firstLuneceIndex = false;
-				}
-			}
-			if (idx instanceof IgniteVectorIndex) {
-				IgniteVectorIndex igniteIndex = (IgniteVectorIndex) idx;
-				if(op.equals("reIndex"))
-					igniteIndex.init();
+					hidx.init();
 			}
     	}
     }
