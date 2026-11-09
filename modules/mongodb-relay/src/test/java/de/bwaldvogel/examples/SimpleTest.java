@@ -87,7 +87,7 @@ public class SimpleTest {
 
         collection.insertOne(json("_id: 1, text: 'abc'"));
 
-        collection.createIndex(json("description: 'text'"), new IndexOptions().unique(false).sparse(true));
+        collection.createIndex(json("description: 'hashed'"), new IndexOptions().unique(false).sparse(true));
 
         collection.insertOne(json("_id: 2, text: 'def'"));
         collection.insertOne(json("_id: 3, title: '标题'"));
@@ -115,7 +115,7 @@ public class SimpleTest {
         	System.out.println(doc);
         }
 
-        collection.dropIndex(json("name: 'description_text'"));
+        collection.dropIndex(json("name: 'description_hashed'"));
         
         collection.updateOne(json("_id: 2"), new Document("$set", json("text: 'def', title:'这个 是 标题'")));
         ret = collection.find(json("title: {$text: '标题'}"));

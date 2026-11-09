@@ -157,8 +157,11 @@ public class IgniteDatabase extends AbstractMongoDatabase<Object> {
                 }
                 return collection.textIndex;
             }
+            else{
+                throw new IllegalArgumentException("IndexType "+ indexType+" is not support!");
+            }
     	}
-    	if(!keys.isEmpty()) {
+    	else if(!keys.isEmpty()) {
             // 普通索引注册进Ignite的SORTED索引（H2 B+Tree）
             return new IgniteSortedIndex(ignite.context(),collection,indexName,keys,sparse);
     	}

@@ -361,7 +361,7 @@ public class IgniteTextIndex extends IgniteH2Index {
 		}
 		return result;
 	}
-	public synchronized void drop(String indexName){
+	public synchronized boolean drop(String indexName){
 		List<String> fields = new ArrayList<>();
 		Iterator<IndexKey> it = getKeys().iterator();
 		while (it.hasNext()) {
@@ -393,7 +393,9 @@ public class IgniteTextIndex extends IgniteH2Index {
 				log.error("Drop Text Index failed",e);
 			}
 			this.registered = false;
+			return true;
 		}
+		return false;
 	}
 	@Override
 	public void drop() {

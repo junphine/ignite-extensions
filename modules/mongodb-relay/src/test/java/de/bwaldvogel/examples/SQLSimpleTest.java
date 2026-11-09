@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 
+import org.apache.ignite.mongo.MongoServerPluginProvider;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
@@ -43,7 +44,10 @@ public class SQLSimpleTest {
     	if(server!=null) {
     		return ;
     	}
-        server = new MongoServer(IgniteBackend.inMemory(0));
+        IgniteBackend memery = IgniteBackend.inMemory(50002);
+        server = MongoServerPluginProvider.mongoServer;
+
+        //server.bind("0.0.0.1",memery.getCfg().getPort());
 
         // bind on a random local port
         String serverAddress = server.bindAndGetConnectionString();

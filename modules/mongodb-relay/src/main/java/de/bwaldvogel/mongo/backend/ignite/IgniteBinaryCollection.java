@@ -9,6 +9,7 @@ import java.util.stream.StreamSupport;
 import javax.cache.Cache;
 import javax.cache.Cache.Entry;
 
+import de.bwaldvogel.mongo.exception.*;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.ignite.IgniteCache;
 import org.apache.ignite.IgniteException;
@@ -50,12 +51,6 @@ import de.bwaldvogel.mongo.backend.Utils;
 import de.bwaldvogel.mongo.backend.ignite.util.BinaryObjectMatch;
 import de.bwaldvogel.mongo.backend.ignite.util.TransformerUtil;
 import de.bwaldvogel.mongo.bson.Document;
-import de.bwaldvogel.mongo.exception.BadValueException;
-import de.bwaldvogel.mongo.exception.DuplicateKeyError;
-import de.bwaldvogel.mongo.exception.FailedToParseException;
-import de.bwaldvogel.mongo.exception.IllegalOperationException;
-import de.bwaldvogel.mongo.exception.InvalidOptionsException;
-import de.bwaldvogel.mongo.exception.TypeMismatchException;
 
 
 import static de.bwaldvogel.mongo.backend.ignite.util.DocumentUtil.*;
@@ -95,10 +90,15 @@ public class IgniteBinaryCollection extends AbstractMongoCollection<Object> {
 
 	@Override
 	public void dropIndex(String indexName){
-		if(textIndex!=null) {
-			textIndex.drop(indexName);
+		try {
+			if(textIndex!=null) {
+				textIndex.drop(indexName);
+			}
+			super.dropIndex(indexName);
 		}
-		super.dropIndex(indexName);
+		catch (IndexNotFoundException e){
+			// ignore
+		}
 	}
    
     protected void indexChanged(Index<Object> index,String op) {

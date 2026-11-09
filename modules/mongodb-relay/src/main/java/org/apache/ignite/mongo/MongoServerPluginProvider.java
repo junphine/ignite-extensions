@@ -136,7 +136,11 @@ public class MongoServerPluginProvider implements PluginProvider<MongoPluginConf
 
     /** {@inheritDoc} */
     @Override public void start(PluginContext ctx) {
-    	
+        // start mongodb singerton when admin grid start
+        if(cfg!=null && mongoServer==null) {
+            IgniteEx ignite = (IgniteEx)ctx.grid();
+            ignite.context().ports().registerPort(cfg.getPort(), TCP, getClass());
+        }
     }
 
     /** {@inheritDoc} */
@@ -146,7 +150,6 @@ public class MongoServerPluginProvider implements PluginProvider<MongoPluginConf
 
     /** {@inheritDoc} */
     @Override public void onIgniteStart() {
-    	
     	// start mongodb singerton when admin grid start
     	if(cfg!=null && mongoServer==null) {    		      
  	       try {
@@ -159,10 +162,8 @@ public class MongoServerPluginProvider implements PluginProvider<MongoPluginConf
 							workerPool = ignite.context().pools().getServiceExecutorService();
 						}
 						InetSocketAddress addr = new InetSocketAddress(cfg.getHost(), cfg.getPort());
-						mongoServer.bind(addr,1, 0, workerPool);
-						
+						mongoServer.bind(addr,1, ignite.context().config().getQueryThreadPoolSize(), workerPool);
 						log.info("mongoServer","listern on "+cfg.getHost()+":"+cfg.getPort());
-                        ignite.context().ports().registerPort(cfg.getPort(), TCP, getClass());
  	    		  }
  	    	   }
  	    	   
