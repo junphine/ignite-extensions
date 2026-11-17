@@ -25,8 +25,9 @@ import org.apache.ignite.internal.cache.query.index.IndexFactory;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexKeyDefinition;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexKeyType;
 import org.apache.ignite.internal.processors.cache.GridCacheContext;
-import org.h2.message.DbException;
+
 import org.jetbrains.annotations.Nullable;
+import shaded.org.h2.message.DbException;
 
 /**
  * Index factory for creating geo spatial indexes.

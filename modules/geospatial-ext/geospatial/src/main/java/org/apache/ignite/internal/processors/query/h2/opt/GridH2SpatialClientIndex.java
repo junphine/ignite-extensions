@@ -20,12 +20,12 @@ package org.apache.ignite.internal.processors.query.h2.opt;
 import java.util.List;
 import org.apache.ignite.internal.cache.query.index.sorted.client.AbstractClientIndex;
 import org.apache.ignite.spi.indexing.IndexingQueryCacheFilter;
-import org.h2.engine.Session;
-import org.h2.index.Cursor;
-import org.h2.index.IndexType;
-import org.h2.result.SearchRow;
-import org.h2.table.IndexColumn;
-import org.h2.table.TableFilter;
+import shaded.org.h2.engine.Session;
+import shaded.org.h2.index.Cursor;
+import shaded.org.h2.index.IndexType;
+import shaded.org.h2.result.SearchRow;
+import shaded.org.h2.table.IndexColumn;
+import shaded.org.h2.table.TableFilter;
 
 /** Mock for registering Geo-Spatial indexes on client nodes in the H2 engine. */
 public class GridH2SpatialClientIndex extends GridH2SpatialBaseIndex {

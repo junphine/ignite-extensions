@@ -23,7 +23,7 @@ import org.apache.ignite.internal.cache.query.index.IndexDefinition;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexRow;
 import org.apache.ignite.internal.cache.query.index.sorted.client.AbstractClientIndex;
 import org.apache.ignite.internal.util.lang.GridCursor;
-import org.h2.table.TableFilter;
+import shaded.org.h2.table.TableFilter;
 import org.locationtech.jts.geom.Geometry;
 
 /**

@@ -20,7 +20,7 @@ package org.apache.ignite.internal.processors.query.h2.opt;
 import org.apache.ignite.binary.BinaryObject;
 import org.apache.ignite.internal.cache.query.index.sorted.IndexKeyType;
 import org.apache.ignite.internal.cache.query.index.sorted.keys.IndexKey;
-import org.h2.value.ValueGeometry;
+import shaded.org.h2.value.ValueGeometry;
 import org.locationtech.jts.geom.Geometry;
 
 /** */

@@ -26,17 +26,17 @@ import org.apache.ignite.internal.processors.query.h2.H2Cursor;
 import org.apache.ignite.internal.processors.query.h2.H2Utils;
 import org.apache.ignite.internal.util.lang.GridCursor;
 import org.apache.ignite.spi.indexing.IndexingQueryCacheFilter;
-import org.h2.engine.Session;
-import org.h2.index.Cursor;
-import org.h2.index.IndexLookupBatch;
-import org.h2.index.IndexType;
-import org.h2.result.SearchRow;
-import org.h2.table.IndexColumn;
-import org.h2.table.TableFilter;
-import org.h2.util.JdbcUtils;
-import org.h2.value.Value;
-import org.h2.value.ValueGeometry;
-import org.h2.value.ValueJavaObject;
+import shaded.org.h2.engine.Session;
+import shaded.org.h2.index.Cursor;
+import shaded.org.h2.index.IndexLookupBatch;
+import shaded.org.h2.index.IndexType;
+import shaded.org.h2.result.SearchRow;
+import shaded.org.h2.table.IndexColumn;
+import shaded.org.h2.table.TableFilter;
+import shaded.org.h2.util.JdbcUtils;
+import shaded.org.h2.value.Value;
+import shaded.org.h2.value.ValueGeometry;
+import shaded.org.h2.value.ValueJavaObject;
 import org.locationtech.jts.geom.Geometry;
 
 /**

@@ -24,7 +24,7 @@ import org.apache.ignite.internal.cache.query.index.sorted.IndexKeyType;
 import org.apache.ignite.internal.cache.query.index.sorted.keys.IndexKeyFactory;
 import org.apache.ignite.internal.processors.query.schema.management.IndexDescriptor;
 import org.apache.ignite.internal.processors.query.schema.management.SchemaManager;
-import org.h2.table.IndexColumn;
+import shaded.org.h2.table.IndexColumn;
 import org.locationtech.jts.geom.Geometry;
 
 /**
